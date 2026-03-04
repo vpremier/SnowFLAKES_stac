@@ -1,0 +1,10 @@
+# Ignore IDE configs
+.idea/
+*.iml
+
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+
+# Ignore environment files
+.env
