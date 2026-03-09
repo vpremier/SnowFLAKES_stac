@@ -1,0 +1,16 @@
+# dailyHR_SCA
+Workflow to load Sentinel-2 data from the CDSE STAC catalogue and classify them by using SnowFLAKES.
+
+We suggest to use micromamba to install the environemt
+https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html
+snowmap_cdse
+
+
+micromamba install -c conda-forge \
+gdal \
+rasterio \
+pyproj \
+fiona \
+geopandas \
+stackstac \
+netCDF4 

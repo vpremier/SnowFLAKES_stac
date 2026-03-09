@@ -19,7 +19,7 @@ import geopandas as gpd
 
 import numpy as np
 from pyproj import CRS
-import odc.stac
+# import odc.stac
 
 import time
 

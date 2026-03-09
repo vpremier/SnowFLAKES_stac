@@ -25,25 +25,24 @@ from datetime import datetime
 
 
 
-def run_workflow(date_start, date_end, shp, resolution):
-    config_download_path = "./data_download/config.json"
+def run_workflow(date_start, date_end, shp):
+    config_path = "./config.json"
     
     # Read
-    with open(config_download_path, "r") as f:
-        config_download = json.load(f)
+    with open(config_path, "r") as f:
+        config = json.load(f)
     
     # Modify dates
-    config_download["date_start"] = date_start
-    config_download["date_end"] = date_end
-    config_download["shapefile"] = shp
-    config_download["query_sentinel2"] = True
-    config_download["download_sentinel2"] = False
-
+    config["date_start"] = date_start
+    config["date_end"] = date_end
+    config["shapefile"] = shp
+    config["query_sentinel2"] = True
+    config["download_sentinel2"] = False
 
 
     # Write back
-    with open(config_download_path, "w") as f:
-        json.dump(config_download, f, indent=2)
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
     
     print("Config updated")
     
@@ -52,11 +51,10 @@ def run_workflow(date_start, date_end, shp, resolution):
     subprocess.run("./data_download.sh", shell=True)
     
     # Look for the data in our folder
-    outdir = config_download["output_directory"]
+    outdir = config["output_directory"]
     data_df = pd.read_csv(os.path.join(outdir, 'query_sentinel2.csv'))
     
 
-    
     
     s2_files = [f.split('.')[0] for f in data_df['Name'].to_list()]
     
@@ -66,19 +64,20 @@ def run_workflow(date_start, date_end, shp, resolution):
         for d in (i.split("_")[2][:8] for i in s2_files)
     })
     
-    
+    # resampling parameters
+    resolution = config["resampling_params"]["resolution"]
+    extent_target = config["resampling_params"]["extent_target"]
+    epsg_target = config["resampling_params"]["epsg_target"]
     # bbox = get_shape_extent(shp, epsg=32719, outres =500)
-    bbox = [391500, 6278500, 404500, 6289000]
-
 
     # Run the STAC loading
     for date in dates:
     
         data = load_stac.convert_sentinel2_bands(outdir, date, resolution=resolution, 
-                                                 extent_target=bbox, 
-                                                 epsg_target=32719)
+                                                 extent_target=extent_target, 
+                                                 epsg_target=epsg_target)
         time.sleep(2)
-    
+        dd
 
 
 
@@ -204,7 +203,7 @@ if __name__ == "__main__":
     
     for date_start, date_end in date_pairs:
             
-        run_workflow(date_start, date_end, shp, resolution)
+        run_workflow(date_start, date_end, shp)
     
     
 

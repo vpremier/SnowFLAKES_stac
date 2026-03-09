@@ -13,7 +13,7 @@ conda activate download
 
 # Path to your Python script and config
 SCRIPT_PATH="./data_download/main.py"
-CONFIG_PATH="./data_download/config.json"
+CONFIG_PATH="./config.json"
 
 echo "Running the download script..."
 python "$SCRIPT_PATH" "$CONFIG_PATH"
