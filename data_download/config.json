@@ -1,0 +1,15 @@
+{
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test",
+  "date_start": "2017-10-01",
+  "date_end": "2017-10-15",
+  "query_landsat": false,
+  "query_sentinel2": true,
+  "download_landsat": false,
+  "download_sentinel2": false,
+  "max_cloudcover": 90,
+  "landsat_satellite": [],
+  "s2_tile": null,
+  "landsat_tile_list": [],
+  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/download_sentinel2.csv"
+}

@@ -8,10 +8,9 @@ Created on Fri Feb 27 16:03:56 2026
 from dotenv import load_dotenv
 import os
 
-import rasterio
-from shapely.geometry import shape
+import rasterio as rio
 import pystac_client
-from shapely.geometry import box, shape
+from shapely.geometry import box
 from shapely.geometry import mapping
 from rasterio.enums import Resampling
 
@@ -26,45 +25,83 @@ import time
 
 import logging
 
-import rasterio as rio
-
-from utils import *
-
+from .utils_stac import *
+import re
 
 
 
-def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None, 
-                          img4ext = None, extent_target=None, epsg_target=None,
-                          reproj_type=Resampling.bilinear, suffix='_boa',
-                          na_value = "NaN", calibration=True, ow=False,
-                          max_cc = 80, idList = [], filter_by_geometry = True):        
+def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None, 
+                            extent_target=None, epsg_target=None, 
+                            reproj_type=Resampling.bilinear, suffix='toa',
+                            na_value = "NaN", calibration=True, ow=False,
+                            max_cc = 90, idList = [], filter_by_geometry = True,
+                            save = True):        
     """
-    Converts and optionally reprojects Landsat bands from an xarray dataset to single-band GeoTIFFs.
-
-    This function supports reprojection based on user-defined resolution, extent, EPSG code,
-    or by matching the spatial configuration of a reference image (`img4ext`). Bands are 
-    saved individually as GeoTIFF files.
-
-    Parameters:
-        data (xarray.Dataset): Dataset loaded using odc.stac.stac_load containing Landsat bands.
-        outdir (str): Output directory where GeoTIFFs will be saved.
-        image_id (str): Identifier for the Landsat scene, used to name output files.
-        bands (dict): Dictionary mapping xarray band names to short names (e.g., {"SR_B2": "blue"}).
-        resolution (float, optional): Target spatial resolution in meters. If None, native resolution is used.
-        img4ext (str, optional): Path to a reference image whose extent and projection will be used.
-        extent_target (list, optional): Custom output extent [xmin, ymin, xmax, ymax]. Ignored if `img4ext` is set.
-        epsg_target (int or str, optional): Target coordinate reference system (EPSG code). Required if reprojection is desired.
-        reproj_type (rasterio.enums.Resampling, optional): Resampling method for reprojection. Default is bilinear.
-        suffix (str, optional): Suffix to add to the output filenames (e.g., "_toa" or "_boa").
-        na_value (str or float, optional): Value used to represent NoData in the output. Default is "NaN".
-        calibration (bool, optional): Whether to apply reflectance calibration to the bands. Default is True.
-        ow (bool, optional): Overwrite existing output files. Default is False.
-
-    Returns:
-        None. Saves one GeoTIFF file per band in the specified output directory.
-    """
-
+    Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
+    reprojects it to a user-defined grid, applies radiometric calibration, and
+    optionally saves each band as a GeoTIFF.
+    
+    The function uses `stackstac` to lazily load Sentinel-2 assets and returns the
+    result as an `xarray.DataArray` with dimensions:
+    
+        (time, band, y, x)
+    
+    
+    Parameters
+    ----------
         
+    outdir : str, optional
+        Output directory where GeoTIFF files will be written.
+        
+    date : str
+        Acquisition date in format "YYYY-MM-DD". Only this day will be queried.
+    
+    resolution : float, optional
+        Target pixel size in map units. If None, the native resolution is used.
+    
+    img4ext : str, optional
+        Path to a reference raster used to extract target extent, projection,
+        and resolution.
+    
+    extent_target : list, optional
+        Output bounding box [xmin, ymin, xmax, ymax].
+    
+    epsg_target : int, optional
+        Target coordinate reference system EPSG code.
+    
+    reproj_type : rasterio.enums.Resampling
+        Resampling method used during reprojection.
+    
+    suffix : str
+        Suffix appended to output filenames (e.g. "toa").
+    
+    na_value : float or str
+        NoData value for output rasters.
+    
+    calibration : bool
+        Apply Sentinel-2 reflectance calibration.
+    
+    ow : bool
+        Overwrite existing files.
+    
+    max_cc : int
+        Maximum allowed cloud cover percentage.
+    
+    idList : list
+        Optional list of Sentinel-2 scene IDs.
+    
+    filter_by_geometry : bool
+        If True, STAC search is constrained to the target geometry.
+    
+    save : bool
+        If True, the output bands are saved as GeoTiff.
+    
+    Returns
+    -------
+    xarray.DataArray
+        Sentinel-2 data cube with dimensions (time, band, y, x)
+        containing calibrated reflectance values.
+    """
     # out directory
     os.makedirs(outdir, exist_ok=True)
 
@@ -97,18 +134,14 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
         print('Reading extent, resolution and epsg from an image..')
         img, info = open_image(img4ext)
         extent_target = info['extent']
-        crs = rasterio.crs.CRS.from_wkt(info['projection'])
+        crs = rio.crs.CRS.from_wkt(info['projection'])
         epsg_target = crs.to_epsg()
         resolution = info['geotransform'][1]
     else:
         assert extent_target and resolution and epsg_target, \
             "Please specify the target extent, resolution and EPSG or enter the path to a target image"
             
-    # read from a shapefil?
 
-
-        
-    
     # determine AOI bbox in wgs84
     if filter_by_geometry:
         print('Filtering STAC by geometry')
@@ -122,7 +155,12 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
         params = {
             "collections": ["sentinel-2-l1c"],
             "intersects": geometry,
-            "datetime": f"{date_start}T00:00:00Z/{date_end}T23:59:59Z"
+            "datetime": f"{date}",
+            "query": {
+                "eo:cloud_cover": {
+                    "lte": max_cc
+                    }
+                }
             }
         
     elif idList:
@@ -130,9 +168,11 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
         # Looking for Sentinel-2 L1C
         params = {
             "collections": ["sentinel-2-l1c"],
-            "datetime": f"{date_start}T00:00:00Z/{date_end}T23:59:59Z",
-            "ids":idList
+            "datetime": f"{date}",
+            "ids":idList,     
         }
+
+    start = time.time()
 
     items = list(cat.search(**params).items_as_dicts())
     print(f"Number of STAC items returned: {len(items)}")
@@ -153,6 +193,9 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
     # Replace the tile (3rd element, index 2) with "merged"
     parts[5] = "merged"
     
+    match = re.search(r'_N(\d{4})_', image_id)
+    baseline = int(match.group(1)) if match else None
+    
     # Reconstruct the new ID
     merged_image_id = "_".join(parts)
     
@@ -163,10 +206,10 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
     sensor = image_id.split('_')[0]
     
     # create folder
-    os.makedirs(os.path.join(outdir, sensor), exist_ok=True)
-    os.makedirs(os.path.join(outdir, sensor, f"{merged_image_id}"), exist_ok=True)
-
-
+    if save:
+        os.makedirs(os.path.join(outdir, sensor), exist_ok=True)
+        os.makedirs(os.path.join(outdir, sensor, f"{merged_image_id}"), 
+                    exist_ok=True)
 
     try:
         data = stackstac.stack(
@@ -209,56 +252,50 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
     dst_crs = CRS.from_epsg(epsg_target)
     
     
+    if calibration:
+        offset = -1000
+        if baseline >= 400:
+            data = (data + offset) * 0.0001
+        else:
+            raise ValueError("Old Sentinel-2 processing baseline (<0400) not supported")
+            
+    data = data.where(data > 0)        
+            
     # Iterate through bands
-    for band_name in data.band.values:
-        out_path = os.path.join(outdir, sensor, f"{merged_image_id}", 
-                                f"{merged_image_id}_{band_name}_{suffix}.tif")
-        if os.path.exists(out_path) and not ow:
-            print(f"Skipping {out_path} (already exists)")
-            continue
+    if save:
+        for band_name in data.band.values:
         
+            out_path = os.path.join(outdir, sensor, f"{merged_image_id}", 
+                                    f"{merged_image_id}_{band_name}_{suffix}.tif")
+            
+            if os.path.exists(out_path) and not ow:
+                print(f"Skipping {out_path} (already exists)")
+                continue
         
-        band_data = np.squeeze(data.sel(band=str(band_name)).values.astype("float32"))
-        # nodata_val = data[band_name].attrs.get('nodata', -9999)
-        
-        # band_data[band_data == nodata_val] = np.nan
-        
- 
-        # === Apply constants  ===
-        if calibration:
-            offset = -1000
-            band_data = (band_data + offset)* 0.0001
+            band_data = np.squeeze(data.sel(band=str(band_name)).values.astype("float32"))
 
-        band_data[band_data <=0] = np.nan
-        
-
-        # === Save GeoTIFF ===
-        profile = {
-            'driver': 'GTiff',
-            'height': height,
-            'width': width,
-            'count': 1,
-            'dtype': 'float32',
-            'crs': dst_crs,
-            'transform': transform,
-            'nodata': np.nan,
-        }
-        
-
-
-        with rio.open(out_path, 'w', **profile) as dst:
-            dst.write(band_data, 1)
-        
-
-        print(f"Saved {out_path}")
-        
-        
-        
-        
+            # === Save GeoTIFF ===
+            profile = {
+                'driver': 'GTiff',
+                'height': height,
+                'width': width,
+                'count': 1,
+                'dtype': 'float32',
+                'crs': dst_crs,
+                'transform': transform,
+                'nodata': np.nan,
+            }
+            
+            with rio.open(out_path, 'w', **profile) as dst:
+                dst.write(band_data, 1)
+    
+            print(f"Saved {out_path}")
         
         
     end = time.time()
     print(f"Total runtime of the program is {end - start} seconds")
+    
+    return data
 
     # # option 2
     # start = time.time()
@@ -299,69 +336,42 @@ def convert_sentinel2_bands(outdir, date_start, date_end, resolution=None,
         
     
 
-    
-    
+if __name__ == "__main__":    
+
+    resolution = 20
+    epsg_target = 32719
+    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/tile/T19HCC/S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931/T19HCC_20250206T143811_B01_toa.tif'
+
+    shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
+    extent_target = get_shape_extent(shape_name, epsg=32719, outres =500)
+
+    date = "2025-02-06"
+
+    outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test'
+
+    start = time.time()
+
+    idList = ['S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931']
+
+    data = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
+                            epsg_target=None, reproj_type=Resampling.cubic, 
+                            suffix='toa', na_value = "NaN", calibration=True, 
+                            ow=False)
+
+    end = time.time()
+    print(f"Total runtime of the program is {end - start} seconds")
 
 
-                
-
-
-
-                
-
-        
-    
-           
-            
-
-              
-            
-
-            
-        
-          
-
-
-
-resolution = 20
-epsg_target = 32719
-img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/tile/T19HCC/S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931/T19HCC_20250206T143811_B01_toa.tif'
-
-shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
-extent_target = get_shape_extent(shape_name, epsg=32719, outres =500)
-
-date_start = "2025-02-06"
-date_end = "2025-02-07"
-
-outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test'
-
-start = time.time()
-
-idList = ['S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931']
-
-convert_sentinel2_bands(outdir, date_start, date_end, resolution=resolution, 
-                          img4ext=img4ext, epsg_target=None,
-                          reproj_type=Resampling.cubic, suffix='toa',
-                          na_value = "NaN", calibration=True, ow=False,
-                          max_cc = 80)
-
-end = time.time()
-print(f"Total runtime of the program is {end - start} seconds")
-
-# dubbi: posso leggere direttamente in epsg 32719?
 
 
 # ds_odata = xr.open_dataset(r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/tile/T19HCC/S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931/T19HCC_20250206T143811_B01_tmp.tif')
 
 
     
-    # read the extent, fix issue offset (PB), problema se ho più item
-    # vuoi leggere id oppure direttamente fare un merge? 
-    # opzione per salvare output oppure leggo array
-    
-    # check offset
-    # processare ghiacciai?
-    # check openeo
+# opzione per salvare output oppure leggo array
+
+# processare ghiacciai?
+# check openeo
 
 
 
