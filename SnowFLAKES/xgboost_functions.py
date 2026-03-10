@@ -16,7 +16,7 @@ from rasterio.features import geometry_mask
 from sklearn import preprocessing
 from xgboost import XGBClassifier
 from sklearn.model_selection import GridSearchCV
-from training_collection import *
+from .training_collection import *
 from joblib import Parallel, delayed
 import glob
 import pickle

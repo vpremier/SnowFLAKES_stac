@@ -17,7 +17,7 @@ from scipy.ndimage import median_filter
 import elevation
 import glob
 import pandas as pd
-from utilities import *
+from .utilities import *
 import rasterio
 from pyproj import Transformer
 from datetime import timezone
@@ -25,13 +25,44 @@ from pysolar.solar import *
 from rasterio.crs import CRS
 from pyproj import Transformer
 from pathlib import Path
-from shadow_mask_gen import *
+from .shadow_mask_gen import *
 from scipy.ndimage import distance_transform_edt
 from skimage import exposure
 from rasterio.transform import from_origin
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject, Resampling
 from rasterio.merge import merge
+
+
+
+
+def create_auxiliary_folder(working_folder, folder_name='01_TEST_auxiliary_folder'):
+    """
+    Creates an auxiliary folder in the working directory for storing permanent layers (e.g., DEM, masks).
+
+    Parameters
+    ----------
+    working_folder : str
+        The main working directory where the auxiliary folder will be created.
+
+    Returns
+    -------
+    str
+        The path of the auxiliary folder.
+    """
+    # Define path for the ancillary folder
+    auxiliary_folder_path = os.path.join(working_folder, folder_name)
+
+    # Check if the folder exists, create if not
+    if not os.path.exists(auxiliary_folder_path):
+        os.makedirs(auxiliary_folder_path)
+        logging.info(f"Auxiliary folder created at {auxiliary_folder_path}.")
+    else:
+        logging.info(f"Auxiliary folder already exists at {auxiliary_folder_path}.")
+
+    return auxiliary_folder_path
+
+
 
 def water_identifier(data, auxiliary_folder_path):
     '''
@@ -63,12 +94,13 @@ def water_identifier(data, auxiliary_folder_path):
         # ---- get CRS and bounds from xarray ----
         epsg_code = data.rio.crs.to_epsg() if hasattr(data, "rio") else data.attrs.get("crs")
         
-        E_min_old = float(data.x.min())
-        E_max_old = float(data.x.max())
-        N_min_old = float(data.y.min())
-        N_max_old = float(data.y.max())
-        
         resolution = float(abs(data.x[1] - data.x[0]))
+
+        E_min_old = float(data.x.min())
+        E_max_old = float(data.x.max() + resolution)
+        N_min_old = float(data.y.min() - resolution)
+        N_max_old = float(data.y.max())
+
         
         # ---- water mask CRS ----
         with rasterio.open(water_mask_file) as d_target:
@@ -206,8 +238,6 @@ def water_identifier(data, auxiliary_folder_path):
 
 
 
-
-
 def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
     """
     Generates a glacier mask raster file from a shapefile and water mask.
@@ -294,277 +324,6 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
 
 
 
-
-
-# to be updated
-
-
-def create_auxiliary_folder(working_folder, folder_name='01_TEST_auxiliary_folder'):
-    """
-    Creates an auxiliary folder in the working directory for storing permanent layers (e.g., DEM, masks).
-
-    Parameters
-    ----------
-    working_folder : str
-        The main working directory where the auxiliary folder will be created.
-
-    Returns
-    -------
-    str
-        The path of the auxiliary folder.
-    """
-    # Define path for the ancillary folder
-    auxiliary_folder_path = os.path.join(working_folder, folder_name)
-
-    # Check if the folder exists, create if not
-    if not os.path.exists(auxiliary_folder_path):
-        os.makedirs(auxiliary_folder_path)
-        logging.info(f"Auxiliary folder created at {auxiliary_folder_path}.")
-    else:
-        logging.info(f"Auxiliary folder already exists at {auxiliary_folder_path}.")
-
-    return auxiliary_folder_path
-
-
-
-
-def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
-    '''
-
-
-    Parameters
-    ----------
-    water_mask_path : str
-        path of water mask to cut .
-    ref_img_path : str
-        path of a reference image.
-    Ancillary_folder : bool
-
-
-    Returns
-    -------
-    target_wb_mask_path : str
-        water mask path.
-
-
-    '''
-    if auxiliary_folder_path != None:
-        target_wb_mask_path = auxiliary_folder_path + os.sep + os.path.basename(
-            os.path.dirname(os.path.dirname(ref_img_path))) + "_Water_Mask.tif"
-    else:
-        target_wb_mask_path = ref_img_path[:-8] + "_Water_Mask.tif"
-
-    if not os.path.exists(target_wb_mask_path):
-        # clip the wbm with FSC extent
-
-        img_info = open_image(ref_img_path)[1]
-
-        d = gdal.Open(ref_img_path)
-        with rasterio.open(ref_img_path, 'r+') as rds:
-            epsg_code_ref = str(rds.crs).split(':')[1]
-
-        E_min = (img_info['extent'][0])
-        N_min = (img_info['extent'][1])
-        E_max = (img_info['extent'][2])
-        N_max = (img_info['extent'][3])
-        img_res = str(img_info['geotransform'][1])
-
-        extent_string = ' '.join([str(E_min), str(N_min), str(E_max), str(N_max)])
-        cmd = 'gdalwarp -t_srs EPSG:' + epsg_code_ref + ' -te ' + extent_string + ' -tr ' + ' '.join(
-            [img_res, img_res]) + \
-              ' -of GTiff ' + ' '.join([water_mask_path, target_wb_mask_path])
-
-        os.system(cmd)
-
-        water_mask = open_image(target_wb_mask_path)[0]
-
-        # dialte the nan value (255) of the water mask into the 1 value of water mask
-        if np.sum(water_mask == 255) > 0:
-            K = np.ones((30, 30)).astype(np.uint8)
-            Water_dilated = cv2.dilate((water_mask == 255).astype(np.uint8), K, iterations=1)
-            # create a single water mask with 0-1
-            water_mask[Water_dilated == 1] = 255
-            water_mask[water_mask == 210] = 1
-            water_mask[water_mask == 255] = 1
-            os.remove(target_wb_mask_path)
-            save_image(water_mask.astype('uint8'), target_wb_mask_path, 'GTiff', 1, img_info['geotransform'],
-                       img_info['projection'])
-
-    return target_wb_mask_path;
-
-
-
-
-def dem_downloader(sub_areas, ref_img_path, resolution, auxiliary_folder_path, buffer=0.02):
-    """
-    Downloads and mosaics a DEM (Digital Elevation Model) for a given set of sub-areas. If a DEM
-    already exists, the function skips downloading. If not, it downloads the DEM, reprojects, and
-    mosaics the sub-areas into one file.
-    Parameters
-    ----------
-    sub_areas : list of tuples
-        List of areas to download DEMs for. Each tuple contains (min_lon, min_lat, max_lon, max_lat).
-    ref_img_path : str
-        Path to the reference VRT file containing metadata (used for projection and extent info).
-    resolution : float
-        Desired output resolution for the DEM.
-    Ancillary_folder : bool, optional
-        If True, saves files in an auxiliary_folder_path. Defaults to False.
-    buffer : float, optional
-        Buffer to add around the DEM download area. Defaults to 0.02.
-    Returns
-    -------
-    final_dem : str
-        Path to the final DEM file.
-    """
-
-    # Define output paths for the DEM based on whether the Ancillary folder is used
-
-    final_dem = os.path.join(auxiliary_folder_path,
-                             os.path.basename(os.path.dirname(os.path.dirname(ref_img_path))) + "_DEM.tif")
-    output_dem = os.path.join(auxiliary_folder_path, "output_dem.tif")
-
-    # Read the reference VRT file and extract projection and extent info
-    area_info = open_image(ref_img_path)[1]  # Function open_image assumed to return metadata
-    with rasterio.open(ref_img_path, 'r+') as rds:
-        epsg_code = str(rds.crs).split(':')[1]
-
-    # If DEM doesn't already exist, start the downloading process
-    if not os.path.exists(final_dem):
-        for idx, sub_area in enumerate(sub_areas):
-
-            temp_file = os.path.join(auxiliary_folder_path, f"dem_temp{idx}.tif")
-            output_file = os.path.join(auxiliary_folder_path, f"dem_{idx}.tif")
-
-            # If output file for the sub-area doesn't already exist, download and process the DEM
-            if not os.path.exists(output_file):
-
-                if epsg_code == "4326":  # WGS 84, no reprojection needed
-                    min_lon, min_lat, max_lon, max_lat = sub_area
-                else:
-                    # Reproject the bounding box if not in WGS 84
-                    srIn = osr.SpatialReference(str(area_info['projection']))
-
-                    # Directly assign EPSG 4326 to srOut
-                    srOut = osr.SpatialReference()
-                    srOut.ImportFromEPSG(4326)
-
-                    # Reproject the extents from the input area
-                    (min_lat, min_lon) = reproj_point(area_info["extent"][0], area_info["extent"][1], srIn, srOut)
-                    (max_lat, max_lon) = reproj_point(area_info["extent"][2], area_info["extent"][3], srIn, srOut)
-
-                    resolution /= 100000  # Adjust resolution to match the projection
-
-                # Download the DEM with a buffer around the bounding box
-                if not os.path.exists(temp_file):
-                    elevation.clip(bounds=(min_lon - buffer, min_lat - buffer, max_lon + buffer, max_lat + buffer),
-                                   output=temp_file)
-
-                    # Reproject and resample the DEM if needed
-                    if epsg_code == "4326":
-                        cmd = f'gdalwarp -t_srs EPSG:{epsg_code} -te {min_lon} {min_lat} {max_lon} {max_lat} ' \
-                              f'-r bilinear -tr {resolution} {resolution} {temp_file} {output_file}'
-                    else:
-                        # Apply reprojection using the original extents
-                        E_min_old, N_min_old, E_max_old, N_max_old = area_info["extent"]
-                        cmd = f'gdalwarp -t_srs EPSG:{epsg_code} -te {E_min_old} {N_min_old} {E_max_old} {N_max_old} ' \
-                              f'-r bilinear -tr {resolution * 100000} {resolution * 100000} {temp_file} {output_file}'
-                    # Run the command and remove temporary files
-                    os.system(cmd)
-                    os.remove(temp_file)
-            else:
-                print(f"{temp_file} already exists.")
-
-        # If multiple sub-areas, merge them into a single DEM
-        files_to_mosaic = sorted(glob.glob(os.path.dirname(output_file) + os.sep + "dem_*"))
-        print(files_to_mosaic)
-        if len(files_to_mosaic) > 1:
-            files_string = " ".join(files_to_mosaic)
-            cmd = f'gdal_merge.py -o {output_dem} {files_string}'
-            os.system(cmd)
-
-            # Apply a median filter to smooth the final DEM
-            dem_data, dem_info = open_image(output_dem)
-            smoothed_dem_data = median_filter(dem_data, 5)  # Apply 5x5 median filter
-
-            # Save the smoothed DEM
-            save_image(smoothed_dem_data, final_dem, 'GTiff', 6, dem_info['geotransform'], dem_info['projection'])
-            # Clean up intermediate files
-            for file in files_to_mosaic:
-                os.remove(file)
-            os.remove(output_dem)
-        else:
-            # If only one DEM file exists, rename it as the final DEM
-            os.rename(files_to_mosaic[0], final_dem)
-    else:
-        print("DEM already exists.")
-
-    return final_dem
-
-
-def crop_predefined_DEM(ref_img_path, External_Dem_path, auxiliary_folder_path, reproj_type='bilinear',
-                        overwrite=False):
-    """
-    Crop a predefined DEM to match the spatial extent of a reference image and save it to the auxiliary folder.
-
-    Parameters
-    ----------
-    ref_img_path : str
-        Path to the reference image that defines the target spatial extent and projection.
-    External_Dem_path : str
-        Path to the external DEM file that will be cropped.
-    auxiliary_folder_path : str
-        Path to the auxiliary folder where the cropped DEM will be saved.
-    reproj_type : str, optional
-        GDAL resampling method for reprojection (e.g., 'bilinear', 'cubic'). The default is 'cubic'.
-    overwrite : bool, optional
-        If True, overwrite existing DEM. The default is False.
-
-    Returns
-    -------
-    dem_path : str
-        Path to the cropped DEM file.
-    """
-
-    # Define the path where the cropped DEM will be saved
-    dem_path = os.path.join(auxiliary_folder_path,
-                            os.path.basename(os.path.dirname(os.path.dirname(ref_img_path))) + "_DEM.tif")
-
-    # Check if the DEM file already exists and overwrite is set to False
-    if os.path.exists(dem_path) and not overwrite:
-        print('DEM file was already created and saved.')
-        return dem_path
-
-    # Open the reference image to get the spatial information (extent and projection)
-    ref_img = gdal.Open(ref_img_path)
-    if ref_img is None:
-        raise FileNotFoundError(f"Reference image not found: {ref_img_path}")
-
-    # Get the projection and extent information from the reference image
-    ref_proj = osr.SpatialReference(wkt=ref_img.GetProjection())
-    epsg_code = ref_proj.GetAttrValue("AUTHORITY", 1)  # Get EPSG code
-
-    # Get the geospatial extent of the reference image (min/max coordinates)
-    ref_gt = ref_img.GetGeoTransform()  # Get geotransform of the image
-    E_min = ref_gt[0]  # Upper-left corner x-coordinate (min longitude/easting)
-    N_min = ref_gt[3] + ref_gt[5] * ref_img.RasterYSize  # Lower-left corner y-coordinate (min latitude/northing)
-    E_max = ref_gt[0] + ref_gt[1] * ref_img.RasterXSize  # Upper-right corner x-coordinate (max longitude/easting)
-    N_max = ref_gt[3]  # Upper-left corner y-coordinate (max latitude/northing)
-
-    # Define the output resolution (same as input DEM)
-    dem_resolution = ref_gt[1]  # Pixel resolution (in meters or degrees)
-
-    # Build the gdalwarp command to crop the DEM to the reference image extent and reproject if necessary
-    cmd = f'gdalwarp -t_srs EPSG:{epsg_code} -te {E_min} {N_min} {E_max} {N_max} ' \
-          f'-r {reproj_type} -tr {dem_resolution} {dem_resolution} {External_Dem_path} {dem_path}'
-
-    # Run the gdalwarp command
-    os.system(cmd)
-
-    # Return the path to the newly created DEM
-    return dem_path
-
-
 def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', overwrite=False):
     '''
     Calculate slope and aspect from an input DEM.
@@ -592,8 +351,8 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
         Path to the saved aspect file.
     '''
 
-    slopePath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('_DEM.tif', '_slope.tif'))
-    aspectPath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('_DEM.tif', '_aspect.tif'))
+    slopePath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('DEM.tif', 'slope.tif'))
+    aspectPath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('DEM.tif', 'aspect.tif'))
 
     print(slopePath)
 
@@ -614,6 +373,10 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
         print(f"Aspect saved at {aspectPath}")
 
     return slopePath, aspectPath
+
+
+# to be updated
+
 
 
 def S2_clouds_classifier(stack_clouds_path, path_cloud_mask, ref_img_path, cloud_prob, overwrite_cloud=0,
@@ -688,6 +451,87 @@ def S2_clouds_classifier(stack_clouds_path, path_cloud_mask, ref_img_path, cloud
                                  (np.shape(cloud_mask)[0] * np.shape(cloud_mask)[1])
 
     return path_cloud_mask, cloud_cover_percentage;
+
+
+
+
+
+
+
+
+
+
+
+
+def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
+    '''
+
+
+    Parameters
+    ----------
+    water_mask_path : str
+        path of water mask to cut .
+    ref_img_path : str
+        path of a reference image.
+    Ancillary_folder : bool
+
+
+    Returns
+    -------
+    target_wb_mask_path : str
+        water mask path.
+
+
+    '''
+    if auxiliary_folder_path != None:
+        target_wb_mask_path = auxiliary_folder_path + os.sep + os.path.basename(
+            os.path.dirname(os.path.dirname(ref_img_path))) + "_Water_Mask.tif"
+    else:
+        target_wb_mask_path = ref_img_path[:-8] + "_Water_Mask.tif"
+
+    if not os.path.exists(target_wb_mask_path):
+        # clip the wbm with FSC extent
+
+        img_info = open_image(ref_img_path)[1]
+
+        d = gdal.Open(ref_img_path)
+        with rasterio.open(ref_img_path, 'r+') as rds:
+            epsg_code_ref = str(rds.crs).split(':')[1]
+
+        E_min = (img_info['extent'][0])
+        N_min = (img_info['extent'][1])
+        E_max = (img_info['extent'][2])
+        N_max = (img_info['extent'][3])
+        img_res = str(img_info['geotransform'][1])
+
+        extent_string = ' '.join([str(E_min), str(N_min), str(E_max), str(N_max)])
+        cmd = 'gdalwarp -t_srs EPSG:' + epsg_code_ref + ' -te ' + extent_string + ' -tr ' + ' '.join(
+            [img_res, img_res]) + \
+              ' -of GTiff ' + ' '.join([water_mask_path, target_wb_mask_path])
+
+        os.system(cmd)
+
+        water_mask = open_image(target_wb_mask_path)[0]
+
+        # dialte the nan value (255) of the water mask into the 1 value of water mask
+        if np.sum(water_mask == 255) > 0:
+            K = np.ones((30, 30)).astype(np.uint8)
+            Water_dilated = cv2.dilate((water_mask == 255).astype(np.uint8), K, iterations=1)
+            # create a single water mask with 0-1
+            water_mask[Water_dilated == 1] = 255
+            water_mask[water_mask == 210] = 1
+            water_mask[water_mask == 255] = 1
+            os.remove(target_wb_mask_path)
+            save_image(water_mask.astype('uint8'), target_wb_mask_path, 'GTiff', 1, img_info['geotransform'],
+                       img_info['projection'])
+
+    return target_wb_mask_path;
+
+
+
+
+
+
 
 
 def landsat_cloud_classifier(curr_aux_folder, path_cloud_mask, ref_img_path, sensor, valid_mask, Nprocesses=8,

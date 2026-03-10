@@ -7,8 +7,8 @@ Created on Tue Nov  5 16:31:29 2024
 """
 
 import numpy as np
-from training_collection import *
-from utilities import *
+from .training_collection import *
+from .utilities import *
 from sklearn import preprocessing
 from sklearn.svm import SVC, LinearSVC
 from sklearn.metrics.pairwise import rbf_kernel, pairwise_kernels, linear_kernel, cosine_similarity

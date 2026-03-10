@@ -11,6 +11,14 @@ gdal \
 rasterio \
 pyproj \
 fiona \
+pandas \
+shapely \
 geopandas \
 stackstac \
-netCDF4 
+netCDF4 \
+opencv \
+elevation \
+pysolar \
+timezonefinder \
+scikit-image \
+xgboost

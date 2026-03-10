@@ -7,7 +7,7 @@ Created on Fri Oct 25 12:07:46 2024
 """
 import numpy as np
 
-from utilities import *
+from .utilities import *
 from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 from scipy.ndimage import binary_erosion

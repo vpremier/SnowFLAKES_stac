@@ -12,7 +12,7 @@ import os
 import pandas as pd
 import glob
 from stac import load_stac
-# from SnowFLAKES import TS_to_PNG
+from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 import shutil
 import time
 
@@ -73,10 +73,13 @@ def run_workflow(date_start, date_end, shp):
     # Run the STAC loading
     for date in dates:
     
-        data = load_stac.convert_sentinel2_bands(outdir, date, resolution=resolution, 
+        data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
+                                                resolution=resolution, 
                                                  extent_target=extent_target, 
                                                  epsg_target=epsg_target)
         time.sleep(2)
+        
+        # run_snowflakes(config, data, scene_id)
         dd
 
 
