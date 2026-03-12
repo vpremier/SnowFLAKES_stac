@@ -125,27 +125,31 @@ def run_snowflakes(config, data, scene_id):
     
 
 
-    # load bands
-    curr_bands = select_band_names(sensor, 'scfT') # all_band_stack_path
-    all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
-    cloud_bands = select_band_names(sensor, 'cloud')
-    
+    # load bands -> all_bands
+    curr_bands = select_band_names(sensor, 'scfT') 
     curr_image = np.squeeze(data.sel(band=curr_bands).values)
     curr_image[curr_image == no_data_value] = np.nan
-
+    
+    
+    all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
     all_bands_image = np.squeeze(data.sel(band=all_bands).values)
     all_bands_image[all_bands_image == no_data_value] = np.nan
-    no_data_mask, valid_mask = generate_no_data_mask(all_bands_image, sensor, no_data_value=np.nan)
-
-
-    # Cloud folder
-    cloud_folder = os.path.join(working_folder, "clouds")
-    os.makedirs(cloud_folder, exist_ok=True)
     
-    # da rivedere come strutturo le cartelle!
+    cloud_bands = select_band_names(sensor, 'cloud')
+    cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
+    cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
+    
+
+    no_data_mask, valid_mask = generate_no_data_mask(all_bands_image, sensor, no_data_value=np.nan)
+    
+    # Auxiliary folder
+    curr_aux_folder = os.path.join(working_folder, "auxiliary")
+    os.makedirs(curr_aux_folder, exist_ok=True)
+
+    # da rivedere come strutturo le cartelle!!!!
     
     # Cloud mask
-    path_cloud_mask = os.path.join(cloud_folder, f'{scene_id}_cloud_Mask.tif')
+    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
     Compute_clouds = config.get('Compute_clouds', 'no') == 'yes'
     
     
@@ -158,16 +162,72 @@ def run_snowflakes(config, data, scene_id):
         average_over = int(config.get('average_over', 3))
         dilation_size = int(config.get('dilation_cloud_cover', 3))
         overwrite_cloud = int(config.get('Overwrite_cloud', 0))
-        stack_clouds_path = \
-        [os.path.join(curr_acquisition, f) for f in os.listdir(curr_acquisition) if 'cloud.vrt' in f][0]
-        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(
-            stack_clouds_path, path_cloud_mask, ref_img_path, cloud_prob, overwrite_cloud=overwrite_cloud,
-            average_over=average_over, dilation_size=dilation_size)
+  
+    
+        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, cloud_bands, 
+                                                                       no_data_value, path_cloud_mask, 
+                                                                       cloud_prob, overwrite_cloud=0,
+                                                                       average_over=2, dilation_size=3)      
+        
     elif sensor == 'L7' or sensor == 'L8':
+        # to be changed!!!
         path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(curr_aux_folder, path_cloud_mask,
                                                                            ref_img_path, sensor, valid_mask,
                                                                            Nprocesses=8, dilate_iterations=5)
     
+    
+    
+    no_data_percentage = np.sum(no_data_mask) / (data.sizes["y"] * data.sizes["x"])
+    cloud_perc_corr = cloud_cover_percentage / (1 - no_data_percentage)
+
+    # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
+    valid_mask = np.logical_not(no_data_mask)
+
+    if np.sum(no_data_mask) / len(valid_mask.flatten()) > 1 or cloud_perc_corr > 0.6:
+        print('TOO MANY INVALID PIXELS...')
+        return
+
+    bands = define_bands(curr_image, valid_mask, sensor)
+    
+    spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NDVI.tif", data)
+    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NDSI.tif", data)
+    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'band_diff', curr_image, no_data_mask, 
+                          curr_aux_folder,sensor, f"{scene_id}_diffBNIR.tif", data)
+    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'shad_idx', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_shad_idx.tif", data)
+    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'normDiff', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NormDiffBNIR.tif", data)
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'normDiff', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NormDiffGreenRed.tif", data)
+    spectral_idx_computer(bands['NIR'], bands['RED'], 'EVI', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_EVI.tif", data)
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'NDSIplus', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NDSIplus.tif",
+                          data, B3=bands['NIR'], B4=bands['SWIR'])
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'idx6', curr_image, no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_idx6.tif", data, B3=bands['NIR'])
+    spectral_idx_computer(bands['RED'], bands['SWIR'], 'bandRatioGlaciers', curr_image, no_data_mask,
+                          curr_aux_folder, sensor, f"{scene_id}_bandRatioGlaciers.tif", data)
+    
+    
+    # Calculate solar incidence angle
+    solar_incidence_angle, sun_altitude, sun_azimuth = solar_incidence_angle_calculator(
+        data,
+        scene_id,
+        date_time,
+        slopePath,
+        aspectPath,
+        curr_aux_folder,
+        date
+    )
+    
+    # shadow mask
+    shadow_mask_path = generate_shadow_mask(curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
+    
+    # adiecency map
+    adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands)
     
     
     
@@ -230,55 +290,17 @@ def run_snowflakes(config, data, scene_id):
 
 
 
-    #     no_data_percentage = np.sum(no_data_mask) / (
-    #                 curr_image_info['X_Y_raster_size'][0] * curr_image_info['X_Y_raster_size'][1])
-    #     cloud_perc_corr = cloud_cover_percentage / (1 - no_data_percentage)
 
 
-    #     # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
-    #     valid_mask = np.logical_not(no_data_mask)
 
-    #     if np.sum(no_data_mask) / len(valid_mask.flatten()) > 1 or cloud_perc_corr > 0.6:
-    #         print('TOO MANY INVALID PIXELS...')
-    #         continue
 
-    #     bands = define_bands(curr_image, valid_mask, sensor)
 
-    #     spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', curr_image, no_data_mask, curr_aux_folder, sensor,
-    #                           f"{sensor}_{date}_NDVI.tif", curr_band_stack_path)
-    #     spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_NDSI.tif", curr_band_stack_path)
-    #     spectral_idx_computer(bands['BLUE'], bands['NIR'], 'band_diff', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_diffBNIR.tif", curr_band_stack_path)
-    #     spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'shad_idx', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_shad_idx.tif", curr_band_stack_path)
 
-    #     spectral_idx_computer(bands['BLUE'], bands['NIR'], 'normDiff', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_NormDiffBNIR.tif", curr_band_stack_path)
-    #     spectral_idx_computer(bands['GREEN'], bands['RED'], 'normDiff', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_NormDiffGreenRed.tif", curr_band_stack_path)
 
-    #     spectral_idx_computer(bands['NIR'], bands['RED'], 'EVI', curr_image, no_data_mask, curr_aux_folder, sensor,
-    #                           f"{sensor}_{date}_EVI.tif", curr_band_stack_path)
-    #     spectral_idx_computer(bands['GREEN'], bands['RED'], 'NDSIplus', curr_image, no_data_mask, curr_aux_folder,
-    #                           sensor, f"{sensor}_{date}_NDSIplus.tif", curr_band_stack_path, B3=bands['NIR'],
-    #                           B4=bands['SWIR'])
-    #     spectral_idx_computer(bands['GREEN'], bands['RED'], 'idx6', curr_image, no_data_mask, curr_aux_folder, sensor,
-    #                           f"{sensor}_{date}_idx6.tif", curr_band_stack_path, B3=bands['NIR'])
 
-    #     spectral_idx_computer(bands['RED'], bands['SWIR'], 'bandRatioGlaciers', curr_image, no_data_mask,
-    #                           curr_aux_folder, sensor, f"{sensor}_{date}_bandRatioGlaciers.tif", curr_band_stack_path)
 
-    #     # Calculate solar incidence angle
-    #     solar_incidence_angle, sun_altitude, sun_azimuth = solar_incidence_angle_calculator(curr_image_info, date_time,
-    #                                                                                         slopePath, aspectPath,
-    #                                                                                         curr_aux_folder, date)
 
-    #     # shadow mask
-    #     shadow_mask_path = generate_shadow_mask(curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
 
-    #     ## adiecency map
-    #     adiacency_indexes(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands)
 
     #     # Step 10a: Collect training data and train the SVM model if no pretrained model exists
     #     predefined_model = input_data.get('Predefined_model', 'no')
@@ -432,4 +454,10 @@ def run_snowflakes(config, data, scene_id):
 if __name__ == "__main__":
     print('ciao')
 
+# aggiungere buffer per laghi
 
+# aggiornare doc string
+
+# si vede bordo tra le tile
+
+# soglie shadow - non shadow alpi e ande

@@ -7,6 +7,7 @@ snowmap_cdse
 
 
 micromamba install -c conda-forge \
+spyder \
 gdal \
 rasterio \
 pyproj \
@@ -21,4 +22,7 @@ elevation \
 pysolar \
 timezonefinder \
 scikit-image \
-xgboost
+xgboost \
+libgdal-jp2openjpeg \
+rioxarray \
+s2cloudless
