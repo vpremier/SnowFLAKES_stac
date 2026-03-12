@@ -778,7 +778,7 @@ def generate_shadow_mask(curr_aux_folder, auxiliary_folder_path, no_data_mask, N
     })
 
     # Save shadow mask to GeoTIFF
-    shadow_mask_path = os.path.join(curr_aux_folder, '{scene_id}_shadow_mask.tif')
+    shadow_mask_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_mask.tif')
     with rasterio.open(shadow_mask_path, "w", **meta) as dst:
         dst.write(shadow_mask, 1)
 
@@ -849,7 +849,7 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
     index_of_distance_uint8[np.logical_or(~altitude_mask, ~curr_scene_valid)] = no_data_value
 
     # Save the result as a GeoTIFF
-    output_path = os.path.join(curr_aux_folder, "{scene_id}_index_of_distance.tif")
+    output_path = os.path.join(curr_aux_folder, f"{scene_id}_index_of_distance.tif")
     transform = from_origin(curr_image_info['geotransform'][0], curr_image_info['geotransform'][3],
                             curr_image_info['geotransform'][1], -curr_image_info['geotransform'][5])
     with rasterio.open(

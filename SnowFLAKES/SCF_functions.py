@@ -7,6 +7,12 @@ Created on Tue Nov  5 16:31:29 2024
 """
 
 import numpy as np
+import os
+import geopandas as gpd
+import glob
+import rasterio
+import pandas as pd
+
 from .training_collection import *
 from .utilities import *
 from sklearn import preprocessing
@@ -21,39 +27,27 @@ from scipy.spatial import distance
 from rasterio.warp import transform_bounds
 
 
-def model_training(curr_acquisition, shapefile_path, SVM_folder_name, gamma=None, perform_pca=False):
+
+def model_training(scene_id, all_bands_image, data, shapefile_path, SCF_folder, gamma=None):
     gamma_range = np.logspace(-2, 2, 100)
-
-    if perform_pca:
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*PCA.tif'))[0]
-
-    else:
-
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*scf.vrt'))
-        if bands_path == []:
-            bands_path = [f for f in glob.glob(curr_acquisition + os.sep + "PRS*.tif") if 'PCA' not in f][0]
-        else:
-            bands_path = bands_path[0]
 
     # Load the shapefile
     shapefile = gpd.read_file(shapefile_path)
 
-    # Open the bands raster to align with the shapefile
-    with rasterio.open(bands_path) as src:
-        # Create a mask with the same dimensions as the raster, setting snow (1) and no-snow (2) points
-        mask_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 1]],
-                                  transform=src.transform,
-                                  invert=True,
-                                  out_shape=src.shape)
+    # Create a mask with the same dimensions as the raster, setting snow (1) and no-snow (2) points
+    mask_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 1]],
+                              transform=data.transform,
+                              invert=True,
+                              out_shape=(data.sizes["y"], data.sizes["x"]))
 
-        mask_no_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 2]],
-                                     transform=src.transform,
-                                     invert=True,
-                                     out_shape=src.shape)
+    mask_no_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 2]],
+                                 transform=data.transform,
+                                 invert=True,
+                                 out_shape=(data.sizes["y"], data.sizes["x"]))
 
     # Extract training values using the masks
-    snow_training = read_masked_values(bands_path, mask_snow)
-    no_snow_training = read_masked_values(bands_path, mask_no_snow)
+    snow_training = read_masked_values(all_bands_image, mask_snow)
+    no_snow_training = read_masked_values(all_bands_image, mask_no_snow)
 
     training_array = np.concatenate((snow_training, no_snow_training), axis=0)
     class_array = np.concatenate((np.ones(snow_training.shape[0]), np.zeros(no_snow_training.shape[0])), axis=0)
@@ -86,37 +80,28 @@ def model_training(curr_acquisition, shapefile_path, SVM_folder_name, gamma=None
     svm_model = {'svmModel': svm, 'normalizer': normalizer, 'classes': class_array,
                  'trainings': training_array, 'SV': svm.support_vectors_}
 
-    scf_folder = os.path.join(curr_acquisition, SVM_folder_name)
-    if not os.path.exists(scf_folder):
-        os.makedirs(scf_folder)
 
-    svm_model_filename = os.path.join(scf_folder, 'svm_model.p')
+    svm_model_filename = os.path.join(SCF_folder, 'svm_model.p')
     pickle.dump(svm_model, open(svm_model_filename, "wb"))
 
     return svm_model_filename
+
 
 
 def hyp_disatance(svmModel, svmMatrix):
     return svmModel.decision_function(svmMatrix)
 
 
-def SCF_dist_SV(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_data_mask, svm_model_filename,
-                Nprocesses=8, overwrite=False, perform_pca=False):
+
+def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask, svm_model_filename,
+                Nprocesses=8, overwrite=False):
+    
     path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
     path_water_mask = glob.glob(os.path.join(auxiliary_folder_path, '*Water_Mask.tif'))[0]
     diff_B_NIR_path = glob.glob(os.path.join(curr_aux_folder, '*diffBNIR.tif'))[0]
     shadow_mask_path = glob.glob(os.path.join(curr_aux_folder, '*shadow_mask.tif'))[0]
     distance_index_path = glob.glob(os.path.join(curr_aux_folder, '*distance.tif'))[0]
 
-    if perform_pca:
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*PCA.tif'))[0]
-
-    else:
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*scf.vrt'))
-        if bands_path == []:
-            bands_path = [f for f in glob.glob(curr_acquisition + os.sep + "PRS*.tif") if 'PCA' not in f][0]
-        else:
-            bands_path = bands_path[0]
 
     scf_folder = os.path.dirname(svm_model_filename)
 
@@ -134,13 +119,11 @@ def SCF_dist_SV(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_dat
 
     with rasterio.open(diff_B_NIR_path) as src:
         diff_B_NIR = src.read(1)
-
-    with rasterio.open(bands_path) as src:
-        bands = src.read()
-        profile = src.profile
-
+        
     with rasterio.open(distance_index_path) as dst_src:
         dst_data = dst_src.read(1)  # Reading first band
+        profile = src.profile
+
 
     profile.update(dtype='uint8', count=1, compress='lzw', nodata=255, driver='GTiff')
 
@@ -151,7 +134,7 @@ def SCF_dist_SV(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_dat
     max_score_s = 1
 
     valid_mask = np.logical_not(no_data_mask)
-    FSC_SVM_map_path = os.path.join(scf_folder, os.path.basename(bands_path)[:-11] + '_SnowFLAKES.tif')
+    FSC_SVM_map_path = os.path.join(scf_folder, f'{scene_id}_SnowFLAKES.tif')
 
     # Check if the map file exists and overwrite if specified
     if os.path.exists(FSC_SVM_map_path) and not overwrite:
@@ -161,7 +144,7 @@ def SCF_dist_SV(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_dat
         print(f"Saving prediction to {FSC_SVM_map_path}.")
 
     print('Image classification...\n')
-    Image_array_to_classify = bands[:, valid_mask].transpose()
+    Image_array_to_classify = all_bands_image[:, valid_mask].transpose()
     normalizer = svm_model['normalizer']
 
     Samples_to_classify = normalizer.transform(Image_array_to_classify)
@@ -210,26 +193,17 @@ def SCF_dist_SV(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_dat
     return FSC_SVM_map_path
 
 
+
 def glaciers_svm(svmModel, svmMatrix):
     return svmModel.predict(svmMatrix)
 
 
-def check_scf_results(FSC_SVM_map_path, shapefile_path, curr_aux_folder, curr_acquisition, k=5, n_closest=5,
-                      perform_pca=False):
+
+def check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, shapefile_path, curr_aux_folder, k=5, n_closest=5):
     # Define paths for NDSI and bands data
     NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-    distance_index_path = glob.glob(os.path.join(curr_aux_folder, '*distance.tif'))[0]
 
-    if perform_pca:
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*PCA.tif'))[0]
 
-    else:
-
-        bands_path = glob.glob(os.path.join(curr_acquisition, '*scf.vrt'))
-        if bands_path == []:
-            bands_path = [f for f in glob.glob(curr_acquisition + os.sep + "PRS*.tif") if 'PCA' not in f][0]
-        else:
-            bands_path = bands_path[0]
 
     # Load the SCF map and NDSI map
     with rasterio.open(FSC_SVM_map_path) as scf_src:
@@ -248,12 +222,10 @@ def check_scf_results(FSC_SVM_map_path, shapefile_path, curr_aux_folder, curr_ac
 
     print(np.sum(valid_mask))
 
-    # Load spectral bands data for these valid points
-    with rasterio.open(bands_path) as bands_src:
-        bands_data = bands_src.read()  # 3D array (bands, height, width)
 
     # Use the representative pixel selection function to get new training samples
-    representative_pixels_mask = get_representative_pixels(bands_data.reshape(bands_data.shape[0], -1).T,
+    transposed_bands = all_bands_image.reshape(all_bands_image.shape[0], -1).T
+    representative_pixels_mask = get_representative_pixels(transposed_bands,
                                                            valid_mask.flatten(),
                                                            k=min(k, np.sum(valid_mask.flatten())),
                                                            n_closest=n_closest).reshape(scf_data.shape)
@@ -277,6 +249,19 @@ def check_scf_results(FSC_SVM_map_path, shapefile_path, curr_aux_folder, curr_ac
     updated_shapefile.to_file(shapefile_path)
 
     return shapefile_path
+
+
+
+
+# to be updated
+
+
+
+
+
+
+
+
 
 
 def glaciers_classifier(FSC_SVM_map_path, auxiliary_folder_path, glaciers_model_svm, curr_acquisition, Nprocesses=8,
