@@ -17,7 +17,6 @@ from SnowFLAKES.auxiliary_folder_population import *
 from SnowFLAKES.utilities import *
 from SnowFLAKES.training_collection import *
 from SnowFLAKES.SCF_functions import *
-from SnowFLAKES.xgboost_functions import *
 from SnowFLAKES.shadow_mask_gen import *
 
 
@@ -145,12 +144,7 @@ def run_snowflakes(config, data, scene_id):
     
 
 
-    # load bands -> all_bands
-    curr_bands = select_band_names(sensor, 'scfT') 
-    curr_image = np.squeeze(data.sel(band=curr_bands).values)
-    curr_image[curr_image == no_data_value] = np.nan
-    
-    
+    # load bands
     all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
     all_bands_image = np.squeeze(data.sel(band=all_bands).values)
     all_bands_image[all_bands_image == no_data_value] = np.nan
@@ -207,28 +201,28 @@ def run_snowflakes(config, data, scene_id):
         print('TOO MANY INVALID PIXELS...')
         return
 
-    bands = define_bands(curr_image, valid_mask, sensor)
+    bands = define_bands(data, valid_mask, sensor)
     
-    spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDVI.tif", data)
-    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDSI.tif", data)
-    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'band_diff', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'band_diff', no_data_mask, 
                           curr_aux_folder,sensor, f"{scene_id}_diffBNIR.tif", data)
-    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'shad_idx', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'shad_idx', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_shad_idx.tif", data)
-    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'normDiff', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['BLUE'], bands['NIR'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NormDiffBNIR.tif", data)
-    spectral_idx_computer(bands['GREEN'], bands['RED'], 'normDiff', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NormDiffGreenRed.tif", data)
-    spectral_idx_computer(bands['NIR'], bands['RED'], 'EVI', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['NIR'], bands['RED'], 'EVI', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_EVI.tif", data)
-    spectral_idx_computer(bands['GREEN'], bands['RED'], 'NDSIplus', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'NDSIplus', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDSIplus.tif",
                           data, B3=bands['NIR'], B4=bands['SWIR'])
-    spectral_idx_computer(bands['GREEN'], bands['RED'], 'idx6', curr_image, no_data_mask, 
+    spectral_idx_computer(bands['GREEN'], bands['RED'], 'idx6', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_idx6.tif", data, B3=bands['NIR'])
-    spectral_idx_computer(bands['RED'], bands['SWIR'], 'bandRatioGlaciers', curr_image, no_data_mask,
+    spectral_idx_computer(bands['RED'], bands['SWIR'], 'bandRatioGlaciers', no_data_mask,
                           curr_aux_folder, sensor, f"{scene_id}_bandRatioGlaciers.tif", data)
     
     
@@ -244,7 +238,7 @@ def run_snowflakes(config, data, scene_id):
     )
     
     # shadow mask
-    shadow_mask_path = generate_shadow_mask(curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
+    shadow_mask_path = generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
     
     # adiecency map
     adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands)
@@ -287,8 +281,7 @@ def run_snowflakes(config, data, scene_id):
 
             try:
                 shapefile_path = collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path,
-                                                   SVM_folder_name, training_collection_no_data_mask, bands,
-                                                   shadow_mask_path)
+                                                   SVM_folder_name, training_collection_no_data_mask, bands)
             except:
                 print("Error for training collection")
                 return
@@ -313,7 +306,7 @@ def run_snowflakes(config, data, scene_id):
         # Check if the shapefile has both values (assuming they are in a column named 'class')
         unique_values = set(gdf['value'].unique())
         print(unique_values)
-        thematic_map_path = thematic_map_classifier(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path,
+        thematic_map_path = thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
                                                     no_data_mask, SVM_folder_name, classify_glaciers,
                                                     date_time, dt_start_glaciers_month, dt_end_glaciers_month)
     
@@ -353,14 +346,11 @@ def run_snowflakes(config, data, scene_id):
         while True:
             print('TRAINING')
             svm_model_filename = model_training(scene_id, all_bands_image, data, 
-                                                shapefile_path, SVM_folder_name, gamma=None)
-            # xgb_model_filename = model_training_xgb(curr_acquisition, shapefile_path, XGB_folder_name, perform_pca=False, grid_search=True)
+                                                shapefile_path, gamma=None)
 
             # Run SCF prediction
             FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
                                            svm_model_filename, Nprocesses=1, overwrite=True)
-            # FSC_XGB_map_path = snow_class_XGB(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_data_mask, xgb_model_filename,
-            #                  Nprocesses=8, overwrite=true, perform_pca=False)
 
             # Result check
             shapefile_path = check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, 
@@ -404,20 +394,12 @@ def run_snowflakes(config, data, scene_id):
     # scenes_not_to_cloud_mask = []
     
     
-    # check the log files
-    # remove PCA
-    # check folder structure
-    # add time duration
+
+    
 
   
 
 if __name__ == "__main__":
-    print('ciao')
+    print('Running SnowFLAKES')
 
-# aggiungere buffer per laghi
 
-# aggiornare doc string
-
-# si vede bordo tra le tile
-
-# soglie shadow - non shadow alpi e ande

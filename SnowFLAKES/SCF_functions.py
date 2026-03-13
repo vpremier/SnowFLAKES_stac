@@ -12,27 +12,26 @@ import geopandas as gpd
 import glob
 import rasterio
 import pandas as pd
-
-from .training_collection import *
-from .utilities import *
-from sklearn import preprocessing
-from sklearn.svm import SVC, LinearSVC
-from sklearn.metrics.pairwise import rbf_kernel, pairwise_kernels, linear_kernel, cosine_similarity
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 import pickle
 from joblib import Parallel, delayed
 from rasterio.features import geometry_mask
-from scipy.spatial import distance
-from rasterio.warp import transform_bounds
+
+from sklearn import preprocessing
+from sklearn.svm import SVC
+from sklearn.metrics.pairwise import rbf_kernel
+
+from .training_collection import *
+from .utilities import *
 
 
 
-def model_training(scene_id, all_bands_image, data, shapefile_path, SCF_folder, gamma=None):
+
+def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
     gamma_range = np.logspace(-2, 2, 100)
 
     # Load the shapefile
     shapefile = gpd.read_file(shapefile_path)
+    SCF_folder = os.path.dirname(shapefile_path)
 
     # Create a mask with the same dimensions as the raster, setting snow (1) and no-snow (2) points
     mask_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 1]],
@@ -120,8 +119,8 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     with rasterio.open(diff_B_NIR_path) as src:
         diff_B_NIR = src.read(1)
         
-    with rasterio.open(distance_index_path) as dst_src:
-        dst_data = dst_src.read(1)  # Reading first band
+    with rasterio.open(distance_index_path) as src:
+        dist_idx = src.read(1)  # Reading first band
         profile = src.profile
 
 
@@ -181,7 +180,7 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     SCF_map[cloud_mask == 2] = 205
     SCF_map[water_mask == 1] = 210
     SCF_map[water_mask == 255] = 210
-    SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, dst_data == 255))] = 0
+    SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, dist_idx == 255))] = 0
 
     valid_mask[np.logical_not(valid_mask)] = 255
 
@@ -252,16 +251,39 @@ def check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, shapefile_pat
 
 
 
+def mask_raster_with_glacier(FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path):
+    # Define output path
+    output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
+    glaciers_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier_mask.tif'))[0]
 
-# to be updated
+    # Open the raster
+    with rasterio.open(FSC_SVM_map_path) as src:
+        meta = src.meta.copy()
+        fsc_data = src.read(1)  # Read first band
+
+    # Open the raster
+    with rasterio.open(thematic_map_path) as src:
+        thematic_map = src.read(1)
+
+        # Open the raster
+    with rasterio.open(glaciers_mask_path) as src:
+        glacier_map = src.read(1)
+
+        # Apply mask: Set FSC values to NoData where glacier_mask is not 255
+    fsc_data[glacier_map == 1] = thematic_map[glacier_map == 1]
+
+    # Save the modified raster
+    with rasterio.open(output_path, 'w', **meta) as dst:
+        dst.write(fsc_data, 1)
+
+    print(f"Modified raster saved at: {output_path}")
+    return output_path
 
 
 
 
 
-
-
-
+# to be updated : not used in the current version!!
 
 
 def glaciers_classifier(FSC_SVM_map_path, auxiliary_folder_path, glaciers_model_svm, curr_acquisition, Nprocesses=8,
@@ -326,33 +348,7 @@ def glaciers_classifier(FSC_SVM_map_path, auxiliary_folder_path, glaciers_model_
     return FSC_glaciers_SVM_map_path
 
 
-def mask_raster_with_glacier(FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path):
-    # Define output path
-    output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
-    glaciers_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier_mask.tif'))[0]
 
-    # Open the raster
-    with rasterio.open(FSC_SVM_map_path) as src:
-        meta = src.meta.copy()
-        fsc_data = src.read(1)  # Read first band
-
-    # Open the raster
-    with rasterio.open(thematic_map_path) as src:
-        thematic_map = src.read(1)
-
-        # Open the raster
-    with rasterio.open(glaciers_mask_path) as src:
-        glacier_map = src.read(1)
-
-        # Apply mask: Set FSC values to NoData where glacier_mask is not 255
-    fsc_data[glacier_map == 1] = thematic_map[glacier_map == 1]
-
-    # Save the modified raster
-    with rasterio.open(output_path, 'w', **meta) as dst:
-        dst.write(fsc_data, 1)
-
-    print(f"Modified raster saved at: {output_path}")
-    return output_path
 
 
 

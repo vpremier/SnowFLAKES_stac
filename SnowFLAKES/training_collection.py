@@ -124,8 +124,6 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
     percentage_per_angles_list = []
     for curr_range, sample_count in range_samples.items():
-        print(curr_range)
-        print(sample_count)
 
         # Initialize as empty arrays
         representative_pixels_mask_snow = np.array([])
@@ -242,7 +240,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
 
 
-def thematic_map_classifier(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path,
+def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
                             no_data_mask, SVM_folder_name, classify_glaciers,
                             date_time, dt_start_glaciers_month, dt_end_glaciers_month):
     """
@@ -291,7 +289,7 @@ def thematic_map_classifier(scene_id, all_bands_image, curr_aux_folder, auxiliar
     valid_mask = np.logical_not(no_data_mask)
 
     # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(all_bands_image, valid_mask, sensor)
+    bands = define_bands(data, valid_mask, sensor)
     # Expected band ordering: blue, red, nir, swir
     blue = bands['BLUE']
     red = bands['RED']
@@ -956,104 +954,6 @@ def glacier_classifier(curr_acquisition, curr_aux_folder, auxiliary_folder_path,
 
     return valid_class_map
 
-
-# def thematic_map_classifier(curr_acquisition, curr_aux_folder, auxiliary_folder_path, no_data_mask, SVM_folder_name):
-#     """
-#     Generate a thematic map using precomputed indices and bands.
-#     The output thematic map uses:
-#       100 = snow
-#       215 = ice
-#         0 = snow free
-#       255 = invalid/no-data
-
-#     Parameters:
-#       curr_acquisition: str, directory containing the current acquisition
-#       curr_aux_folder: str, directory with auxiliary files (e.g., cloud mask, indices)
-#       auxiliary_folder_path: str, directory for additional auxiliary files (e.g., water mask)
-#       no_data_mask: numpy array, boolean mask where True indicates no-data pixels
-#       SVM_folder_name: str, name of the folder to store intermediate outputs if needed
-#     """
-
-#     # Create folder to store outputs if it doesn't exist
-#     thematic_folder = os.path.join(curr_acquisition, SVM_folder_name)
-#     if not os.path.exists(thematic_folder):
-#         os.makedirs(thematic_folder)
-#     sensor = get_sensor(os.path.basename(curr_acquisition))
-#     # Define paths for auxiliary files
-#     path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-#     path_water_mask = glob.glob(os.path.join(auxiliary_folder_path, '*Water_Mask.tif'))[0]
-#     NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-#     NDVI_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
-#     glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
-
-#     # Find the main bands file. Look for a VRT first; if not found, fallback to a TIF.
-#     bands_path_list = glob.glob(os.path.join(curr_acquisition, '*scf.vrt'))
-#     if bands_path_list == []:
-#         bands_path = [f for f in glob.glob(os.path.join(curr_acquisition, "PRS*.tif")) if 'PCA' not in f][0]
-#     else:
-#         bands_path = bands_path_list[0]
-
-#     # Load the image bands using your open_image function.
-#     # Assume the returned bands array has shape (Nfeatures, Nrows, Ncols)
-#     bands = define_bands(open_image(bands_path)[0], valid_mask, sensor)
-#     # For this example, assume the ordering is:
-#     # blue = bands[0], red = bands[1], nir = bands[2], swir = bands[3]
-#     blue = bands['BLUE']
-#     red  = bands['RED']
-#     nir  = bands['NIR']
-#     swir = bands['SWIR']
-
-#     # Load indices
-#     ndsi  = open_image(NDSI_path)[0]
-#     ndvi  = open_image(NDVI_path)[0]
-
-#     # Load external masks for clouds and water
-#     cloud_mask = open_image(path_cloud_mask)[0]
-#     water_mask = open_image(path_water_mask)[0]
-#     glacier_mask = open_image(glacier_mask_path)[0]
-
-#     # Create a valid data mask from the no_data_mask (True means valid)
-#     valid_mask = np.logical_not(no_data_mask)
-
-#     # Compute red/SWIR ratio (adding a small constant to avoid division by zero)
-#     red_swir = red / (swir + 1e-10)
-
-#     # Set classification thresholds (you can fine-tune these values)
-#     ndsi_threshold = 0.4      # Only consider pixels with ndsi above this value
-#     red_swir_threshold = 0.9  # Differentiate snow (>= threshold) from ice (< threshold)
-
-#     # Build a candidate mask: pixels with sufficient NDSI are considered for snow/ice classification.
-#     candidate_mask = ndsi > ndsi_threshold
-
-
-#     snow_mask = candidate_mask & (red_swir < red_swir_threshold)
-#     ice_mask  = candidate_mask & (red_swir >= red_swir_threshold)
-
-#     # Initialize the thematic map with snow free (0)
-#     thematic_map = np.zeros_like(blue, dtype=np.uint8)
-#     thematic_map[snow_mask] = 100
-#     thematic_map[ice_mask]  = 215
-
-#     # Optionally, mark pixels that are invalid (no-data, clouds, or water) as 255
-#     invalid_mask = np.logical_or.reduce((np.logical_not(valid_mask),
-#                                            cloud_mask == 2,
-#                                            water_mask == 1))
-#     thematic_map[cloud_mask == 2] = 205
-#     thematic_map[water_mask == 1] = 210
-#     thematic_map[np.logical_and(glacier_mask == 0, thematic_map == 215)] = 100
-#     # Define output path
-
-#     output_path = os.path.join(curr_acquisition, SVM_folder_name, os.path.basename(curr_acquisition) + '_simple_class.tif')
-#     # Open the raster
-#     with rasterio.open(path_cloud_mask) as src:
-#         meta = src.meta.copy()
-
-#     # Save the modified raster
-#     with rasterio.open(output_path, 'w', **meta) as dst:
-#         dst.write(thematic_map, 1)
-
-
-#     return thematic_map
 
 
 

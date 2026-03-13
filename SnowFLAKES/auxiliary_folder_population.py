@@ -12,27 +12,24 @@ from osgeo import gdal, osr
 import geopandas as gpd
 import numpy as np
 import cv2
-from shapely.geometry import Point, Polygon
-from scipy.ndimage import median_filter
-import elevation
-import glob
-import pandas as pd
-from .utilities import *
 import rasterio
+from shapely.geometry import Polygon
+import glob
+from scipy.ndimage import distance_transform_edt
 from pyproj import Transformer
 from datetime import timezone
-from pysolar.solar import *
-from rasterio.crs import CRS
-from pyproj import Transformer
 from pathlib import Path
-from .shadow_mask_gen import *
-from scipy.ndimage import distance_transform_edt
-from skimage import exposure
+
+
 from rasterio.transform import from_origin
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject, Resampling
 from rasterio.merge import merge
 
+from .utilities import *
+from .shadow_mask_gen import *
+
+from pysolar.solar import *
 
 
 
@@ -532,7 +529,7 @@ def generate_no_data_mask(L_image, sensor, no_data_value=np.nan):
 
 
 
-def spectral_idx_computer(B1, B2, idx_name, curr_image, no_data_mask, curr_aux_folder, 
+def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder, 
                           sensor, output_filename, data, B3=None, B4=None):
     """
     Computes a spectral index and saves the result in the specified folder.
@@ -544,9 +541,6 @@ def spectral_idx_computer(B1, B2, idx_name, curr_image, no_data_mask, curr_aux_f
 
     idx_name : str
         Name of the spectral index (e.g., 'NDSI', 'NDVI', 'shad_idx').
-
-    curr_image : numpy.ndarray
-        Original 3D image data.
 
     no_data_mask : numpy.ndarray
         Mask indicating no-data values.
@@ -701,7 +695,7 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
 
 
 
-def generate_shadow_mask(curr_aux_folder, auxiliary_folder_path, no_data_mask, NIR):
+def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, NIR):
     """
     Generate a shadow mask dynamically without setting thresholds and save as GeoTIFF.
 

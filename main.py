@@ -16,7 +16,7 @@ from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 import shutil
 import time
 
-from utils import get_shape_extent
+from utils import *
 import geopandas as gpd
 from shapely.geometry import box
 from dotenv import load_dotenv
@@ -76,38 +76,21 @@ def run_workflow(date_start, date_end, shp):
         data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
                                                 resolution=resolution, 
                                                  extent_target=extent_target, 
-                                                 epsg_target=epsg_target)
+                                                 epsg_target=epsg_target,
+                                                 save = False)
+        
+        # save RGB for visualization
+        save_false_color(os.path.join(outdir, scene_id), ["B11", "B08", "B04"], data)
+        
         time.sleep(2)
         
-        # run_snowflakes(config, data, scene_id)
-        dd
+        run_snowflakes(config, data, scene_id)
+        
 
 
 
         
 
-    
-    
-    # # Run SnowFLAKES ----------------------------------------------------------
-    # config_sf_path = "./SnowFLAKES/input_json/fram3s.json"
-    
-    # # Read
-    # with open(config_sf_path, "r") as f:
-    #     config_sf = json.load(f)
-    
-    # config_sf['resolution'] = config_prep['resampling_parameters']['resolution']
-    # config_sf['satellite'] = config_prep['satellite']
-    # config_sf['Start Date'] = config_download["date_start"]
-    # config_sf['End Date'] = config_download["date_end"]
-    # config_sf['working_folder'] = wd
-    
-    # # Write back
-    # with open(config_sf_path, "w") as f:
-    #     json.dump(config_sf, f, indent=2)
-    
-    # print("Config updated")
-    
-    # subprocess.run("./run_SnowFLAKES.sh", shell=True)
     
     
     # # Save PNGs to visualize the results of SnowFLAKES ------------------------
@@ -174,8 +157,8 @@ if __name__ == "__main__":
     
     
 
-    start = pd.Timestamp("2017-10-01")
-    end = pd.Timestamp("2017-10-15")
+    start = pd.Timestamp("2017-10-03")
+    end = pd.Timestamp("2017-10-04")
     
     resolution = 20
     
@@ -211,7 +194,6 @@ if __name__ == "__main__":
     
 
 
-# provare a salvare come zarr
 
 # salvare anche i nuvolosi?
     
@@ -227,3 +209,18 @@ if __name__ == "__main__":
 
 # provare ASTER???
 
+
+### to do
+
+# check the log files snowflakes
+# add time duration
+# write documentatio 
+    
+    # aggiungere buffer per laghi
+
+    # aggiornare doc string
+
+    # si vede bordo tra le tile
+
+    # soglie shadow - non shadow alpi e ande
+    

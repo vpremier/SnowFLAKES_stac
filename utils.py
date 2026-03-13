@@ -9,8 +9,40 @@ Created on Fri Jul  4 16:22:44 2025
 import geopandas as gpd
 import numpy as np
 from pyproj import CRS
+import glob
+import os
+import rasterio
 
 
+def save_false_color(wd, bands, ds):
+
+    # Extract bands from xarray dataset
+    b1 = ds.sel(band = bands[0]).values
+    b2 = ds.sel(band = bands[1]).values
+    b3 = ds.sel(band = bands[2]).values
+
+    output_path = os.path.join(wd, "false_color_composite.tif")
+
+    # Stack as RGB
+    rgb = np.stack([b1, b2, b3])
+
+    # Get raster metadata from dataset
+    height, width = b1.shape
+
+    meta = {
+        "driver": "GTiff",
+        "height": height,
+        "width": width,
+        "count": 3,
+        "dtype": rgb.dtype,
+        "crs": ds.rio.crs,
+        "transform": ds.rio.transform()
+    }
+
+    with rasterio.open(output_path, "w", **meta) as dst:
+        dst.write(rgb)
+            
+            
 
 def get_shape_extent(shape_name, epsg=3035, outres=500, merge=True, row=None):
     # Read shapefile

@@ -11,9 +11,6 @@ import netCDF4
 import numpy as np
 import glob
 import rasterio
-from sklearn.metrics.pairwise import rbf_kernel, pairwise_kernels, linear_kernel, cosine_similarity
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 from rasterio.warp import transform_bounds
 import time
 
@@ -201,7 +198,7 @@ def get_sensor(acquisition_name):
         raise ValueError(f"Invalid acquisition name: {acquisition_name}")
 
 
-def define_bands(curr_image, valid_mask, sensor):
+def define_bands(data, valid_mask, sensor):
     """
     Extracts significant bands and generates stretched versions for a given sensor.
 
@@ -227,7 +224,7 @@ def define_bands(curr_image, valid_mask, sensor):
         'L5': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
         'L7': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
         'L8': {'GREEN': 2, 'SWIR': 5, 'NIR': 4, 'RED': 3, 'BLUE': 1},
-        'S2': {'GREEN': 1, 'SWIR': 8, 'NIR': 7, 'RED': 2, 'BLUE': 0},
+        'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B08', 'RED': 'B04', 'BLUE': 'B02'},
         'PRISMA': {'GREEN': 19, 'SWIR': 122, 'NIR': 46, 'RED': 36, 'BLUE': 9}
     }
 
@@ -239,10 +236,7 @@ def define_bands(curr_image, valid_mask, sensor):
     indices = band_mapping[sensor]
 
     # Extract bands using the indices
-    bands = {name: curr_image[idx, :, :] for name, idx in indices.items()}
-
-    # Perform Min-Max scaling on valid pixels
-    valid_bands = curr_image[:, valid_mask]
+    bands = {name: np.squeeze(data.sel(band=idx).values) for name, idx in indices.items()}
 
     return bands
 

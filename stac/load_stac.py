@@ -319,14 +319,11 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     logging.info(f"Processing {image_id}")                
     print("Processing %s " %image_id)
     
-    
-    sensor = image_id.split('_')[0]
-    
+        
     # create folder
     if save:
-        os.makedirs(os.path.join(outdir, sensor), exist_ok=True)
-        os.makedirs(os.path.join(outdir, sensor, f"{merged_image_id}"), 
-                    exist_ok=True)
+        os.makedirs(outdir, exist_ok=True)
+        os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
 
     try:
         data = stackstac.stack(
@@ -382,7 +379,7 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     if save:
         for band_name in data.band.values:
         
-            out_path = os.path.join(outdir, sensor, f"{merged_image_id}", 
+            out_path = os.path.join(outdir, f"{merged_image_id}", 
                                     f"{merged_image_id}_{band_name}_{suffix}.tif")
             
             if os.path.exists(out_path) and not ow:

@@ -10,7 +10,6 @@ import numpy as np
 from numpy import sin, cos, tan, arcsin
 from pyproj import Transformer
 from timezonefinder import TimezoneFinder
-from datetime import datetime
 import pytz
 from datetime import timezone
 import sys
