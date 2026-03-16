@@ -36,8 +36,8 @@ def create_empty_files(working_folder):
         The folder where the files will be created.
     """
     # Define file paths
-    scenes_to_skip_path = os.path.join(working_folder, '00_scenes_to_skip.txt')
-    skip_cloud_masks_path = os.path.join(working_folder, '00_skip_cloud_masks.txt')
+    scenes_to_skip_path = os.path.join(working_folder, '00_scenes_to_skip.log')
+    skip_cloud_masks_path = os.path.join(working_folder, '00_skip_cloud_masks.log')
 
     # Create the empty text files only if they don't already exist
     if not os.path.exists(scenes_to_skip_path):
@@ -135,11 +135,11 @@ def data_filter(start_date, end_date, working_folder, sensor, scenes_to_skip):
 
 
 def scenes_skip(working_folder):
-    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_scenes_to_skip.txt'))[0]
+    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_scenes_to_skip.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
         content = file.read().strip()
         if content:
-            date_list = content.split(',')
+            date_list = content.split('\n')
         else:
             date_list = []  # Empty file case
 
@@ -147,11 +147,11 @@ def scenes_skip(working_folder):
 
 
 def cloud_mask_to_skip(working_folder):
-    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_skip_cloud_masks.txt'))[0]
+    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_skip_cloud_masks.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
         content = file.read().strip()
         if content:
-            date_list = content.split(',')
+            date_list = content.split('\n')
         else:
             date_list = []  # Empty file case
 

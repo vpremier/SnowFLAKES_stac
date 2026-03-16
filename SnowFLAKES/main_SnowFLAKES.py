@@ -7,9 +7,11 @@ Created on Mon Sep 16 14:59:20 2024
 """
 import os
 import numpy as np
+import shutil
 import glob
-from datetime import datetime
+from datetime import datetime as dt
 import time
+import geopandas as gpd
 from scipy.ndimage import binary_dilation
 
 
@@ -49,16 +51,17 @@ def run_snowflakes(config, data, scene_id):
     XGB_folder_name = SVM_folder_name + '_XGB'
     
     
-    # log files
+    # log files: create log files
     create_empty_files(working_folder)
 
     scenes_to_skip = scenes_skip(working_folder)
     scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
     
-    # Ensure the directory exists
-    skipped_scenes_file = os.path.join(working_folder, "skipped_scenes.log")
-    if not os.path.exists(skipped_scenes_file):
-        open(skipped_scenes_file, "w").close()
+    if scene_id in scenes_to_skip or scene_id in scenes_to_skip_clouds:
+        print(f"{scene_id} is in the lists to skip!")
+        return
+    
+
 
     
     # No data value
@@ -94,8 +97,8 @@ def run_snowflakes(config, data, scene_id):
         start_glaciers_month = int(config['start_glaciers_month'])
         end_glaciers_month = int(config['end_glaciers_month'])
 
-        dt_start_glaciers_month = datetime(1900, start_glaciers_month, 1)
-        dt_end_glaciers_month = datetime(1900, end_glaciers_month, 1)
+        dt_start_glaciers_month = dt(1900, start_glaciers_month, 1)
+        dt_end_glaciers_month = dt(1900, end_glaciers_month, 1)
 
         print(f"Glacier mask saved at {glaciers_mask_path}")
     else:
@@ -199,6 +202,13 @@ def run_snowflakes(config, data, scene_id):
 
     if np.sum(no_data_mask) / len(valid_mask.flatten()) > 1 or cloud_perc_corr > 0.6:
         print('TOO MANY INVALID PIXELS...')
+        
+        # Save the scene in the log file
+        with open(cloud_scenes_file, "a") as f:
+            f.write(f"{scene_id}\n")
+        
+        # delete folder!!
+        shutil.rmtree(scene_folder)
         return
 
     bands = define_bands(data, valid_mask, sensor)
@@ -332,7 +342,7 @@ def run_snowflakes(config, data, scene_id):
 
             # Save the scene in the log file
             with open(skipped_scenes_file, "a") as f:
-                f.write(f"{scene_id} - missing class 1 or 2\n")
+                f.write(f"{scene_id}\n")
 
             return  # Skip to the next scene
         
@@ -389,9 +399,6 @@ def run_snowflakes(config, data, scene_id):
                                        svm_model_filename, Nprocesses=1, overwrite=True)
 
 
-
-    # Initialize an empty list to track scenes without cloud masks
-    # scenes_not_to_cloud_mask = []
     
     
 

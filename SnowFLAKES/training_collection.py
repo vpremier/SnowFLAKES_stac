@@ -8,25 +8,20 @@ Created on Fri Oct 25 12:07:46 2024
 import numpy as np
 import os
 from pathlib import Path
-
-from .utilities import *
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
-from scipy.ndimage import binary_erosion
-import cv2
 from sklearn.cluster import KMeans
 from scipy.spatial import distance
 import rasterio
-import pandas as pd
 import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
 from scipy.spatial.distance import cdist
 from sklearn.metrics import silhouette_score
-from scipy.ndimage import distance_transform_edt
-from skimage import exposure
-from rasterio.transform import from_origin
 from skimage.filters import threshold_otsu
+from sklearn.preprocessing import StandardScaler
+
+from .utilities import *
+
+
 
 
 def read_masked_values(data_source, mask, bands=None):
@@ -716,7 +711,7 @@ def collect_trainings2(curr_acquisition, curr_aux_folder, auxiliary_folder_path,
 
 
 
-def rbf_kernel(X, gamma):
+def kernel_rbf(X, gamma):
     """
     Computes the RBF (Gaussian) kernel matrix for the dataset X.
 

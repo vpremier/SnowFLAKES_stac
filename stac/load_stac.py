@@ -5,28 +5,26 @@ Created on Fri Feb 27 16:03:56 2026
 
 @author: vpremier
 """
+
 from dotenv import load_dotenv
 import os
-
+import numpy as np
+from pyproj import CRS
+import stackstac
+import time
+import re
+import logging
 import rasterio as rio
 import pystac_client
 from shapely.geometry import box
 from shapely.geometry import mapping
 from rasterio.enums import Resampling
 
-import stackstac
-import geopandas as gpd
-
-import numpy as np
-from pyproj import CRS
 # import odc.stac
 
-import time
 
-import logging
 
 from stac.utils_stac import *
-import re
 
 
 # clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01

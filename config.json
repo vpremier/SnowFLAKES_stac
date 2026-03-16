@@ -1,9 +1,9 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/Sentinel2",
   "satellite": "Sentinel-2",
-  "date_start": "2017-10-03",
-  "date_end": "2017-10-04",
+  "date_start": "2016-04-01",
+  "date_end": "2016-04-16",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,

@@ -10,18 +10,15 @@ import subprocess
 import json
 import os
 import pandas as pd
-import glob
 from stac import load_stac
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
-import shutil
 import time
 
-from utils import *
-import geopandas as gpd
-from shapely.geometry import box
 from dotenv import load_dotenv
 load_dotenv()
-from datetime import datetime
+
+from utils import *
+
 
 
 
@@ -54,6 +51,8 @@ def run_workflow(date_start, date_end, shp):
     outdir = config["output_directory"]
     data_df = pd.read_csv(os.path.join(outdir, 'query_sentinel2.csv'))
     
+    if data_df.empty:
+        return
 
     
     s2_files = [f.split('.')[0] for f in data_df['Name'].to_list()]
@@ -79,6 +78,7 @@ def run_workflow(date_start, date_end, shp):
                                                  epsg_target=epsg_target,
                                                  save = False)
         
+        os.makedirs(os.path.join(outdir,scene_id), exist_ok=True)
         # save RGB for visualization
         save_false_color(os.path.join(outdir, scene_id), ["B11", "B08", "B04"], data)
         
@@ -157,8 +157,8 @@ if __name__ == "__main__":
     
     
 
-    start = pd.Timestamp("2017-10-03")
-    end = pd.Timestamp("2017-10-04")
+    start = pd.Timestamp("2016-04-01")
+    end = pd.Timestamp("2025-03-31")
     
     resolution = 20
     
@@ -194,15 +194,11 @@ if __name__ == "__main__":
     
 
 
-
-# salvare anche i nuvolosi?
+# write readme`
     
 # add layer uncertainty
 # check ghiacciai
 # guarda land cover
-
-
-# aggiungere download
 
 
 # fare lo stesso per Landsat
@@ -212,7 +208,6 @@ if __name__ == "__main__":
 
 ### to do
 
-# check the log files snowflakes
 # add time duration
 # write documentatio 
     

@@ -9,7 +9,6 @@ Created on Fri Jul  4 16:22:44 2025
 import geopandas as gpd
 import numpy as np
 from pyproj import CRS
-import glob
 import os
 import rasterio
 
@@ -17,9 +16,9 @@ import rasterio
 def save_false_color(wd, bands, ds):
 
     # Extract bands from xarray dataset
-    b1 = ds.sel(band = bands[0]).values
-    b2 = ds.sel(band = bands[1]).values
-    b3 = ds.sel(band = bands[2]).values
+    b1 = np.squeeze(ds.sel(band = bands[0]).values)
+    b2 = np.squeeze(ds.sel(band = bands[1]).values)
+    b3 = np.squeeze(ds.sel(band = bands[2]).values)
 
     output_path = os.path.join(wd, "false_color_composite.tif")
 
@@ -27,7 +26,7 @@ def save_false_color(wd, bands, ds):
     rgb = np.stack([b1, b2, b3])
 
     # Get raster metadata from dataset
-    height, width = b1.shape
+    height, width = ds.sizes['y'], ds.sizes['x']
 
     meta = {
         "driver": "GTiff",
@@ -35,8 +34,8 @@ def save_false_color(wd, bands, ds):
         "width": width,
         "count": 3,
         "dtype": rgb.dtype,
-        "crs": ds.rio.crs,
-        "transform": ds.rio.transform()
+        "crs": ds.crs,
+        "transform": ds.transform
     }
 
     with rasterio.open(output_path, "w", **meta) as dst:
