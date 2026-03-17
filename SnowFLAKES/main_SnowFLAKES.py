@@ -13,7 +13,7 @@ from datetime import datetime as dt
 import time
 import geopandas as gpd
 from scipy.ndimage import binary_dilation
-
+import rasterio
 
 from SnowFLAKES.auxiliary_folder_population import *
 from SnowFLAKES.utilities import *
@@ -52,7 +52,7 @@ def run_snowflakes(config, data, scene_id):
     
     
     # log files: create log files
-    create_empty_files(working_folder)
+    skipped_scenes_file, cloud_scenes_file = create_empty_files(working_folder)
 
     scenes_to_skip = scenes_skip(working_folder)
     scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
@@ -122,15 +122,17 @@ def run_snowflakes(config, data, scene_id):
     
     # Snow Cover Fraction
     SCF_folder = os.path.join(scene_folder, "SCF")
+    
+    # Skip already processed scenes
+    if os.path.exists(SCF_folder) and not ow:
+        print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
+        return
+    
     os.makedirs(SCF_folder, exist_ok=True)
     
     date_str = data.start_datetime.item()[:10].replace("-", "")
-    SCF_path = os.path.join(SCF_folder, "{scene_id}.tif")
 
-    # Skip already processed scenes
-    if os.path.exists(SCF_path) and not ow:
-        print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
-        return
+
 
     start = time.time()
 

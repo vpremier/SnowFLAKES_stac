@@ -53,6 +53,8 @@ def create_empty_files(working_folder):
         print(f"Created file: {skip_cloud_masks_path}")
     else:
         print(f"File already exists: {skip_cloud_masks_path}")
+        
+    return scenes_to_skip_path, skip_cloud_masks_path
 
 
 def data_filter(start_date, end_date, working_folder, sensor, scenes_to_skip):
@@ -224,7 +226,7 @@ def define_bands(data, valid_mask, sensor):
         'L5': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
         'L7': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
         'L8': {'GREEN': 2, 'SWIR': 5, 'NIR': 4, 'RED': 3, 'BLUE': 1},
-        'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B08', 'RED': 'B04', 'BLUE': 'B02'},
+        'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B8A', 'RED': 'B04', 'BLUE': 'B02'},
         'PRISMA': {'GREEN': 19, 'SWIR': 122, 'NIR': 46, 'RED': 36, 'BLUE': 9}
     }
 

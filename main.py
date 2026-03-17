@@ -20,8 +20,6 @@ load_dotenv()
 from utils import *
 
 
-
-
 def run_workflow(date_start, date_end, shp):
     config_path = "./config.json"
     
@@ -71,6 +69,7 @@ def run_workflow(date_start, date_end, shp):
 
     # Run the STAC loading
     for date in dates:
+        
     
         data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
                                                 resolution=resolution, 
@@ -78,9 +77,16 @@ def run_workflow(date_start, date_end, shp):
                                                  epsg_target=epsg_target,
                                                  save = False)
         
+        if os.path.exists(os.path.join(outdir,scene_id)) and not config["overwrite"]:
+            print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
+            return
+        
         os.makedirs(os.path.join(outdir,scene_id), exist_ok=True)
+
+
+        
         # save RGB for visualization
-        save_false_color(os.path.join(outdir, scene_id), ["B11", "B08", "B04"], data)
+        save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
         
         time.sleep(2)
         
@@ -157,8 +163,9 @@ if __name__ == "__main__":
     
     
 
-    start = pd.Timestamp("2016-04-01")
+    start = pd.Timestamp("2015-04-01")
     end = pd.Timestamp("2025-03-31")
+    
     
     resolution = 20
     
@@ -181,7 +188,7 @@ if __name__ == "__main__":
 
     
     # shape of the AOI
-    shp = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
+    shp = r'/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson'
 
 
 

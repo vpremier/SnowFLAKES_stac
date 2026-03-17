@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/Sentinel2",
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2",
   "satellite": "Sentinel-2",
-  "date_start": "2016-04-01",
-  "date_end": "2016-04-16",
+  "date_start": "2016-12-06",
+  "date_end": "2016-12-21",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -16,10 +16,10 @@
   "resampling_params": {
     "resolution": 20,
     "extent_target": [
-      391500,
-      6278500,
-      404500,
-      6289000
+      344000,
+      6080000,
+      369000,
+      6114000
     ],
     "epsg_target": 32719
   },

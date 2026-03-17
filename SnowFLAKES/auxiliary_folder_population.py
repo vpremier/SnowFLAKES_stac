@@ -757,7 +757,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
 
     try:
         threshold = np.percentile(shadow_score[curr_angle_valid], [10, 95])[0]
-        # plt.hist(shadow_score.flatten(), bins=50)
+        # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=50)
         # Create shadow mask: positive values indicate shadow
         shadow_mask = (shadow_score > threshold).astype(np.uint8)
     except:
@@ -770,6 +770,11 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
         "nodata": 255,  # Use 255 as the nodata value for uint8
         "compress": "lzw"  # Compression to reduce file size
     })
+    
+    # Save shadow mask to GeoTIFF
+    # shadow_score_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_score.tif')
+    # with rasterio.open(shadow_score_path, "w", **meta) as dst:
+    #     dst.write(shadow_score, 1)
 
     # Save shadow mask to GeoTIFF
     shadow_mask_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_mask.tif')
