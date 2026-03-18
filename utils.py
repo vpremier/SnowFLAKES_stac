@@ -11,7 +11,27 @@ import numpy as np
 from pyproj import CRS
 import os
 import rasterio
+import rioxarray
 
+from SnowFLAKES.utilities import *
+
+def check_skipped_list(config, scene_id):
+    # Config info
+    working_folder = config['output_directory']
+    scene_folder = os.path.join(config['output_directory'], scene_id)
+    os.makedirs(scene_folder, exist_ok=True)
+        
+
+    # log files: create log files
+    skipped_scenes_file, cloud_scenes_file = create_empty_files(working_folder)
+
+    scenes_to_skip = scenes_skip(working_folder)
+    scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
+    
+    
+    return scenes_to_skip, scenes_to_skip_clouds
+    
+    
 
 def save_false_color(wd, bands, ds):
 
@@ -34,8 +54,8 @@ def save_false_color(wd, bands, ds):
         "width": width,
         "count": 3,
         "dtype": rgb.dtype,
-        "crs": ds.crs,
-        "transform": ds.transform
+        "crs": CRS.from_epsg(ds.epsg.item()),
+        "transform": ds.rio.transform()
     }
 
     with rasterio.open(output_path, "w", **meta) as dst:

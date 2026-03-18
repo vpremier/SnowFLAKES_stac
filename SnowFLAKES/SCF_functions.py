@@ -15,6 +15,7 @@ import pandas as pd
 import pickle
 from joblib import Parallel, delayed
 from rasterio.features import geometry_mask
+import rioxarray
 
 from sklearn import preprocessing
 from sklearn.svm import SVC
@@ -35,12 +36,12 @@ def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
 
     # Create a mask with the same dimensions as the raster, setting snow (1) and no-snow (2) points
     mask_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 1]],
-                              transform=data.transform,
+                              transform=data.rio.transform(),
                               invert=True,
                               out_shape=(data.sizes["y"], data.sizes["x"]))
 
     mask_no_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 2]],
-                                 transform=data.transform,
+                                 transform=data.rio.transform(),
                                  invert=True,
                                  out_shape=(data.sizes["y"], data.sizes["x"]))
 

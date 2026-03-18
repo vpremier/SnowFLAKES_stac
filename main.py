@@ -13,6 +13,7 @@ import pandas as pd
 from stac import load_stac
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 import time
+import shutil
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -77,13 +78,21 @@ def run_workflow(date_start, date_end, shp):
                                                  epsg_target=epsg_target,
                                                  save = False)
         
+
+        
         if os.path.exists(os.path.join(outdir,scene_id)) and not config["overwrite"]:
             print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
-            return
+            continue
         
-        os.makedirs(os.path.join(outdir,scene_id), exist_ok=True)
-
-
+        scenes_to_skip, scenes_to_skip_clouds = check_skipped_list(config, scene_id)
+        
+        if scene_id in scenes_to_skip or scene_id in scenes_to_skip_clouds:
+            print(f"{scene_id} is in the lists to skip!")
+            shutil.rmtree(os.path.join(outdir, scene_id))
+            continue
+        
+        # loading in the memory the STAC
+        data.load()
         
         # save RGB for visualization
         save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
@@ -92,69 +101,6 @@ def run_workflow(date_start, date_end, shp):
         
         run_snowflakes(config, data, scene_id)
         
-
-
-
-        
-
-    
-    
-    # # Save PNGs to visualize the results of SnowFLAKES ------------------------
-    # png_folder = os.path.join(config_sf['working_folder'], 'PNG')
-    # os.makedirs(png_folder, exist_ok=True)
-    
-    # scf_subfolder_name = config_sf['SVM_folder_name']
-        
-    # start_date = config_download["date_start"].replace("-", "")
-    # end_date = config_download["date_end"].replace("-", "")
-        
-    # TS_to_PNG.save_scene_png(config_sf['working_folder'], png_folder, start_date, end_date, scf_subfolder_name)
-            
-            
-    # # Move relevant results and delete unuseful data --------------------------     
-            
-    # # Move information to keep in another folder
-    # # classified map, NDSI, NDVI, shadow mask
-    # data_list = glob.glob(config_sf['working_folder'] + '/S2*')
-    
-    # for d in data_list:
-    #     # look for snowflakes output
-    #     id_scene = os.path.basename(d)
-    
-    #     try:       
-    #         for par in ["SnowFLAKES", "NDSI", "NDVI","shadow_mask"]:
-    #             output = glob.glob(d + f'/*/*{par}.tif').pop()
-                
-    #             par_dir = os.path.join(config_sf['working_folder'], par)
-    #             os.makedirs(par_dir, exist_ok=True)
-    #             new_name = os.path.join(par_dir, id_scene + '_' + par + '.tif')
-    #             shutil.move(output, new_name)
-            
-    #         # Log classified image
-    #         with open(classified_log, "a") as f:
-    #             f.write(f"{id_scene}\n")
-                
-    #         print(f"✔ Classified: {id_scene}")
-                
-        
-    #     except:
-    #         print('No classified data')
-            
-    #         # Log cloudy images
-    #         with open(cloudy_log, "a") as f:
-    #             f.write(f"{id_scene}\n")
-    
-    #         print(f"⚠ Cloudy or incomplete: {id_scene}")
-            
-    #     # remove the image
-    #     shutil.rmtree(d)
-        
-    # # remove also the downloaded archives
-    # try:
-    #     for d in downloaded:
-    #         os.remove(d)
-    # except:
-    #     return
     
     return
         
@@ -163,13 +109,13 @@ if __name__ == "__main__":
     
     
 
-    start = pd.Timestamp("2015-04-01")
-    end = pd.Timestamp("2025-03-31")
+    start = pd.Timestamp("2019-02-25")
+    end = pd.Timestamp("2021-03-31")
     
     
     resolution = 20
     
-    step = pd.Timedelta(days=15)
+    step = pd.Timedelta(days=120)
     
     date_pairs = []
     
@@ -202,6 +148,7 @@ if __name__ == "__main__":
 
 
 # write readme`
+# remove auxiliary?
     
 # add layer uncertainty
 # check ghiacciai

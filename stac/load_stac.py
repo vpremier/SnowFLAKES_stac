@@ -240,7 +240,27 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     
     # option 1 - use stackstac
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    cat = pystac_client.Client.open(CDSE_URL)
+    # cat = pystac_client.Client.open(CDSE_URL)
+    
+    from urllib3 import Retry
+
+    from pystac_client.stac_api_io import StacApiIO
+    import pystac_client
+    
+    
+    retry = Retry(
+        total=5,
+        backoff_factor=8,  # waits 0, 16s, 32s, 64s, 128s between retries
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods={"GET", "POST"},
+        raise_on_status=False,  # prevents urllib3 raising before pystac sees it
+        respect_retry_after_header=True,  # Not certain that this header is ever set
+        retry_after_max=300,  # cap retry to 5 minutes
+    )
+    
+    cat = pystac_client.Client.open(CDSE_URL, stac_io=StacApiIO(max_retries=retry))
+
+
     cat.add_conforms_to("ITEM_SEARCH")
     
     # define target information (extent, resolution etc)

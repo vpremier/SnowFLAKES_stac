@@ -19,6 +19,8 @@ from scipy.ndimage import distance_transform_edt
 from pyproj import Transformer
 from datetime import timezone
 from pathlib import Path
+import rioxarray
+from rasterio.crs import CRS
 
 
 from rasterio.transform import from_origin
@@ -89,7 +91,7 @@ def water_identifier(data, auxiliary_folder_path):
     if not os.path.exists(target_wb_mask_path):
         
         # ---- get CRS and bounds from xarray ----
-        epsg_code = data.rio.crs.to_epsg() if hasattr(data, "rio") else data.attrs.get("crs")
+        epsg_code = data.epsg.item()
         
         resolution = float(abs(data.x[1] - data.x[0]))
 
@@ -403,8 +405,8 @@ def create_default_cloud_mask(data, path_cloud_mask):
         width=width,
         count=1,
         dtype="uint8",
-        crs=data.crs,
-        transform=data.transform,
+        crs=CRS.from_epsg(data.epsg.item()),
+        transform=data.rio.transform(),
     ) as dst:
         dst.write(cloud_mask, 1)
         
@@ -461,7 +463,7 @@ def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask,
                                      (np.shape(cloud_mask[0, :, :])[0] * np.shape(cloud_mask[0, :, :])[1])
 
             save_image(cloud_mask[0, :, :], temporary_cloud_mask_path, 'GTiff', 1, 
-                       data.transform.to_gdal(), data.crs)
+                       data.rio.transform().to_gdal(), CRS.from_epsg(data.epsg.item()).to_wkt())
         except Exception as e:
             print(f"Error during cloud classification: {e}")
             # Handle the error appropriately, e.g., log it or raise an exception
@@ -601,8 +603,8 @@ def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder,
         width=width,
         count=1,
         dtype="float32",
-        crs=data.crs,
-        transform=data.transform,
+        crs=CRS.from_epsg(data.epsg.item()),
+        transform=data.rio.transform(),
     ) as dst:
         dst.write(idx_out, 1)
         
@@ -645,7 +647,7 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
     N_min = float(data.y.min() - resolution)
     N_max = float(data.y.max())
     
-    epsg_code = data.crs
+    epsg_code = data.epsg.item()
 
     # Transform the coordinates to WGS84
     transformer = Transformer.from_crs(f"{epsg_code}", "epsg:4326", always_xy=True)

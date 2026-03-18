@@ -48,7 +48,6 @@ def run_snowflakes(config, data, scene_id):
     
     
     SVM_folder_name = config['SVM_folder_name']
-    XGB_folder_name = SVM_folder_name + '_XGB'
     
     
     # log files: create log files
@@ -137,9 +136,7 @@ def run_snowflakes(config, data, scene_id):
     start = time.time()
 
     print(f"Running SnowFLAKES for {scene_id}")
-    
-    # loading in the memory the STAC
-    data.load()
+
     
     # Cloud Masking settings
     cloud_prob = float(config.get('Cloud cover probability', 0.6))
@@ -251,7 +248,7 @@ def run_snowflakes(config, data, scene_id):
     
     # shadow mask
     shadow_mask_path = generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
-    
+   
     # adiecency map
     adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands)
     
@@ -287,10 +284,6 @@ def run_snowflakes(config, data, scene_id):
         
         if not os.path.exists(shapefile_path):
             print("Generating training shapefile.")
-            # shapefile_path, training_mask_path = collect_trainings(curr_acquisition, curr_aux_folder, auxiliary_folder_path,
-            #                                                        SVM_folder_name, training_collection_no_data_mask, bands,
-            #                                                        shadow_mask_path)
-
             try:
                 shapefile_path = collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path,
                                                    SVM_folder_name, training_collection_no_data_mask, bands)

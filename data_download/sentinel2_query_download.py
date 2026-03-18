@@ -76,9 +76,6 @@ def query_cdse(date_start, date_end, username, psw,
         print(f"You provided: '{data_collection}'")
         raise ValueError(f"Invalid data_collection: '{data_collection}'. Please use one of the allowed options.")
 
-    else:
-        print(f"Using data collection: '{data_collection}'")
-        print(f"Allowed data collections: {allowed_collections}")
     
 
     # access to the Copernicus Dataspce ecosystem
