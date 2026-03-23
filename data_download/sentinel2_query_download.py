@@ -17,7 +17,7 @@ from shapely.geometry import box, shape
 
 import matplotlib.pyplot as plt
 
-from sentinel_filters import *
+from data_download.sentinel_filters import *
 
 
 def query_cdse(date_start, date_end, username, psw, 

@@ -11,18 +11,19 @@ import json
 import os
 import pandas as pd
 from stac import load_stac
-from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 import time
 import shutil
+import glob
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from utils import *
+from SnowFLAKES.main_SnowFLAKES import run_snowflakes
+from data_download.main import run_query_download
 
 
-def run_workflow(date_start, date_end, shp):
-    config_path = "./config.json"
+def run_workflow(date_start, date_end, config_path):
     
     # Read
     with open(config_path, "r") as f:
@@ -31,9 +32,15 @@ def run_workflow(date_start, date_end, shp):
     # Modify dates
     config["date_start"] = date_start
     config["date_end"] = date_end
-    config["shapefile"] = shp
     config["query_sentinel2"] = True
     config["download_sentinel2"] = False
+    
+    
+    # resampling parameters
+    resolution = config["resampling_params"]["resolution"]
+    extent_target = config["resampling_params"]["extent_target"]
+    epsg_target = config["resampling_params"]["epsg_target"]
+    # bbox = get_shape_extent(shp, epsg=32719, outres =500)
 
 
     # Write back
@@ -44,7 +51,7 @@ def run_workflow(date_start, date_end, shp):
     
     
     # Run the data query ------------------------------------------------------
-    subprocess.run("./data_download.sh", shell=True)
+    run_query_download(config_path)
     
     # Look for the data in our folder
     outdir = config["output_directory"]
@@ -52,67 +59,71 @@ def run_workflow(date_start, date_end, shp):
     
     if data_df.empty:
         return
+    
+    log_file = os.path.join(outdir, "failed_dates.txt")
 
     
     s2_files = [f.split('.')[0] for f in data_df['Name'].to_list()]
     
-    # extract dates 
-    dates = sorted({
-        f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        for d in (i.split("_")[2][:8] for i in s2_files)
-    })
+    dates_to_process = get_dates_to_process(s2_files, config)    
+                                
+    while len(dates_to_process) > 0:
+        print("\n" + "="*60)
+        print(f"📅 Period: {date_start} → {date_end}")
+        print(f"⏳ Pending scenes: {len(dates_to_process)}")
+        print("="*60 + "\n") 
+        
+        failed_dates = []
+        # Run the STAC loading
+        for i, date in enumerate(dates_to_process):
+            print(date)
+        
+            try:
+                data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
+                                                        resolution=resolution, 
+                                                         extent_target=extent_target, 
+                                                         epsg_target=epsg_target,
+                                                         save = False)
+                
+                # create folder
+                os.makedirs(os.path.join(outdir, scene_id), exist_ok=True)
+            
+                # loading in the memory the STAC
+                load_with_retry(data, max_retries=20, wait_seconds=2)
+                
+                
+                # save RGB for visualization
+                save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
+                
+                time.sleep(2)
+                
+                run_snowflakes(config, data, scene_id)
+                
+            except Exception as e:
+                print(f"Error processing {scene_id} on date {date}: {e}")
+                failed_dates.append(date)
+                
+                with open(log_file, "a") as f:
+                    f.write(f"{date},{scene_id},{str(e)}\n")
+        
+        # Recompute dates to process (removes processed ones automatically)
+        dates_to_process = get_dates_to_process(s2_files, config)
     
-    # resampling parameters
-    resolution = config["resampling_params"]["resolution"]
-    extent_target = config["resampling_params"]["extent_target"]
-    epsg_target = config["resampling_params"]["epsg_target"]
-    # bbox = get_shape_extent(shp, epsg=32719, outres =500)
-
-    # Run the STAC loading
-    for date in dates:
-        
-    
-        data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
-                                                resolution=resolution, 
-                                                 extent_target=extent_target, 
-                                                 epsg_target=epsg_target,
-                                                 save = False)
-        
-
-        
-        if os.path.exists(os.path.join(outdir,scene_id)) and not config["overwrite"]:
-            print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
-            continue
-        
-        scenes_to_skip, scenes_to_skip_clouds = check_skipped_list(config, scene_id)
-        
-        if scene_id in scenes_to_skip or scene_id in scenes_to_skip_clouds:
-            print(f"{scene_id} is in the lists to skip!")
-            shutil.rmtree(os.path.join(outdir, scene_id))
-            continue
-        
-        # loading in the memory the STAC
-        data.load()
-        
-        # save RGB for visualization
-        save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
-        
-        time.sleep(2)
-        
-        run_snowflakes(config, data, scene_id)
-        
-    
-    return
+        # Optional: stop if nothing changed (avoid infinite loop)
+        if set(dates_to_process) == set(failed_dates):
+            print("Only failing dates remain. Stopping to avoid infinite loop.")
+            break     
         
 
 if __name__ == "__main__":
     
     
-
-    start = pd.Timestamp("2019-02-25")
-    end = pd.Timestamp("2021-03-31")
-    
-    
+    start = pd.Timestamp("2015-04-01")
+    end = pd.Timestamp("2017-03-31")
+    # start = pd.Timestamp("2020-04-25")
+    # end = pd.Timestamp("2020-04-26")
+    # shape of the AOI
+    config_path = './config_echaurren.json'
     resolution = 20
     
     step = pd.Timedelta(days=120)
@@ -132,19 +143,14 @@ if __name__ == "__main__":
     
         current = next_date
 
-    
-    # shape of the AOI
-    shp = r'/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson'
 
-
-
-    
     
     for date_start, date_end in date_pairs:
+        run_workflow(date_start, date_end, config_path)
+
+        
             
-        run_workflow(date_start, date_end, shp)
-    
-    
+# modifica scenes to skip! le classifica con thematic    
 
 
 # write readme`
@@ -165,11 +171,11 @@ if __name__ == "__main__":
 # add time duration
 # write documentatio 
     
-    # aggiungere buffer per laghi
 
-    # aggiornare doc string
 
-    # si vede bordo tra le tile
 
-    # soglie shadow - non shadow alpi e ande
+
+
+
+
     

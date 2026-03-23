@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MAX_RETRIES=20
+MAX_RETRIES=100
 RETRY_DELAY=120  # seconds (2 minutes)
 ENV_NAME="snowmap_cdse"
 

@@ -56,7 +56,7 @@ def run_snowflakes(config, data, scene_id):
     scenes_to_skip = scenes_skip(working_folder)
     scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
     
-    if scene_id in scenes_to_skip or scene_id in scenes_to_skip_clouds:
+    if scene_id in scenes_to_skip_clouds:
         print(f"{scene_id} is in the lists to skip!")
         return
     
@@ -70,7 +70,6 @@ def run_snowflakes(config, data, scene_id):
     else:
         no_data_value = float(no_data_value)
 
-    print(f"no data value: {no_data_value}.")
     
     
     # Generate water mask
@@ -121,17 +120,14 @@ def run_snowflakes(config, data, scene_id):
     
     # Snow Cover Fraction
     SCF_folder = os.path.join(scene_folder, "SCF")
-    
-    # Skip already processed scenes
-    if os.path.exists(SCF_folder) and not ow:
-        print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
-        return
-    
     os.makedirs(SCF_folder, exist_ok=True)
+
+    # # Skip already processed scenes
+    # if os.path.exists(SCF_folder) and not ow:
+    #     print(f"Scene {scene_id} already processed. Set overwrite as True in the config file.")
+    #     return
     
-    date_str = data.start_datetime.item()[:10].replace("-", "")
-
-
+    
 
     start = time.time()
 
@@ -378,7 +374,8 @@ def run_snowflakes(config, data, scene_id):
                 dt_end_glaciers_month is not None and
                 is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
 
-                mask_raster_with_glacier(FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)
+                glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+                mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)
 
 
             ## Glacier_classification

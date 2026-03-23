@@ -21,6 +21,7 @@ from datetime import timezone
 from pathlib import Path
 import rioxarray
 from rasterio.crs import CRS
+from skimage.filters import threshold_otsu
 
 
 from rasterio.transform import from_origin
@@ -28,8 +29,8 @@ from rasterio.transform import from_bounds
 from rasterio.warp import reproject, Resampling
 from rasterio.merge import merge
 
-from .utilities import *
-from .shadow_mask_gen import *
+from SnowFLAKES.utilities import *
+from SnowFLAKES.shadow_mask_gen import *
 
 from pysolar.solar import *
 
@@ -109,7 +110,7 @@ def water_identifier(data, auxiliary_folder_path):
         if epsg_code != 4326:
         
             transformer = Transformer.from_crs(
-                f"{epsg_code}",
+                f"EPSG:{epsg_code}",
                 srOut,
                 always_xy=True
             )
@@ -183,7 +184,7 @@ def water_identifier(data, auxiliary_folder_path):
         height = data.sizes["y"]
         
         dst_transform = from_bounds(E_min_old, N_min_old, E_max_old, N_max_old, width, height)
-        dst_crs = f"{epsg_code}"
+        dst_crs = f"EPSG:{epsg_code}"
         
         dst = np.empty((height, width), dtype=np.float32)
         
@@ -221,7 +222,7 @@ def water_identifier(data, auxiliary_folder_path):
             "width": width,
             "count": 1,
             "dtype": "uint8",
-            "crs": f"{epsg_code}",
+            "crs": f"EPSG:{epsg_code}",
             "transform": dst_transform
         }
         
@@ -650,7 +651,7 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
     epsg_code = data.epsg.item()
 
     # Transform the coordinates to WGS84
-    transformer = Transformer.from_crs(f"{epsg_code}", "epsg:4326", always_xy=True)
+    transformer = Transformer.from_crs(f"epsg:{epsg_code}", "epsg:4326", always_xy=True)
     central_E = E_min + (E_max - E_min) / 2
     central_N = N_min + (N_max - N_min) / 2
     Central_WGS84 = transformer.transform(central_E, central_N)
@@ -743,27 +744,66 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     # curr_range = (90, 180)
     curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 2, water_mask == 1, no_data_mask)))
     
-    curr_range = (min(np.nanmax(solar_incidence_angle[curr_scene_valid])-1, 90), 180)
+    # curr_range = (min(np.nanmax(solar_incidence_angle[curr_scene_valid])-1, 90), 180)
 
-    curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
-                                                                       solar_incidence_angle < curr_range[1]))
+    # curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
+    #                                                                    solar_incidence_angle < curr_range[1]))
 
     index1_norm = normalize(index1)
     index2_norm = normalize(index2)
     ndvi_norm = normalize(ndvi)
     evi_norm = normalize(evi)
+    nir_norm = normalize(NIR)
+
 
     # Combine indices to create a composite shadow score
     # Shadow pixels maximize index1 and index2, minimize ndvi and evi
-    shadow_score = (index1_norm + index2_norm) - (ndvi_norm + evi_norm + NIR)
+    # shadow_score = (index1_norm + index2_norm) - (ndvi_norm + evi_norm + normalize(NIR))
+    
+    
+    
+    
+    curr_range = (70, 180)
+    curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
+                                                                       solar_incidence_angle < curr_range[1]))
 
-    try:
-        threshold = np.percentile(shadow_score[curr_angle_valid], [10, 95])[0]
-        # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=50)
-        # Create shadow mask: positive values indicate shadow
-        shadow_mask = (shadow_score > threshold).astype(np.uint8)
-    except:
-        shadow_mask = np.zeros_like(shadow_score, dtype=bool).astype(np.uint8)
+    # shadow_score = (
+    #     index1_norm *
+    #     index2_norm *
+    #     (1 - ndvi_norm) *
+    #     (1 - evi_norm) *
+    #     (1 - nir_norm)
+    # )
+    
+    shadow_score = (
+        (index1_norm + index2_norm) /
+        (ndvi_norm + evi_norm + nir_norm + 1e-6)
+    )
+    
+    shadow_score[~curr_scene_valid] = np.nan
+    
+    threshold = np.nanpercentile(shadow_score[curr_scene_valid], 85)
+    # threshold = threshold_otsu(shadow_score[curr_scene_valid])
+
+    
+    spectral_shadow = shadow_score > threshold
+    
+    shadow_mask = np.logical_and(spectral_shadow, curr_angle_valid)
+
+    # shadow_mask = cv2.medianBlur(shadow_mask.astype(np.uint8)*255, 5)
+
+
+    # plt.hist(valid.flatten(), bins=500)
+
+
+    
+    # try:
+    #     threshold = np.percentile(shadow_score[curr_angle_valid], [10, 95])[0]
+    #     # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=50)
+    #     # Create shadow mask: positive values indicate shadow
+    #     shadow_mask = (shadow_score > threshold).astype(np.uint8)
+    # except:
+    #     shadow_mask = np.zeros_like(shadow_score, dtype=bool).astype(np.uint8)
 
     # Update metadata for output
     meta.update({

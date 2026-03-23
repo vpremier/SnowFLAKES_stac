@@ -12,9 +12,9 @@ import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
 
-from landsat_query_download import *
-from sentinel2_query_download import *
-from utils import *
+from data_download.landsat_query_download import *
+from data_download.sentinel2_query_download import *
+from data_download.utils import *
 
 def run_query_download(config_path):
     

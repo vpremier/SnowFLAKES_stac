@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2-test",
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/AguaNegra.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/AguaNegra/Sentinel2",
   "satellite": "Sentinel-2",
-  "date_start": "2017-02-18",
-  "date_end": "2017-02-19",
+  "date_start": "2016-03-26",
+  "date_end": "2016-03-31",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -12,13 +12,14 @@
   "landsat_satellite": [],
   "s2_tile": null,
   "landsat_tile_list": [],
+  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
     "resolution": 20,
     "extent_target": [
-      344000,
-      6080000,
-      369000,
-      6114000
+      415500,
+      6655000,
+      429500,
+      6670500
     ],
     "epsg_target": 32719
   },

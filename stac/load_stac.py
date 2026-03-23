@@ -19,7 +19,9 @@ import pystac_client
 from shapely.geometry import box
 from shapely.geometry import mapping
 from rasterio.enums import Resampling
-
+from urllib3 import Retry
+from pystac_client.stac_api_io import StacApiIO
+    
 # import odc.stac
 
 
@@ -55,12 +57,29 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
     os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
     os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    os.environ["AWS_HTTPS"] = "YES"
+    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
+    os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
     
     # option 1 - use stackstac
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    cat = pystac_client.Client.open(CDSE_URL)
-    cat.add_conforms_to("ITEM_SEARCH")
+    # cat = pystac_client.Client.open(CDSE_URL)
     
+    
+    retry = Retry(
+        total=5,
+        backoff_factor=8,  # waits 0, 16s, 32s, 64s, 128s between retries
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods={"GET", "POST"},
+        raise_on_status=False,  # prevents urllib3 raising before pystac sees it
+        respect_retry_after_header=True,  # Not certain that this header is ever set
+        retry_after_max=300,  # cap retry to 5 minutes
+    )
+    
+    cat = pystac_client.Client.open(CDSE_URL, stac_io=StacApiIO(max_retries=retry))
+    
+    cat.add_conforms_to("ITEM_SEARCH")
+
     
     # define target information (extent, resolution etc)
     if img4ext:
@@ -97,12 +116,22 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
         resolution=resolution,
         resampling=reproj_type,
         gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-            {
-                "GDAL_NUM_THREADS": -1,
-                "GDAL_HTTP_UNSAFESSL": "YES",
-                "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                "AWS_VIRTUAL_HOSTING": "FALSE",
-                "AWS_HTTPS": "YES",
+            {   "GDAL_HTTP_MAX_RETRY":"5",
+                "GDAL_HTTP_RETRY_DELAY":"2",
+                "GDAL_HTTP_TIMEOUT":"30",
+                "GDAL_NUM_THREADS":"1",
+                "CPL_VSIL_CURL_USE_HEAD":"NO",
+                "GDAL_DISABLE_READDIR_ON_OPEN":"EMPTY_DIR",
+                "CPL_VSIL_CURL_USE_HEAD": "NO",
+                "GDAL_HTTP_TCP_KEEPALIVE": "NO"
+                # "GDAL_NUM_THREADS": "1",
+                # "GDAL_HTTP_UNSAFESSL": "YES",
+                # "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+                # "AWS_VIRTUAL_HOSTING": "FALSE",
+                # "AWS_HTTPS": "YES",
+                # "GDAL_HTTP_MAX_RETRY": "5",
+                # "GDAL_HTTP_RETRY_DELAY": "2",
+                # "GDAL_HTTP_TIMEOUT": "30",
             }
             ),
         )
@@ -242,11 +271,7 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
     # cat = pystac_client.Client.open(CDSE_URL)
     
-    from urllib3 import Retry
 
-    from pystac_client.stac_api_io import StacApiIO
-    import pystac_client
-    
     
     retry = Retry(
         total=5,
