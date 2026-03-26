@@ -83,8 +83,10 @@ def run_workflow(date_start, date_end, config_path):
                                                         resolution=resolution, 
                                                          extent_target=extent_target, 
                                                          epsg_target=epsg_target,
-                                                         save = False)
+                                                         save = False,
+                                                         shp=config['shapefile'])
                 
+                print(list(data.coords["band"].values))               
                 # create folder
                 os.makedirs(os.path.join(outdir, scene_id), exist_ok=True)
             
@@ -118,15 +120,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-04-01")
-    end = pd.Timestamp("2017-03-31")
+    start = pd.Timestamp("2017-01-01")
+    end = pd.Timestamp("2018-05-15")
     # start = pd.Timestamp("2020-04-25")
     # end = pd.Timestamp("2020-04-26")
     # shape of the AOI
-    config_path = './config_echaurren.json'
-    resolution = 20
+    config_path = './config_fram3s.json'
     
-    step = pd.Timedelta(days=120)
+    step = pd.Timedelta(days=60)
     
     date_pairs = []
     

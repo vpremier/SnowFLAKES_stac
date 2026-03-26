@@ -46,4 +46,5 @@ libgdal-jp2openjpeg \
 rioxarray \
 s2cloudless \
 python-dotenv \
-pystac-client
+pystac-client \
+dask

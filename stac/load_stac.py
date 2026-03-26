@@ -8,6 +8,7 @@ Created on Fri Feb 27 16:03:56 2026
 
 from dotenv import load_dotenv
 import os
+import geopandas as gpd
 import numpy as np
 from pyproj import CRS
 import stackstac
@@ -21,7 +22,7 @@ from shapely.geometry import mapping
 from rasterio.enums import Resampling
 from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
-    
+from affine import Affine    
 # import odc.stac
 
 
@@ -40,7 +41,7 @@ from stac.utils_stac import *
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
                             reproj_type=Resampling.bilinear, save=True, 
-                            ow=False):
+                            ow=False, shp=None):
     
     start = time.time()
 
@@ -96,12 +97,25 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
 
     # determine AOI bbox in wgs84
     print('Filtering STAC by geometry')
-    bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
-                                      extent_target=extent_target, 
-                                      epsg_target=epsg_target, 
-                                      buffer_m=1000)
-    
-    geometry = mapping(box(*bbox_of_interest))
+    if shp:
+        # Load shapefile
+        gdf = gpd.read_file(shp)
+        
+        # Ensure it's in WGS84 (required by STAC APIs)
+        gdf = gdf.to_crs(epsg=4326)
+        
+        # Merge all geometries into one (important if multiple features)        
+        geometry = mapping(gdf.unary_union)
+        
+    else:
+
+
+        bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
+                                          extent_target=extent_target, 
+                                          epsg_target=epsg_target, 
+                                          buffer_m=1000)
+        
+        geometry = mapping(box(*bbox_of_interest))
     
     params = {"collections": [collection],
               "intersects": geometry}
@@ -116,30 +130,47 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
         resolution=resolution,
         resampling=reproj_type,
         gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-            {   "GDAL_HTTP_MAX_RETRY":"5",
-                "GDAL_HTTP_RETRY_DELAY":"2",
-                "GDAL_HTTP_TIMEOUT":"30",
-                "GDAL_NUM_THREADS":"1",
-                "CPL_VSIL_CURL_USE_HEAD":"NO",
-                "GDAL_DISABLE_READDIR_ON_OPEN":"EMPTY_DIR",
-                "CPL_VSIL_CURL_USE_HEAD": "NO",
-                "GDAL_HTTP_TCP_KEEPALIVE": "NO"
-                # "GDAL_NUM_THREADS": "1",
-                # "GDAL_HTTP_UNSAFESSL": "YES",
-                # "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                # "AWS_VIRTUAL_HOSTING": "FALSE",
-                # "AWS_HTTPS": "YES",
-                # "GDAL_HTTP_MAX_RETRY": "5",
-                # "GDAL_HTTP_RETRY_DELAY": "2",
-                # "GDAL_HTTP_TIMEOUT": "30",
+            {
+                "GDAL_NUM_THREADS": -1,
+                "GDAL_HTTP_UNSAFESSL": "YES",
+                "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+                "AWS_VIRTUAL_HOSTING": "FALSE",
+                "AWS_HTTPS": "YES"
             }
             ),
         )
     
+    data = data.mean(dim="time", skipna=True)
+
+    
+            # con questa configurazione non dava più problemi
+            # "GDAL_HTTP_MAX_RETRY":"5",
+            #     "GDAL_HTTP_RETRY_DELAY":"2",
+            #     "GDAL_HTTP_TIMEOUT":"30",
+            #     "GDAL_NUM_THREADS":"1",
+            #     "CPL_VSIL_CURL_USE_HEAD":"NO",
+            #     "GDAL_DISABLE_READDIR_ON_OPEN":"EMPTY_DIR",
+            #     "CPL_VSIL_CURL_USE_HEAD": "NO",
+            #     "GDAL_HTTP_TCP_KEEPALIVE": "NO"
+            
+            # questa era commentata
+            # "GDAL_NUM_THREADS": "1",
+            # "GDAL_HTTP_UNSAFESSL": "YES",
+            # "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+            # "AWS_VIRTUAL_HOSTING": "FALSE",
+            # "AWS_HTTPS": "YES",
+            # "GDAL_HTTP_MAX_RETRY": "5",
+            # "GDAL_HTTP_RETRY_DELAY": "2",
+            # "GDAL_HTTP_TIMEOUT": "30",
+            
     
     #  === Extract info_src from xarray ===
-    transform = data.attrs['transform']
-  
+    transform = Affine(
+        resolution, 0, extent_target[0],
+        0, -resolution, extent_target[3]
+    )
+      
+
     width = len(data.x)    
     height = len(data.y) 
 
@@ -178,7 +209,7 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
                             reproj_type=Resampling.bilinear, suffix='toa',
                             na_value = "NaN", calibration=True, ow=False,
                             max_cc = 90, idList = [], filter_by_geometry = True,
-                            save = True):        
+                            save = True, shp=None):        
     """
     Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
     reprojects it to a user-defined grid, applies radiometric calibration, and
@@ -304,12 +335,29 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     # determine AOI bbox in wgs84
     if filter_by_geometry:
         print('Filtering STAC by geometry')
-        bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
-                                          extent_target=extent_target, 
-                                          epsg_target=epsg_target, 
-                                          buffer_m=1000)
-        
-        geometry = mapping(box(*bbox_of_interest))
+        # determine AOI bbox in wgs84
+        print('Filtering STAC by geometry')
+        if shp:
+            # Load shapefile
+            gdf = gpd.read_file(shp)
+            
+            # Ensure it's in WGS84 (required by STAC APIs)
+            gdf = gdf.to_crs(epsg=4326)
+            
+            # Merge all geometries into one (important if multiple features) 
+            geom = gdf.unary_union
+            geom = geom.simplify(0.05, preserve_topology=True)
+            geometry = mapping(geom)
+            
+        else:
+      
+      
+            bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
+                                              extent_target=extent_target, 
+                                              epsg_target=epsg_target, 
+                                              buffer_m=1000)
+            
+            geometry = mapping(box(*bbox_of_interest))
         
         params = {
             "collections": ["sentinel-2-l1c"],

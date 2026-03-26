@@ -338,6 +338,7 @@ def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_
     # Expected band ordering: blue, red, nir, swir
     green = bands['GREEN']
 
+
     nir = bands['NIR']
     swir = bands['SWIR']
     
@@ -354,29 +355,47 @@ def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_
     
     # Select NDSI > 0.7
     ndwi[(ndsi>=0.7) & (cloud_mask==1)]
+
     
     nsir_vals = nsir[((ndsi >= 0.7) & (cloud_mask == 1) & (glacier_mask == 1))]
 
-    nsir_threshold = threshold_otsu(nsir_vals)
-    
-    snow = (
-        (ndsi >= 0.7) &
-        (cloud_mask == 1) &
-        (glacier_mask == 1) &
-        (nsir >= nsir_threshold) &
-        (ndwi <= 0.1)
-    )
-    
-    ice = (
-        (ndsi >= 0.7) &
-        (cloud_mask == 1) &
-        (glacier_mask == 1) &
-        ((nsir < nsir_threshold) |
-        (ndwi > 0.1))
-    )
-    
     glacier_map = np.zeros_like(nir, dtype=np.uint8)
+
+    try:
+        nsir_threshold = threshold_otsu(nsir_vals)
+        
+        snow = (
+            (ndsi >= 0.7) &
+            (cloud_mask == 1) &
+            (glacier_mask == 1) &
+            (nsir >= nsir_threshold) &
+            (ndwi <= 0.1)
+        )
+        
+        ice = (
+            (ndsi >= 0.7) &
+            (cloud_mask == 1) &
+            (glacier_mask == 1) &
+            ((nsir < nsir_threshold) |
+            (ndwi > 0.1))
+        )
+        
+
+        
+    except:
+        candidate_mask = valid_mask & (ndsi > 0.4) & (ndvi < 0.5)
+        
+        if np.any(candidate_mask):
+            red = bands['RED']
+            red_swir = red / (swir + 1e-10)
     
+            red_swir_dynamic_threshold = threshold_otsu(red_swir[candidate_mask])
+        else:
+            red_swir_dynamic_threshold = 0.9  # fallback if candidate_mask is empty
+            
+        ice = np.logical_and.reduce((candidate_mask, red_swir <= red_swir_dynamic_threshold, glacier_mask == 1))
+        snow = np.logical_and.reduce((candidate_mask, red_swir > red_swir_dynamic_threshold, glacier_mask == 1))
+
     glacier_map[snow] = 100
     glacier_map[ice] = 215
     
@@ -440,10 +459,7 @@ def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_pa
     
     # Mark invalid pixels as 255 (no-data, clouds, or water)
     thematic_map = np.zeros_like(ndsi, dtype=np.uint8)
-    thematic_map[np.logical_not(valid_mask)] = 255
-    # Optionally mark cloud and water areas with distinct codes:
-    thematic_map[cloud_mask == 2] = 205
-    thematic_map[water_mask == 1] = 210
+
     
 
     # Build candidate mask: valid pixels with sufficient NDSI and low NDVI.
@@ -464,6 +480,12 @@ def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_pa
         thematic_map[glacier_map == 215] = 215
 
 
+    thematic_map[np.logical_not(valid_mask)] = 255
+    # Optionally mark cloud and water areas with distinct codes:
+    thematic_map[cloud_mask == 2] = 205
+    thematic_map[water_mask == 1] = 210
+    
+    
     # if np.sum(np.logical_and(thematic_map == 100, glacier_mask == 0)) > np.sum(glacier_mask == 1):
     #     thematic_map[thematic_map == 215] = 100
 

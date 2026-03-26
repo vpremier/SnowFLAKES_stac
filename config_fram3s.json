@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/AguaNegra.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/AguaNegra/Sentinel2",
+  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/AOI/UTM_32N/euregio_boundary_25832.gpkg",
+  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/SCF_v3",
   "satellite": "Sentinel-2",
-  "date_start": "2025-02-23",
-  "date_end": "2025-03-31",
+  "date_start": "2017-08-29",
+  "date_end": "2017-12-27",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -14,14 +14,14 @@
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
-    "resolution": 20,
+    "resolution": 50,
     "extent_target": [
-      415500,
-      6655000,
-      429500,
-      6670500
+      573030.3488,
+      5048649.9999,
+      813030.3488,
+      5308649.9999
     ],
-    "epsg_target": 32719
+    "epsg_target": 25832
   },
   "overwrite": false,
   "no_data_value": "nan",

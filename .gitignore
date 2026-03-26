@@ -8,3 +8,4 @@ __pycache__/
 
 # Ignore environment files
 .env
+.env-
