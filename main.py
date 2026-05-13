@@ -15,15 +15,17 @@ import time
 import shutil
 import glob
 
-from dotenv import load_dotenv
-load_dotenv()
+
 
 from utils import *
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 from data_download.main import run_query_download
 
 
+
+
 def run_workflow(date_start, date_end, config_path):
+    
     
     # Read
     with open(config_path, "r") as f:
@@ -34,6 +36,7 @@ def run_workflow(date_start, date_end, config_path):
     config["date_end"] = date_end
     config["query_sentinel2"] = True
     config["download_sentinel2"] = False
+    
     
     
     # resampling parameters
@@ -61,9 +64,14 @@ def run_workflow(date_start, date_end, config_path):
         return
     
     log_file = os.path.join(outdir, "failed_dates.txt")
+    empty_items_dates = os.path.join(outdir, "00_dates_no_items.log")
+
 
     
     s2_files = [f.split('.')[0] for f in data_df['Name'].to_list()]
+    
+    if not config['simple_class']:
+        remove_glaciers(outdir)
     
     dates_to_process = get_dates_to_process(s2_files, config)    
                                 
@@ -80,11 +88,32 @@ def run_workflow(date_start, date_end, config_path):
         
             try:
                 data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
-                                                        resolution=resolution, 
+                                                         resolution=resolution, 
                                                          extent_target=extent_target, 
                                                          epsg_target=epsg_target,
                                                          save = False,
-                                                         shp=config['shapefile'])
+                                                         shp=config['shapefile'],
+                                                         exclude_tiles=config['exclude_tiles'])
+                
+                if scene_id is None:
+                    with open(empty_items_dates, "a") as f:
+                        f.write(f"{date}\n")
+                                        
+       
+                
+                # data = data.chunk({
+                #         "day": 1,     # or small number
+                #         "band": len(data.band),
+                #         "x": 1024,
+                #         "y": 1024
+                #     })
+                # ds = data.to_dataset(name="sentinel2")
+                # ds = ds.reset_coords(drop=True)
+                # data.to_zarr("output.zarr", mode="w")
+                
+                # data = data.chunk({"y": 2048, "x": 2048})
+                # ds = data.compute()
+                
                 
                 print(list(data.coords["band"].values))               
                 # create folder
@@ -107,6 +136,9 @@ def run_workflow(date_start, date_end, config_path):
                 
                 with open(log_file, "a") as f:
                     f.write(f"{date},{scene_id},{str(e)}\n")
+                    
+                    
+          
         
         # Recompute dates to process (removes processed ones automatically)
         dates_to_process = get_dates_to_process(s2_files, config)
@@ -120,12 +152,12 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2017-01-01")
-    end = pd.Timestamp("2018-05-15")
-    # start = pd.Timestamp("2020-04-25")
-    # end = pd.Timestamp("2020-04-26")
+    start = pd.Timestamp("2015-04-01")
+    end = pd.Timestamp("2025-03-31")
+    # start = pd.Timestamp("2018-06-30")
+    # end = pd.Timestamp("2018-07-01")
     # shape of the AOI
-    config_path = './config_fram3s.json'
+    config_path = './config_snowcop.json'
     
     step = pd.Timedelta(days=60)
     
@@ -147,18 +179,17 @@ if __name__ == "__main__":
 
     
     for date_start, date_end in date_pairs:
+        
         run_workflow(date_start, date_end, config_path)
 
         
             
-# modifica scenes to skip! le classifica con thematic    
 
 
 # write readme`
 # remove auxiliary?
     
 # add layer uncertainty
-# check ghiacciai
 # guarda land cover
 
 

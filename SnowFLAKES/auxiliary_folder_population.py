@@ -434,8 +434,30 @@ def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask,
     """
 
     # load the bands
-    cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
-    cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
+    available_bands = list(data.coords["band"].values) 
+    
+    if "B10" not in available_bands:
+    
+        bands_data = []
+    
+        for b in cloud_bands:
+            if b in available_bands:
+                bands_data.append(np.squeeze(data.sel(band=b).values))
+            else:
+                # Fill missing band (e.g. B10) with zeros
+                shape = data.sel(band=available_bands[0]).shape
+                bands_data.append(np.squeeze(np.zeros(shape)))
+        
+        cloud_bands_image = np.stack(bands_data, axis=0)
+        cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
+
+    
+    else:
+            
+        cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
+        cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
+        
+ 
     
     
     temporary_cloud_mask_path = path_cloud_mask.replace('.tif', '60m.tif')
@@ -473,10 +495,10 @@ def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask,
         
         resolution = (data.x[1]-data.x[0]).item()
 
-        E_min = float(data.x.min())
-        E_max = float(data.x.max() + resolution)
-        N_min = float(data.y.min() - resolution)
-        N_max = float(data.y.max())
+        E_min = float(data.x.min() - resolution/2)
+        E_max = float(data.x.max() + resolution/2)
+        N_min = float(data.y.min() - resolution/2)
+        N_max = float(data.y.max() + resolution/2)
 
 
         cmd = 'gdalwarp -te ' + ' '.join((str(E_min), str(N_min), str(E_max), str(N_max))) + \

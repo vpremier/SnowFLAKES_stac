@@ -2,8 +2,8 @@
   "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/AOI/UTM_32N/euregio_boundary_25832.gpkg",
   "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/SCF_v3",
   "satellite": "Sentinel-2",
-  "date_start": "2017-08-29",
-  "date_end": "2017-12-27",
+  "date_start": "2024-09-20",
+  "date_end": "2024-09-30",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -37,5 +37,12 @@
   "start_glaciers_month": "10",
   "end_glaciers_month": "04",
   "SVM_folder_name": "SCF",
-  "PCA": "no"
+  "PCA": "no",
+  "exclude_tiles": [
+    "32TQR",
+    "32TNR",
+    "33TUN",
+    "33TUM"
+  ],
+  "simple_class": false
 }

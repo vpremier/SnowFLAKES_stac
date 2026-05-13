@@ -103,7 +103,7 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     distance_index_path = glob.glob(os.path.join(curr_aux_folder, '*distance.tif'))[0]
 
 
-    scf_folder = os.path.dirname(svm_model_filename)
+    scf_folder = os.path.dirname(curr_aux_folder) + os.sep + "SCF"
 
     # Load the SVM model
     svm_model = pickle.load(open(svm_model_filename, 'rb'), encoding='latin1')

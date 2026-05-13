@@ -24,187 +24,38 @@ from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
 from affine import Affine    
 # import odc.stac
-
-
+import requests as r 
+from datetime import datetime, timedelta
 
 from stac.utils_stac import *
+import requests as rq
+from rasterio.session import AWSSession
+import boto3
+from rioxarray import merge
 
-
-# clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01
-# clms_urban-atlas_street-tree-layer_europe_V005ha_vector_static_v01
-# cop-dem-eea-10-laea-tif
-# cop-dem-glo-30-dged-cog
-        
-# collection = "cop-dem-glo-30-dged-cog"
-
-
-def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
-                            extent_target=None, epsg_target=None, 
-                            reproj_type=Resampling.bilinear, save=True, 
-                            ow=False, shp=None):
-    
-    start = time.time()
-
-    # out directory
-    os.makedirs(outdir, exist_ok=True)
-    out_path = os.path.join(outdir, "DEM.tif")
-    
-
-    # credentials:  S3 Credentials from CDSE 
-    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
-    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
-
-    load_dotenv()  # loads .env file
-    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    os.environ["AWS_HTTPS"] = "YES"
-    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
-    os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
-    
-    # option 1 - use stackstac
-    CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    # cat = pystac_client.Client.open(CDSE_URL)
-    
-    
-    retry = Retry(
-        total=5,
-        backoff_factor=8,  # waits 0, 16s, 32s, 64s, 128s between retries
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods={"GET", "POST"},
-        raise_on_status=False,  # prevents urllib3 raising before pystac sees it
-        respect_retry_after_header=True,  # Not certain that this header is ever set
-        retry_after_max=300,  # cap retry to 5 minutes
-    )
-    
-    cat = pystac_client.Client.open(CDSE_URL, stac_io=StacApiIO(max_retries=retry))
-    
-    cat.add_conforms_to("ITEM_SEARCH")
-
-    
-    # define target information (extent, resolution etc)
-    if img4ext:
-        print('Reading extent, resolution and epsg from an image..')
-        img, info = open_image(img4ext)
-        extent_target = info['extent']
-        crs = rio.crs.CRS.from_wkt(info['projection'])
-        epsg_target = crs.to_epsg()
-        resolution = info['geotransform'][1]
-    else:
-        assert extent_target and resolution and epsg_target, \
-            "Please specify the target extent, resolution and EPSG or enter the path to a target image"
             
-
-    # determine AOI bbox in wgs84
-    print('Filtering STAC by geometry')
-    if shp:
-        # Load shapefile
-        gdf = gpd.read_file(shp)
+def fetch_stac_server(params):
+    """ 
+    Queries the STAC server (STAC) backend.
+    params is a Python dictionary to pass as JSON to the request.
+    """
+    
+    search_url = f"https://landsatlook.usgs.gov/stac-server/search"
+    query_return = rq.post(search_url, json=params).json()
+    error = query_return.get("message", "")
+    if error:
+        raise Exception(f"STAC-Server failed and returned: {error}")
         
-        # Ensure it's in WGS84 (required by STAC APIs)
-        gdf = gdf.to_crs(epsg=4326)
+    print(f"Items Found: {len(query_return['features'])}")   
+    
+    for q in query_return['features']: print(f"Platform: {q['properties']['platform']}, Cloud Cover: {q['properties']['eo:cloud_cover']}, Collection: {q['description']}, ID: {q['id']}")
         
-        # Merge all geometries into one (important if multiple features)        
-        geometry = mapping(gdf.unary_union)
-        
-    else:
+    return query_return['features']
 
 
-        bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
-                                          extent_target=extent_target, 
-                                          epsg_target=epsg_target, 
-                                          buffer_m=1000)
-        
-        geometry = mapping(box(*bbox_of_interest))
-    
-    params = {"collections": [collection],
-              "intersects": geometry}
-    
-    items = list(cat.search(**params).items_as_dicts())
-    print(f"Number of STAC items returned: {len(items)}")
-    
-    data = stackstac.stack(
-        items=items,
-        bounds=extent_target,
-        epsg=epsg_target,
-        resolution=resolution,
-        resampling=reproj_type,
-        gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-            {
-                "GDAL_NUM_THREADS": -1,
-                "GDAL_HTTP_UNSAFESSL": "YES",
-                "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                "AWS_VIRTUAL_HOSTING": "FALSE",
-                "AWS_HTTPS": "YES"
-            }
-            ),
-        )
-    
-    data = data.mean(dim="time", skipna=True)
 
-    
-            # con questa configurazione non dava più problemi
-            # "GDAL_HTTP_MAX_RETRY":"5",
-            #     "GDAL_HTTP_RETRY_DELAY":"2",
-            #     "GDAL_HTTP_TIMEOUT":"30",
-            #     "GDAL_NUM_THREADS":"1",
-            #     "CPL_VSIL_CURL_USE_HEAD":"NO",
-            #     "GDAL_DISABLE_READDIR_ON_OPEN":"EMPTY_DIR",
-            #     "CPL_VSIL_CURL_USE_HEAD": "NO",
-            #     "GDAL_HTTP_TCP_KEEPALIVE": "NO"
-            
-            # questa era commentata
-            # "GDAL_NUM_THREADS": "1",
-            # "GDAL_HTTP_UNSAFESSL": "YES",
-            # "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-            # "AWS_VIRTUAL_HOSTING": "FALSE",
-            # "AWS_HTTPS": "YES",
-            # "GDAL_HTTP_MAX_RETRY": "5",
-            # "GDAL_HTTP_RETRY_DELAY": "2",
-            # "GDAL_HTTP_TIMEOUT": "30",
-            
-    
-    #  === Extract info_src from xarray ===
-    transform = Affine(
-        resolution, 0, extent_target[0],
-        0, -resolution, extent_target[3]
-    )
-      
 
-    width = len(data.x)    
-    height = len(data.y) 
-
-    dst_crs = CRS.from_epsg(epsg_target)
-    
-
-    if save:
-        band_data = np.squeeze(data).values.astype("float32")
-
-        # === Save GeoTIFF ===
-        profile = {
-            'driver': 'GTiff',
-            'height': height,
-            'width': width,
-            'count': 1,
-            'dtype': 'float32',
-            'crs': dst_crs,
-            'transform': transform,
-            'nodata': np.nan,
-        }
-        
-        with rio.open(out_path, 'w', **profile) as dst:
-            dst.write(band_data, 1)
-
-        print(f"Saved {out_path}")
-        
-        
-    end = time.time()
-    print(f"Total runtime of the program is {end - start} seconds")
-    
-    return data
-            
-    
-def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None, 
+def convert_landsat_bands(outdir, date, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
                             reproj_type=Resampling.bilinear, suffix='toa',
                             na_value = "NaN", calibration=True, ow=False,
@@ -276,56 +127,28 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
         Sentinel-2 data cube with dimensions (time, band, y, x)
         containing calibrated reflectance values.
     """
-    
-    
     # out directory
     os.makedirs(outdir, exist_ok=True)
 
     # logging file
-    log_file = os.path.join(outdir, "sentinel2.log")
+    log_file = os.path.join(outdir, "landsat.log")
     logging.basicConfig(
         filename=log_file,
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
-    logging.info("Started Sentinel-2 loading from CDSE")
-
-
-
-    
-    # credentials:  S3 Credentials from CDSE 
-    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
-    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
-
-    load_dotenv()  # loads .env file
-    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    # os.environ["AWS_HTTPS"] = "YES"
-    # os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
-    # os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
-    
-
+    logging.info("Started Landsat loading from USGS STAC catalogue")
     
     
-    # option 1 - use stackstac
-    CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    # cat = pystac_client.Client.open(CDSE_URL)
-    
-    retry = Retry(
-        total=5,
-        backoff_factor=8,  # waits 0, 16s, 32s, 64s, 128s between retries
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods={"GET", "POST"},
-        raise_on_status=False,  # prevents urllib3 raising before pystac sees it
-        respect_retry_after_header=True,  # Not certain that this header is ever set
-        # retry_after_max=300,  # cap retry to 5 minutes
-    )
-    
-    cat = pystac_client.Client.open(CDSE_URL, stac_io=StacApiIO(max_retries=retry))
 
 
-    cat.add_conforms_to("ITEM_SEARCH")
+    # convert the date to the required format
+    day = datetime.strptime(date, "%Y-%m-%d")
+    
+    date_rfc3339 = f"{day.strftime('%Y-%m-%dT00:00:00Z')}/{day.strftime('%Y-%m-%dT23:59:59Z')}"
+   
+    
+    
     
     # define target information (extent, resolution etc)
     if img4ext:
@@ -344,7 +167,6 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     if filter_by_geometry:
         print('Filtering STAC by geometry')
         # determine AOI bbox in wgs84
-        print('Filtering STAC by geometry')
         if shp:
             # Load shapefile
             gdf = gpd.read_file(shp)
@@ -367,31 +189,142 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
             
             geometry = mapping(box(*bbox_of_interest))
         
+
+
         params = {
-            "collections": ["sentinel-2-l1c"],
+            "collections": ["landsat-c2l1"],
             "intersects": geometry,
-            "datetime": f"{date}",
+            "datetime": date_rfc3339,
             "query": {
                 "eo:cloud_cover": {
                     "lte": max_cc
                     }
                 }
             }
+    
+        query_return = fetch_stac_server(params) 
         
+        [print(f['properties']['landsat:scene_id']) for f in query_return] 
         
+        search = [l['href'] for l in catalog_links if l['rel'] == 'search'][0]   #retreive search endpoint from STAC Catalog
+        query = r.post(search, json=params).json()   # send POST request to the stac-search endpoint with params passed in
+        print(f"Items Found: {len(query['features'])}")
+
+        query['features'][0] 
+        # print the keys of the properties of a STAC item
+        query['features'][0]['properties'].keys()
+
+
     elif idList:
         print('Filtering STAC by input ID list')
         # Looking for Sentinel-2 L1C
         params = {
-            "collections": ["sentinel-2-l1c"],
+            "collections": ["landsat-c2l1"],
             "datetime": f"{date}",
             "ids":idList,     
         }
+        
+    LP_items = [l['href'] for l in query['links'] if l['rel'] == 'items'][0]    # Set the items endpoint to variable
+
 
     start = time.time()
 
     items = list(cat.search(**params).items_as_dicts())
     print(f"Number of STAC items returned: {len(items)}")
+    
+
+    band_links = {}  # Initialize as an empty dictionary
+    
+    for query_item in query_return:
+        for b in bands:
+            band_link = query_item['assets'][b]['alternate']['s3']['href']
+    
+            # Create a list for the band if it doesn't exist yet
+            band_links.setdefault(b, []).append(band_link)
+    
+    
+    def use_s3_assets(items):
+        for item in items:
+            for key, asset in item["assets"].items():
+                if "alternate" in asset and "s3" in asset["alternate"]:
+                    asset["href"] = asset["alternate"]["s3"]["href"]
+        return items
+    
+    
+    items = use_s3_assets(query_return)
+    
+    
+    # AWS credentials
+    aws_session = AWSSession(
+        boto3.Session(profile_name="default"),
+        requester_pays=True
+    )    
+
+
+    import stackstac
+    import rasterio as rio
+    
+    with rio.Env(aws_session):
+        stack = stackstac.stack(
+            items,                  # your STAC items (query["features"])
+            assets=["swir16"],      # or "SR_B6" for Landsat C2 L2
+            resolution=resolution,
+            epsg=epsg_target,
+            bounds=extent_target,
+        )
+        
+    stack.load()
+    
+    
+    with rio.Env(aws_session):
+        with rio.open("s3://usgs-landsat/collection02/level-1/standard/oli-tirs/2025/232/084/LC08_L1TP_232084_20250217_20250226_02_T1/LC08_L1TP_232084_20250217_20250226_02_T1_B6.TIF") as src:
+            print(src.shape)
+    
+    
+    
+    
+    import boto3
+    import os
+    
+    session = boto3.Session(profile_name="default")
+    creds = session.get_credentials().get_frozen_credentials()
+    
+    os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+    
+    if creds.token:
+        os.environ["AWS_SESSION_TOKEN"] = creds.token
+        
+        
+    os.environ["AWS_REQUEST_PAYER"] = "requester"
+    
+    
+    import stackstac
+
+    stack = stackstac.stack(
+        items,              # patched to use s3://
+        assets=["swir16"],
+        resolution=30,
+        chunksize=None
+    )
+        
+    
+    
+    
+    
+    
+    
+    
+    mergeList = []
+    for link in band_links['swir16']:
+        with rio.Env(aws_session):
+            mergeList.append(rioxarray.open_rasterio(link))  # Open file and append to list
+    mergeList
+    
+    
+    swir_mosaic = merge.merge_arrays(mergeList, nodata=0)
+    swir_mosaic
+    
     
     
     if exclude_tiles:
@@ -410,9 +343,9 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
 
         return None, None
     
-    # for Sentinel-2: needs to be changed in case of other sensors
-    bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
-             "B10", "B11", "B12", "B8A"]
+    # for Landsat-8: needs to be changed in case of other sensors
+    bands = ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16',
+             'swir22', 'lwir11']
     
 
     # id of the scene 
@@ -449,7 +382,6 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
             resolution=resolution,
             assets=bands,
             resampling=reproj_type,
-            xy_coords="center",
             gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
                 {
                     "GDAL_NUM_THREADS": -1,
@@ -546,21 +478,23 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     
 
 if __name__ == "__main__":    
-
-    resolution = 20
+    
+    
+    resolution = 50
     epsg_target = 32719
-    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/tile/T19HCC/S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931/T19HCC_20250206T143811_B01_toa.tif'
+    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/LC08/01_TEST_auxiliary_folder/LC08_DEM.tif'
 
     shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
-    extent_target = get_shape_extent(shape_name, epsg=32719, outres =500)
+    filter_by_geometry = True
+    shp = None
 
-    date = "2025-02-06"
+
+    date = "2015-06-14"
 
     outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test'
 
     start = time.time()
 
-    idList = ['S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931']
 
     data = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
                             epsg_target=None, reproj_type=Resampling.cubic, 

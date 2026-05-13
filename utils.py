@@ -19,7 +19,27 @@ from SnowFLAKES.utilities import *
 
 
 
-
+def remove_glaciers(outdir):
+    for scf_path in glob.glob(os.path.join(outdir, "*", "SCF")):
+        
+        files = os.listdir(scf_path)
+        
+        has_glacier = any(f.endswith("SnowFLAKES_GLACIERS.tif") for f in files)
+        has_snowflakes = any(f.endswith("SnowFLAKES.tif") for f in files)
+        
+        # Condition: glacier exists BUT SnowFLAKES.tif does NOT
+        if has_glacier and not has_snowflakes:
+            for f in files:
+                if "SnowFLAKES_GLACIERS" in f:
+                    file_path = os.path.join(scf_path, f)
+                    
+                    print(f"🗑 Removing {file_path}")
+                    os.remove(file_path)
+    return
+                
+                
+                
+                
 def load_with_retry(data, max_retries=5, wait_seconds=30):
     for attempt in range(max_retries):
         try:
@@ -60,10 +80,14 @@ def get_dates_to_skip(config):
     working_folder = config['output_directory']
 
     # log files
-    skipped_scenes_file, cloud_scenes_file = create_empty_files(working_folder)
+    skipped_scenes_file, cloud_scenes_file, empty_items_file = create_empty_files(working_folder)
 
     scenes_to_skip = scenes_skip(working_folder)
     scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
+    dates_to_skip_emptyitems = empty_items_to_skip(working_folder)
+
+    
+
 
     # Combine and remove duplicates
     all_scenes = set(scenes_to_skip_clouds) #set(scenes_to_skip) 
@@ -74,6 +98,7 @@ def get_dates_to_skip(config):
         for d in (i.split("_")[2][:8] for i in all_scenes)
     })
 
+    dates = sorted(set(dates) | set(dates_to_skip_emptyitems))
     return dates
     
 
@@ -92,12 +117,17 @@ def get_dates_to_process(s2_files, config):
     # to skip (clouds / failed)
     dates_to_skip = set(get_dates_to_skip(config))
     
+    
     # final dates to process
     dates_to_process = sorted(
-        set(dates_to_download) - processed_dates - dates_to_skip
+        set(dates_to_download) - processed_dates - dates_to_skip 
     )     
 
     return dates_to_process       
+    
+    
+    
+
     
     
     

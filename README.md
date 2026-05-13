@@ -23,7 +23,7 @@ Follow the official guide:
 Example environment creation:
 
 ```bash
-micromamba create -n snowmap -c conda-forge \
+micromamba create -n snowmap_cdse -c conda-forge \
 python=3.11 \
 numpy \
 spyder \
@@ -47,4 +47,5 @@ rioxarray \
 s2cloudless \
 python-dotenv \
 pystac-client \
-dask
+dask \
+odc-stac

@@ -13,8 +13,82 @@ import glob
 import rasterio
 from rasterio.warp import transform_bounds
 import time
+import re
+from datetime import datetime
+import geopandas as gpd
 
 
+def find_closest_valid_scf(working_folder, date):
+    """
+    base_path: root Sentinel2 directory
+    target_date: datetime object
+    check_func: function that returns True if SCF is valid
+    """
+    
+    folders = os.listdir(working_folder)
+    
+    target_date = datetime.strptime(date, "%Y%m%d")
+    
+    date_pattern = re.compile(r'_(\d{8}T\d{6})_')
+    
+    candidates = []
+    
+    for folder in folders:
+        match = date_pattern.search(folder)
+        if match:
+            date_str = match.group(1)
+            folder_date = datetime.strptime(date_str, "%Y%m%dT%H%M%S")
+            
+            diff = abs((folder_date - target_date).total_seconds())
+            
+            candidates.append((diff, folder_date, folder))
+    
+    # Sort by closest date
+    candidates.sort(key=lambda x: x[0])
+    
+
+    for _, folder_date, folder in candidates:
+        scf_path = os.path.join(working_folder, folder, "SCF")
+        
+        if not os.path.exists(scf_path):
+            continue
+        
+        # -------------------------
+        # 3. find shapefile
+        # -------------------------
+        shp_files = [f for f in os.listdir(scf_path) if f.endswith(".shp")]
+        if not shp_files:
+            continue
+        
+        # check SnowFLAKES.tif exists
+        tif_files = [f for f in os.listdir(scf_path) if f.endswith("SnowFLAKES.tif")]
+        if not tif_files:
+            continue
+        
+        shp_path = os.path.join(scf_path, shp_files[0])
+
+        try:
+            gdf = gpd.read_file(shp_path)
+
+            unique_values = set(gdf["value"].unique())
+            print(f"{folder_date} → values: {unique_values}")
+
+            # -------------------------
+            # 4. validation condition
+            # -------------------------
+            if unique_values == {1, 2}:
+
+                print(f"✅ Valid SCF found at {folder_date}")
+
+                return os.path.join(scf_path, tif_files[0])
+
+        except Exception as e:
+            print(f"⚠️ Error reading {shp_path}: {e}")
+
+    return None
+            
+            
+            
 def is_month_in_range(month, start_month, end_month):
     """
     Check if a given month (1-12) is in the range [start_month, end_month],
@@ -24,6 +98,8 @@ def is_month_in_range(month, start_month, end_month):
         return start_month <= month <= end_month
     else:
         return month >= start_month or month <= end_month
+
+
 
 def create_empty_files(working_folder):
     """
@@ -38,6 +114,8 @@ def create_empty_files(working_folder):
     # Define file paths
     scenes_to_skip_path = os.path.join(working_folder, '00_scenes_to_skip.log')
     skip_cloud_masks_path = os.path.join(working_folder, '00_skip_cloud_masks.log')
+    skip_empty_items_path = os.path.join(working_folder, '00_dates_no_items.log')
+
 
     # Create the empty text files only if they don't already exist
     if not os.path.exists(scenes_to_skip_path):
@@ -54,7 +132,14 @@ def create_empty_files(working_folder):
     else:
         print(f"File already exists: {skip_cloud_masks_path}")
         
-    return scenes_to_skip_path, skip_cloud_masks_path
+    if not os.path.exists(skip_empty_items_path):
+        with open(skip_empty_items_path, 'w') as f:
+            pass  # Just create an empty file
+        print(f"Created file: {skip_empty_items_path}")
+    else:
+        print(f"File already exists: {skip_empty_items_path}")
+        
+    return scenes_to_skip_path, skip_cloud_masks_path, skip_empty_items_path
 
 
 def data_filter(start_date, end_date, working_folder, sensor, scenes_to_skip):
@@ -150,6 +235,18 @@ def scenes_skip(working_folder):
 
 def cloud_mask_to_skip(working_folder):
     txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_skip_cloud_masks.log'))[0]
+    with open(txt_scenes_to_skip_path, "r") as file:
+        content = file.read().strip()
+        if content:
+            date_list = content.split('\n')
+        else:
+            date_list = []  # Empty file case
+
+    return date_list
+
+
+def empty_items_to_skip(working_folder):
+    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_dates_no_items.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
         content = file.read().strip()
         if content:
