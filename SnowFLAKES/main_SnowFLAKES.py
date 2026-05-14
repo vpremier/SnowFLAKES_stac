@@ -39,7 +39,7 @@ def run_snowflakes(config, data, scene_id):
     
     try:
         # Extract date and time from the folder name and sensor type
-        date_time, date = define_datetime(sensor, scene_id)
+        date_time, date = define_datetime(sensor, scene_id, config)
     except Exception:
         raise ValueError("Non valid scene id")
 

@@ -52,12 +52,16 @@ def fetch_stac_server(params):
         
     return query_return['features']
 
+
+
 def use_s3_assets(items):
     for item in items:
         for key, asset in item["assets"].items():
             if "alternate" in asset and "s3" in asset["alternate"]:
                 asset["href"] = asset["alternate"]["s3"]["href"]
     return items
+
+
 
 
 def get_MTL_file(query_item):
@@ -78,26 +82,14 @@ def get_MTL_file(query_item):
     return json.loads(json_content)
 
 
-def convert_landsat_bands(outdir, date, resolution=None, img4ext = None, 
-                            extent_target=None, epsg_target=None, 
-                            reproj_type=Resampling.bilinear, suffix='toa',
-                            na_value = "NaN", calibration=True, ow=False,
-                            max_cc = 90, platform = 'LANDSAT_8', idList = [], 
-                            filter_by_geometry = True,
-                            save = True, shp=None, exclude_tiles=None):   
-    
-    # out directory
-    os.makedirs(outdir, exist_ok=True)
+ 
 
-    # logging file
-    log_file = os.path.join(outdir, "landsat.log")
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    logging.info("Started Landsat loading from USGS STAC catalogue")
+def get_query_items(date, img4ext = None, extent_target=None, resolution=None,
+                    epsg_target=None, max_cc = 90, filter_by_geometry = True, 
+                    shp=None, platform = 'LANDSAT_8', idList = []):
     
+
+
     
     # define target information (extent, resolution etc)
     if img4ext:
@@ -163,6 +155,62 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     # query
     query_return = fetch_stac_server(params) 
     items = use_s3_assets(query_return)
+    
+    return items
+   
+    
+   
+    
+def get_scene_center_time(date, img4ext = None, extent_target=None, 
+                          resolution=None, epsg_target=None, max_cc = 90, 
+                          filter_by_geometry = True, shp=None, 
+                          platform = 'LANDSAT_8', idList = []):
+    
+    items = get_query_items(date, img4ext = img4ext, extent_target=extent_target, 
+                            resolution=resolution, epsg_target=epsg_target, 
+                            max_cc = max_cc, filter_by_geometry = filter_by_geometry, 
+                            shp=shp, platform = platform, idList = idList)
+    
+    MTL_info = get_MTL_file(items[0]) 
+    
+    time = MTL_info['LANDSAT_METADATA_FILE']['IMAGE_ATTRIBUTES']['SCENE_CENTER_TIME']
+    time_clean = time.split('.')[0]
+    
+    dt = datetime.strptime(
+        date + ' ' + time_clean,
+        '%Y-%m-%d %H:%M:%S'
+    )
+    
+    return dt
+
+
+
+
+def convert_landsat_bands(outdir, date, resolution=None, img4ext = None, 
+                            extent_target=None, epsg_target=None, 
+                            reproj_type=Resampling.bilinear, suffix='toa',
+                            na_value = "NaN", calibration=True, ow=False,
+                            max_cc = 90, platform = 'LANDSAT_8', idList = [], 
+                            filter_by_geometry = True,
+                            save = True, shp=None, exclude_tiles=None):   
+    
+    # out directory
+    os.makedirs(outdir, exist_ok=True)
+    
+    # logging file
+    log_file = os.path.join(outdir, "landsat.log")
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    logging.info("Started Landsat loading from USGS STAC catalogue")
+    
+    
+    items = get_query_items(date, img4ext = img4ext, extent_target=extent_target, 
+                            resolution=resolution, epsg_target=epsg_target, 
+                            max_cc = max_cc, filter_by_geometry = filter_by_geometry, 
+                            shp=shp, platform = platform, idList = idList)
     
     start = time.time()
 

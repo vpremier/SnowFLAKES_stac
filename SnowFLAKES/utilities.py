@@ -17,6 +17,8 @@ import re
 from datetime import datetime
 import geopandas as gpd
 
+from stac.load_stac_usgs import get_scene_center_time
+
 
 def find_closest_valid_scf(working_folder, date):
     """
@@ -763,7 +765,7 @@ def process_image(img_info, max_dim=9000):
     return subimage_extents
 
 
-def define_datetime(sensor, acquisition_name):
+def define_datetime(sensor, acquisition_name, config):
     from datetime import datetime
     '''
     Parameters
@@ -805,19 +807,16 @@ def define_datetime(sensor, acquisition_name):
         except:
             date = os.path.basename(glob.glob(acquisition_name + os.sep + "*B1_toa.tif")[0]).split('_')[3]
 
-        metadata_file = glob.glob(os.path.join(acquisition_name, '*MTL.txt'))[0]
-
-        with open(metadata_file) as fp:
-
-            # read all lines in a list
-            lines = fp.readlines()
-            for line in lines:
-
-                # check if string present on a current line
-                if line.find('SCENE_CENTER_TIME') != -1:
-                    time = line[25:33]
-
-                    date_time = datetime.strptime(date + str(time), '%Y%m%d%H:%M:%S')
+        # retrieve the MTL file from the STAC catalogue
+        date_time = get_scene_center_time(datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d'), 
+                                          extent_target=config["resampling_params"]['extent_target'], 
+                                          resolution=config["resampling_params"]['resolution'], 
+                                          epsg_target=config["resampling_params"]['epsg_target'], 
+                                          max_cc = config['max_cloudcover'], 
+                                          filter_by_geometry = True, 
+                                          shp=config['shapefile'], 
+                                          platform = config["satellite"].upper().replace("-", "_"), 
+                                          idList = [])
 
     return date_time, date
 
