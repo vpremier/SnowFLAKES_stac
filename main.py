@@ -177,7 +177,6 @@ if __name__ == "__main__":
         current = next_date
 
 
-    
     for date_start, date_end in date_pairs:
         
         run_workflow(date_start, date_end, config_path)
