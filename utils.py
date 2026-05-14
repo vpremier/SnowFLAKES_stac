@@ -65,12 +65,17 @@ def get_processed_dates(config):
 
     files = glob.glob(os.path.join(working_folder, "*/*/*SnowFLAKES*.tif"))
     
+
     dates = sorted({
-        f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        for d in (
-            os.path.basename(f).split("_")[2][:8]
-            for f in files
+        (
+            f"{parts[2][:4]}-{parts[2][4:6]}-{parts[2][6:8]}"
+            if fname.startswith("S2")
+            else f"{parts[3][:4]}-{parts[3][4:6]}-{parts[3][6:8]}"
         )
+        for f in files
+        for fname in [os.path.basename(f)]
+        for parts in [fname.split("_")]
+        if fname.startswith(("S2", "L"))
     })
     
     return dates
@@ -87,30 +92,41 @@ def get_dates_to_skip(config):
     dates_to_skip_emptyitems = empty_items_to_skip(working_folder)
 
     
-
-
     # Combine and remove duplicates
     all_scenes = set(scenes_to_skip_clouds) #set(scenes_to_skip) 
-
+    
     # Extract dates
     dates = sorted({
-        f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        for d in (i.split("_")[2][:8] for i in all_scenes)
+        (
+            f"{parts[2][:4]}-{parts[2][4:6]}-{parts[2][6:8]}"
+            if scene.startswith("S2")
+            else f"{parts[3][:4]}-{parts[3][4:6]}-{parts[3][6:8]}"
+        )
+        for scene in all_scenes
+        for parts in [scene.split("_")]
+        if scene.startswith(("S2", "L"))
     })
-
+    
     dates = sorted(set(dates) | set(dates_to_skip_emptyitems))
     return dates
     
 
 
-def get_dates_to_process(s2_files, config):
+def get_dates_to_process(files, config):
     
     # extract dates 
     dates_to_download = sorted({
-        f"{d[:4]}-{d[4:6]}-{d[6:8]}"
-        for d in (i.split("_")[2][:8] for i in s2_files)
+        (
+            # Sentinel-2 (starts with S2...)
+            f"{parts[2][:4]}-{parts[2][4:6]}-{parts[2][6:8]}"
+            if f.startswith("S2")
+            # Landsat (starts with L...)
+            else f"{parts[3][:4]}-{parts[3][4:6]}-{parts[3][6:8]}"
+        )
+        for f in files
+        for parts in [f.split("_")]
     })
-    
+
     # already processed
     processed_dates = set(get_processed_dates(config))
     

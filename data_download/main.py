@@ -38,7 +38,16 @@ def run_query_download(config_path):
     
     max_cc = config["max_cloudcover"]
     
-    landsat_satellite = config["landsat_satellite"]
+    landsat_map = {
+        "Landsat-5": "LT05",
+        "Landsat-7": "LE07",
+        "Landsat-8": "LC08",
+        "Landsat-9": "LC09",
+    }
+    
+    sat_code = landsat_map.get(config["satellite"])
+
+    landsat_satellite = [sat_code]
     
 
     s2_tile = config["s2_tile"]
@@ -55,7 +64,8 @@ def run_query_download(config_path):
                                 max_cc=max_cc,
                                 sat = landsat_satellite)
         
-        results.to_csv(os.path.join(outdir,'query_landsat.csv'))
+        results = results.rename(columns={"displayId": "Name"})
+        results.to_csv(os.path.join(outdir,'query.csv'))
         
     if sentinel2_query:
 
@@ -67,7 +77,7 @@ def run_query_download(config_path):
                             max_cc = max_cc, 
                             tile=s2_tile, 
                             filter_date = True) 
-        s2List.to_csv(os.path.join(outdir, 'query_sentinel2.csv'))
+        s2List.to_csv(os.path.join(outdir, 'query.csv'))
 
     
     if landsat_download:

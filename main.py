@@ -10,12 +10,12 @@ import subprocess
 import json
 import os
 import pandas as pd
-from stac import load_stac
 import time
 import shutil
 import glob
 
-
+from stac import load_stac
+from stac import load_stac_usgs
 
 from utils import *
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
@@ -34,17 +34,27 @@ def run_workflow(date_start, date_end, config_path):
     # Modify dates
     config["date_start"] = date_start
     config["date_end"] = date_end
-    config["query_sentinel2"] = True
-    config["download_sentinel2"] = False
-    
-    
     
     # resampling parameters
     resolution = config["resampling_params"]["resolution"]
     extent_target = config["resampling_params"]["extent_target"]
     epsg_target = config["resampling_params"]["epsg_target"]
     # bbox = get_shape_extent(shp, epsg=32719, outres =500)
-
+    
+    
+    # differentiate for Sentinel-2 and Landsat
+    if config["satellite"] == "Sentinel-2":
+        config["query_sentinel2"] = True
+        config["download_sentinel2"] = False
+        config["download_landsat"] = False
+        config["query_landsat"] = False
+        
+    elif config["satellite"].startswith("Landsat"):
+        config["query_sentinel2"] = False
+        config["download_sentinel2"] = False
+        config["download_landsat"] = False
+        config["query_landsat"] = True
+    
 
     # Write back
     with open(config_path, "w") as f:
@@ -58,7 +68,7 @@ def run_workflow(date_start, date_end, config_path):
     
     # Look for the data in our folder
     outdir = config["output_directory"]
-    data_df = pd.read_csv(os.path.join(outdir, 'query_sentinel2.csv'))
+    data_df = pd.read_csv(os.path.join(outdir, 'query.csv'))
     
     if data_df.empty:
         return
@@ -68,12 +78,12 @@ def run_workflow(date_start, date_end, config_path):
 
 
     
-    s2_files = [f.split('.')[0] for f in data_df['Name'].to_list()]
+    files = [f.split('.')[0] for f in data_df['Name'].to_list()]
     
     if not config['simple_class']:
         remove_glaciers(outdir)
     
-    dates_to_process = get_dates_to_process(s2_files, config)    
+    dates_to_process = get_dates_to_process(files, config)    
                                 
     while len(dates_to_process) > 0:
         print("\n" + "="*60)
@@ -87,13 +97,30 @@ def run_workflow(date_start, date_end, config_path):
             print(date)
         
             try:
-                data, scene_id = load_stac.convert_sentinel2_bands(outdir, date, 
-                                                         resolution=resolution, 
-                                                         extent_target=extent_target, 
-                                                         epsg_target=epsg_target,
-                                                         save = False,
-                                                         shp=config['shapefile'],
-                                                         exclude_tiles=config['exclude_tiles'])
+                
+                if config["satellite"] == "Sentinel-2":
+                    # Sentinel-2: STAC API from CDSE
+                    data, scene_id = load_stac.convert_sentinel2_bands(outdir, 
+                                                                       date, 
+                                                                       resolution=resolution, 
+                                                                       extent_target=extent_target, 
+                                                                       epsg_target=epsg_target,
+                                                                       save = False,
+                                                                       shp=config['shapefile'],
+                                                                       exclude_tiles=config['exclude_tiles'])
+                    
+                elif config["satellite"].startswith("Landsat"):
+                    # Landsat: USGS STAC
+                    data, scene_id = load_stac_usgs.convert_landsat_bands(outdir, 
+                                                                          date, 
+                                                                          resolution=resolution, 
+                                                                          extent_target=extent_target, 
+                                                                          epsg_target=epsg_target,
+                                                                          save = False,
+                                                                          platform = config["satellite"].upper().replace("-", "_"),
+                                                                          shp=config['shapefile'],
+                                                                          exclude_tiles=config['exclude_tiles'])
+                    
                 
                 if scene_id is None:
                     with open(empty_items_dates, "a") as f:
@@ -124,7 +151,12 @@ def run_workflow(date_start, date_end, config_path):
                 
                 
                 # save RGB for visualization
-                save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
+                if config["satellite"] == "Sentinel-2":
+                    save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
+                    
+                elif config["satellite"].startswith("Landsat"):
+                    save_false_color(os.path.join(outdir, scene_id), ["swir16", "nir08", "red"], data)
+
                 
                 time.sleep(2)
                 
@@ -152,12 +184,12 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-04-01")
-    end = pd.Timestamp("2025-03-31")
-    # start = pd.Timestamp("2018-06-30")
-    # end = pd.Timestamp("2018-07-01")
+    # start = pd.Timestamp("2015-04-01")
+    # end = pd.Timestamp("2025-03-31")
+    start = pd.Timestamp("2018-06-01")
+    end = pd.Timestamp("2018-06-30")
     # shape of the AOI
-    config_path = './config_snowcop.json'
+    config_path = './config_snowcop_landsat.json'
     
     step = pd.Timedelta(days=60)
     
@@ -178,7 +210,7 @@ if __name__ == "__main__":
 
 
     for date_start, date_end in date_pairs:
-        
+        cc
         run_workflow(date_start, date_end, config_path)
 
         

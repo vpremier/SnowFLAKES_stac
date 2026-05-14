@@ -14,14 +14,15 @@ import requests as rq
 from rasterio.enums import Resampling
 import logging
 import geopandas as gpd
+from pyproj import CRS
 from shapely.geometry import mapping
 from shapely.geometry import box
 import json 
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import rasterio as rio
 
-from utils_stac import *
+from stac.utils_stac import *
 
 
 session = boto3.Session(profile_name="default")
@@ -163,6 +164,9 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     query_return = fetch_stac_server(params) 
     items = use_s3_assets(query_return)
     
+    start = time.time()
+
+
     # no items
     if len(items) == 0:
         return None, None
@@ -298,16 +302,16 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
         
     # Iterate through bands
     if save:
-        for band_name in data.band.values:
+        for band in bands:
         
             out_path = os.path.join(outdir, f"{merged_image_id}", 
-                                    f"{merged_image_id}_{band_name}_{suffix}.tif")
+                                    f"{merged_image_id}_B{band}_{suffix}.tif")
             
             if os.path.exists(out_path) and not ow:
                 print(f"Skipping {out_path} (already exists)")
                 continue
         
-            band_data = np.squeeze(data.sel(band=str(band_name)).values.astype("float32"))
+            band_data = np.squeeze(data.sel(band=bands[band]).values.astype("float32"))
    
             # === Save GeoTIFF ===
             profile = {
@@ -330,7 +334,6 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     end = time.time()
     print(f"Total runtime of the program is {end - start} seconds")
 
-
     
     return data, merged_image_id
 
@@ -340,24 +343,23 @@ if __name__ == "__main__":
     
     resolution = 50
     epsg_target = 32719
-    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2/01_TEST_auxiliary_folder/DEM.tif'
-
-    shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
-    filter_by_geometry = True
-    shp = None
+    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61/01_TEST_auxiliary_folder/DEM.tif'
 
 
-    date = "2025-06-14"
+    date = "2018-06-29"
 
     outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test'
 
     start = time.time()
 
 
-    data = convert_landsat_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
+    data, merged_image_id = convert_landsat_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
                             epsg_target=None, reproj_type=Resampling.cubic, 
                             suffix='toa', na_value = "NaN", calibration=True, 
-                            ow=False)
+                            ow=False, platform = 'LANDSAT_8')
+    
+    
+    # rename bands like sentinel-2?
     
     data = data.load()
 
