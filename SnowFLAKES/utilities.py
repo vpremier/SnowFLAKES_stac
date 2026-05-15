@@ -223,6 +223,7 @@ def data_filter(start_date, end_date, working_folder, sensor, scenes_to_skip):
     return acquisitions_filtered
 
 
+
 def scenes_skip(working_folder):
     txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_scenes_to_skip.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
@@ -233,6 +234,7 @@ def scenes_skip(working_folder):
             date_list = []  # Empty file case
 
     return date_list
+
 
 
 def cloud_mask_to_skip(working_folder):
@@ -247,6 +249,7 @@ def cloud_mask_to_skip(working_folder):
     return date_list
 
 
+
 def empty_items_to_skip(working_folder):
     txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_dates_no_items.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
@@ -257,6 +260,7 @@ def empty_items_to_skip(working_folder):
             date_list = []  # Empty file case
 
     return date_list
+
 
 
 def get_input_param(input_data, name):
@@ -275,6 +279,7 @@ def get_input_param(input_data, name):
         return None
 
     return filtered_data['Value'].iloc[0]
+
 
 
 def get_sensor(acquisition_name):
@@ -322,9 +327,9 @@ def define_bands(data, valid_mask, sensor):
     # Define band indices for different sensors
     band_mapping = {
         'L4': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
-        'L5': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
-        'L7': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
-        'L8': {'GREEN': 2, 'SWIR': 5, 'NIR': 4, 'RED': 3, 'BLUE': 1},
+        'L5': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
+        'L7': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
+        'L8': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
         'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B8A', 'RED': 'B04', 'BLUE': 'B02'},
         'PRISMA': {'GREEN': 19, 'SWIR': 122, 'NIR': 46, 'RED': 36, 'BLUE': 9}
     }
@@ -397,26 +402,36 @@ def select_band_names(sensor, suffix):
     """
     Returns the list of band names based on the sensor and suffix.
     """
+    
+    # SCF
     if sensor in ['L4', 'L5', 'L7'] and suffix == 'scf':
-        return ['B1', 'B2', 'B3', 'B4', 'B5']
+        return ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22']
+    
+    elif sensor == 'L8' and suffix == 'scf':
+        return ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22']
+    
+    elif sensor == 'S2' and suffix == 'scf':
+        return ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B11', 'B12']
+    
+    # CLOUDS
+    if sensor in ['L4', 'L5', 'L7'] and suffix == 'cloud':
+        return ['blue', 'green', 'red', 'nir08', 'swir16', 'lwir', 'swir22']
+    
+    elif sensor == 'L8' and suffix == 'cloud':
+        return ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'lwir11']
+    
+    elif sensor == 'S2' and suffix == 'cloud':
+        return ['B01', 'B02', 'B04', 'B05', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12']
+    
+    # all bands: not used anymore
     elif sensor == 'L7' and suffix == 'scfT':
         # return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1', 'B7']
         return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
-    elif sensor == 'L7' and suffix == 'cloud':
-        # return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1', 'B7']
-        return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
 
-    elif sensor == 'L8' and suffix == 'scf':
-        return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
     elif sensor == 'L8' and suffix == 'scfT':
         #return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B10', 'B11']
         return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
-    elif sensor == 'L8' and suffix == 'cloud':
-        return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10']
-    elif sensor == 'S2' and suffix == 'cloud':
-        return ['B01', 'B02', 'B04', 'B05', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12']
-    elif sensor == 'S2' and suffix == 'scf':
-        return ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B11', 'B12']
+
     elif sensor == 'S2' and suffix == 'scfT':
         return ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12']
     else:

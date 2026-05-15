@@ -1013,7 +1013,8 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
 
 
 
-def landsat_cloud_classifier(curr_aux_folder, path_cloud_mask, ref_img_path, sensor, valid_mask, Nprocesses=8,
+def landsat_cloud_classifier(data, cloud_bands, no_data_value,
+                             path_cloud_mask, sensor, valid_mask, Nprocesses=8,
                              dilate_iterations=5):
     from xgboost import XGBClassifier
     import pickle
@@ -1025,34 +1026,45 @@ def landsat_cloud_classifier(curr_aux_folder, path_cloud_mask, ref_img_path, sen
     from joblib import Parallel, delayed
     import glob
     import os
-
-    input_fileName = glob.glob(os.path.join(os.path.dirname(curr_aux_folder), '*cloud.vrt'))[0]
+    
+    cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
+    cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
 
     # Select model based on sensor
     # Get the directory of the current script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     if sensor == 'L7':
-
-        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-7_cloud_model_xgboost_l2.p')
+        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-7_cloud_model_xgboost.p')
     elif sensor == 'L8':
-        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-8_9_cloud_model_xgboost8_l2.p')
+        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-8_9_cloud_model_xgboost8.p')
 
+    print(model_filepath)
+    
     # Load the XGBoost model and associated data
     with open(model_filepath, 'rb') as model_file:
         svm_dict = pickle.load(model_file)
     xgboost_model = svm_dict['xgboostModel']
     normalizer = svm_dict['normalizer']
+    
+    if sensor == 'L7':
+        new_names = ['blue', 'green', 'red', 'nir08', 'swir16', 'lwir', 'swir22']
+    elif sensor == 'L8':
+        new_names = ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'lwir11']
+    
+    svm_dict['feature_names'] = new_names
     feature_names = svm_dict['feature_names']
 
-    # Open the input raster
-    with rasterio.open(input_fileName) as src:
-        profile = src.profile
-        # profile.update(dtype='uint8', count=1)  # Update profile for the output
-        bands = np.array([src.read(i + 1).astype(np.float32) for i in range(src.count)])
-
-        # Extract features
-        band_indices = [src.indexes[src.descriptions.index(name)] for name in feature_names]
-        features = np.column_stack([bands[i - 1][valid_mask] for i in band_indices])
+    # Create mapping from feature name -> band index
+    band_map = {name: i for i, name in enumerate(cloud_bands)}
+    
+    # Get indices for requested feature names
+    band_indices = [band_map[name] for name in feature_names]
+    
+    # Extract features
+    features = np.column_stack([
+        cloud_bands_image[i][valid_mask]
+        for i in band_indices
+    ])
 
     # Normalize features
     features = np.nan_to_num(features)
@@ -1071,7 +1083,7 @@ def landsat_cloud_classifier(curr_aux_folder, path_cloud_mask, ref_img_path, sen
     predictions = np.concatenate(predictions_blocks) + 1  # Adjust class indices
 
     # Create the output raster
-    class_map = np.zeros((profile['height'], profile['width']), dtype='uint8')
+    class_map = np.zeros((data.sizes['y'], data.sizes['x']), dtype='uint8')
     class_map[valid_mask] = predictions
 
     # Invert class_map values (1 ↔ 2)
@@ -1093,17 +1105,24 @@ def landsat_cloud_classifier(curr_aux_folder, path_cloud_mask, ref_img_path, sen
     # Update class_map with morphological operations
     class_map[class_map > 0] = dilated_map[class_map > 0] * 2
     class_map = np.nan_to_num(class_map, nan=0).astype(np.uint8)
-
-    profile.update(
-        dtype='uint8',
-        count=1,  # Single band for classification output
-        driver='GTiff',  # Ensure output is a GeoTIFF
-        nodata=0
-    )
-    # Save the modified class_map as GeoTIFF
-    with rasterio.open(path_cloud_mask, 'w', **profile) as dst:
+    class_map[class_map == 0] = 1
+    
+    # Save raster using metadata from xarray
+    with rasterio.open(
+        path_cloud_mask,
+        "w",
+        driver="GTiff",
+        height=data.sizes['y'],
+        width=data.sizes['x'],
+        count=1,
+        dtype="uint8",
+        crs=CRS.from_epsg(data.epsg.item()),
+        transform=data.rio.transform(),
+    ) as dst:
         dst.write(class_map, 1)
-        dst.nodata = 0
+
+        
+        
 
     print(f"Classified and processed raster saved to {path_cloud_mask}.")
 

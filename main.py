@@ -173,7 +173,7 @@ def run_workflow(date_start, date_end, config_path):
           
         
         # Recompute dates to process (removes processed ones automatically)
-        dates_to_process = get_dates_to_process(s2_files, config)
+        dates_to_process = get_dates_to_process(files, config)
     
         # Optional: stop if nothing changed (avoid infinite loop)
         if set(dates_to_process) == set(failed_dates):
@@ -184,13 +184,13 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    # start = pd.Timestamp("2019-09-01")
-    # end = pd.Timestamp("2025-03-31")
-    start = pd.Timestamp("2018-06-29")
-    end = pd.Timestamp("2018-06-30")
+    start = pd.Timestamp("2019-04-01")
+    end = pd.Timestamp("2021-03-31")
+    # start = pd.Timestamp("2018-06-29")
+    # end = pd.Timestamp("2018-06-30")
     # shape of the AOI
-    config_path = './config_snowcop_landsat.json'
-    # config_path = './config_snowcop.json'
+    # config_path = './config_snowcop_landsat.json'
+    config_path = './config_snowcop.json'
 
     
     step = pd.Timedelta(days=60)
@@ -212,7 +212,6 @@ if __name__ == "__main__":
 
 
     for date_start, date_end in date_pairs:
-        qq
         run_workflow(date_start, date_end, config_path)
 
         

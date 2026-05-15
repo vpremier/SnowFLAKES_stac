@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61/area_061.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test",
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/L1-LC08",
   "satellite": "Landsat-8",
-  "date_start": "2018-06-29",
-  "date_end": "2018-06-30",
+  "date_start": "2021-03-27",
+  "date_end": "2021-03-31",
   "query_landsat": true,
   "query_sentinel2": false,
   "download_landsat": false,
@@ -15,10 +15,10 @@
   "resampling_params": {
     "resolution": 50,
     "extent_target": [
-      427500,
-      6937500,
-      479500,
-      6996500
+      366000,
+      6205000,
+      428500,
+      6342500
     ],
     "epsg_target": 32719
   },

@@ -61,8 +61,6 @@ def run_snowflakes(config, data, scene_id):
         print(f"{scene_id} is in the lists to skip!")
         return
     
-
-
     
     # No data value
     no_data_value = config['no_data_value']
@@ -146,9 +144,8 @@ def run_snowflakes(config, data, scene_id):
     
     cloud_bands = select_band_names(sensor, 'cloud')
    
-    
-
     no_data_mask, valid_mask = generate_no_data_mask(all_bands_image, sensor, no_data_value=np.nan)
+
     
     # Auxiliary folder
     curr_aux_folder = os.path.join(scene_folder, "auxiliary")
@@ -159,6 +156,7 @@ def run_snowflakes(config, data, scene_id):
     # Cloud mask
     path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
     Compute_clouds = config.get('Compute_clouds', 'no') == 'yes'
+    
     
     
     # Generate cloud mask or use default if clouds are not computed
@@ -179,11 +177,11 @@ def run_snowflakes(config, data, scene_id):
         
     elif sensor == 'L7' or sensor == 'L8':
         # to be changed!!!
-        path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(curr_aux_folder, path_cloud_mask,
-                                                                           ref_img_path, sensor, valid_mask,
+        path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, cloud_bands, no_data_value,
+                                                                           path_cloud_mask, sensor, valid_mask,
                                                                            Nprocesses=8, dilate_iterations=5)
     
-    
+
     
     no_data_percentage = np.sum(no_data_mask) / (data.sizes["y"] * data.sizes["x"])
     cloud_perc_corr = cloud_cover_percentage / (1 - no_data_percentage)
@@ -201,6 +199,8 @@ def run_snowflakes(config, data, scene_id):
         # delete folder!!
         shutil.rmtree(scene_folder)
         return
+    
+
 
     bands = define_bands(data, valid_mask, sensor)
     
@@ -307,7 +307,6 @@ def run_snowflakes(config, data, scene_id):
                                                     no_data_mask, SVM_folder_name, classify_glaciers,
                                                     date_time, dt_start_glaciers_month, dt_end_glaciers_month)
     
-
 
         if unique_values != {1, 2}:
             print(
