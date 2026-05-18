@@ -54,7 +54,7 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
     S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
 
-    load_dotenv()  # loads .env file
+    load_dotenv(override=True)  # loads .env file
     os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
     os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
     os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -297,7 +297,7 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
     S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
 
-    load_dotenv()  # loads .env file
+    load_dotenv(override=True)  # loads .env file
     os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
     os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
     os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")

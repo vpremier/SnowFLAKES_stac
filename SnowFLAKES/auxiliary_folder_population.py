@@ -1038,7 +1038,6 @@ def landsat_cloud_classifier(data, cloud_bands, no_data_value,
     elif sensor == 'L8':
         model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-8_9_cloud_model_xgboost8.p')
 
-    print(model_filepath)
     
     # Load the XGBoost model and associated data
     with open(model_filepath, 'rb') as model_file:

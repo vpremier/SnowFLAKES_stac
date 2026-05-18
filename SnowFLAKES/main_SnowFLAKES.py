@@ -340,7 +340,7 @@ def run_snowflakes(config, data, scene_id):
                 scene_id_closest = os.path.basename(closest).split("_SnowFLAKES.tif")[0]
     
                 
-                _, date_closest =  define_datetime(sensor, scene_id_closest)
+                _, date_closest =  define_datetime(sensor, scene_id_closest, config)
                 date_closest = datetime.strptime(date_closest, "%Y%m%d").strftime("%Y-%m-%d")
                 
                 # take the model of the closest image

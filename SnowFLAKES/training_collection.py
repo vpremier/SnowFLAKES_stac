@@ -19,7 +19,7 @@ from scipy.spatial.distance import cdist
 from sklearn.metrics import silhouette_score
 from skimage.filters import threshold_otsu
 from sklearn.preprocessing import StandardScaler
-from scipy.ndimage import binary_dilation
+from scipy.ndimage import binary_dilation, binary_erosion
 
 from SnowFLAKES.utilities import *
 
@@ -92,7 +92,7 @@ def get_pixels_shadow(curr_diff_B_NIR, curr_shad_idx, curr_NDSI, curr_distance_i
     curr_score_snow_shadow = curr_diff_B_NIR_norm - curr_shad_idx_norm
     threshold_shadow = np.percentile(curr_score_snow_shadow, 95)
     snow = np.logical_and.reduce(
-        (curr_score_snow_shadow >= threshold_shadow, curr_NDSI > 0.7, curr_distance_idx != 255)).flatten()
+        (curr_score_snow_shadow >= threshold_shadow, curr_NDSI > 0.9, curr_distance_idx != 255)).flatten()
     
     threshold_shadow_no_snow = np.percentile(curr_score_snow_shadow, 5)
     snowfree = (curr_score_snow_shadow <= threshold_shadow_no_snow).flatten()
@@ -201,7 +201,13 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         percentage_per_angles_list.append(percentage_of_scene_valid)
 
         # SHADOW 
-        mask_shadow = curr_angle_valid & (shadow_mask==1)
+        # Shrink mask by 3 pixels
+        shadow_mask_eroded = binary_erosion(
+            shadow_mask == 1,
+            iterations=5
+        )
+
+        mask_shadow = curr_angle_valid & shadow_mask_eroded
                 
         if np.any(mask_shadow):
             print('Collecting trainings in shadow')
@@ -245,7 +251,13 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         representative_pixels_mask_snow = np.array([])
         representative_pixels_mask_noSnow = np.array([])
        
-        mask_sun = curr_angle_valid & (shadow_mask==0)
+        # Shrink mask by 3 pixels
+        sun_mask_eroded = binary_erosion(
+            shadow_mask == 0,
+            iterations=5
+        )
+        
+        mask_sun = curr_angle_valid & sun_mask_eroded
 
         if np.any(mask_sun):
             print('Collecting trainings in sun')
