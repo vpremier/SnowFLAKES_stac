@@ -106,7 +106,7 @@ def get_pixels_sun(curr_NDSI, curr_NDVI, curr_green, curr_distance_idx):
     NDSI_low_perc, NDSI_high_perc = np.percentile(curr_NDSI[np.logical_not(np.isnan(curr_NDSI))], [1, 99])
     NDVI_low_perc, NDVI_high_perc = np.percentile(curr_NDVI[np.logical_not(np.isnan(curr_NDVI))], [1, 99])
     green_low_perc, green_high_perc = np.percentile(curr_green, [1, 99])
-    curr_NDSI_norm = np.clip((curr_NDSI - NDSI_low_perc) / (NDSI_high_perc - NDVI_low_perc), 0, 1)
+    curr_NDSI_norm = np.clip((curr_NDSI - NDSI_low_perc) / (NDSI_high_perc - NDSI_low_perc), 0, 1)
     curr_NDVI_norm = np.clip((curr_NDVI - NDVI_low_perc) / (NDVI_high_perc - NDVI_low_perc), 0, 1)
     curr_green_norm = np.clip((curr_green - green_low_perc) / (green_high_perc - green_low_perc), 0, 1)
     curr_score_snow_sun = curr_NDSI_norm - curr_NDVI_norm + curr_green_norm
