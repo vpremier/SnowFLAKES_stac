@@ -6,13 +6,12 @@ Created on Mon Sep 16 18:03:27 2024
 @author: rbarella
 """
 import os
-from osgeo import gdal, ogr, osr
+from osgeo import gdal, osr
 import netCDF4
 import numpy as np
 import glob
 import rasterio
 from rasterio.warp import transform_bounds
-import time
 import re
 from datetime import datetime
 import geopandas as gpd
@@ -144,84 +143,6 @@ def create_empty_files(working_folder):
     return scenes_to_skip_path, skip_cloud_masks_path, skip_empty_items_path
 
 
-def data_filter(start_date, end_date, working_folder, sensor, scenes_to_skip):
-    """
-    Filters the scenes in the working folder by date, sensor, and skips specified scenes.
-
-    Parameters
-    ----------
-    start_date : str
-        Start date in the format "yyyymmdd".
-    end_date : str
-        End date in the format "yyyymmdd".
-    working_folder : str
-        The folder containing the acquisitions.
-    sensor : str
-        The sensor identifier (e.g., "S2", "L8").
-    scenes_to_skip : list
-        A list of dates (in "yyyymmdd" format) to exclude from the results.
-
-    Returns
-    -------
-    list
-        A list of filtered scene directories between the provided dates, excluding scenes in `scenes_to_skip`.
-    """
-    skipped_dates = []
-
-    # Filter for Sentinel-2
-    if sensor == 'S2':
-        acquisitions = sorted(glob.glob(os.path.join(working_folder, 'S2*')))
-        acquisitions_filtered = []
-        for f in acquisitions:
-            # Extract date for filtering
-            
-            if os.path.basename(f).split('_')[1] == 'MSIL1C':
-                date = os.path.basename(f).split('_')[2].split('T')[0]
-            elif os.path.basename(f).split('_')[1] == 'OPER':
-                date = os.path.basename(f).split('_')[7][1:].split('T')[0]
-            else:
-                continue
-
-            # Check date conditions
-            if start_date <= date <= end_date:
-                if date not in scenes_to_skip:
-                    acquisitions_filtered.append(f)
-                else:
-                    skipped_dates.append(date)
-
-    elif sensor == 'PRISMA':
-        acquisitions = sorted(glob.glob(os.path.join(working_folder, 'PRS*')))
-        acquisitions_filtered = []
-        for f in acquisitions:
-            date = os.path.basename(f).split('_')[4][:-6]
-            if start_date <= date <= end_date:
-                if date not in scenes_to_skip:
-                    acquisitions_filtered.append(f)
-                else:
-                    skipped_dates.append(date)
-
-    # Filter for Landsat (L8, L7, etc.)
-    else:
-        acquisitions = sorted(glob.glob(os.path.join(working_folder, 'L*T[12]')))
-        acquisitions_filtered = []
-        for f in acquisitions:
-            date = os.path.basename(f).split('_')[3]
-            if start_date <= date <= end_date:
-               
-                if date not in scenes_to_skip:
-                    acquisitions_filtered.append(f)
-                else:
-                    skipped_dates.append(date)
-
-    # Print skipped dates
-    if skipped_dates:
-        print(f"The following dates are being skipped: {', '.join(sorted(set(skipped_dates)))}")
-    else:
-        print("No dates were skipped.")
-
-    print(f"Filtered acquisitions...")
-    return acquisitions_filtered
-
 
 
 def scenes_skip(working_folder):
@@ -263,24 +184,6 @@ def empty_items_to_skip(working_folder):
 
 
 
-def get_input_param(input_data, name):
-    """Retrieves the value associated with a given name from a DataFrame."""
-    filtered_data = input_data[input_data['Name'] == name]
-    value = input_data[input_data['Name'] == name]['Value'].values[0]
-
-    if len(filtered_data) > 1:
-        raise ValueError(f"Multiple matching rows found for name: {name}")
-
-    if isinstance(value, str):
-
-        print(f'the parameter {name} is set to {value}')
-
-    elif np.isnan(value):
-        return None
-
-    return filtered_data['Value'].iloc[0]
-
-
 
 def get_sensor(acquisition_name):
     """Determines the satellite mission based on the acquisition name."""
@@ -302,6 +205,8 @@ def get_sensor(acquisition_name):
         return 'PRISMA'
     else:
         raise ValueError(f"Invalid acquisition name: {acquisition_name}")
+
+
 
 
 def define_bands(data, valid_mask, sensor):
@@ -347,55 +252,7 @@ def define_bands(data, valid_mask, sensor):
     return bands
 
 
-def create_vrt_files(L_acquisitions_filt, sensor, resolution):
-    """
-    Creates VRT files for each acquisition based on the sensor type.
-    """
-    for elem in L_acquisitions_filt:
-        if sensor == 'S2':
-            create_vrt(elem, elem, 'cloud', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'scf', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'scfT', resolution=resolution, overwrite=False)
 
-        elif sensor == 'L8' or sensor == 'L9':
-
-            create_vrt(elem, elem, 'scf', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'scfT', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'cloud', resolution=resolution, overwrite=False)
-
-        elif sensor == 'L7':
-
-            create_vrt(elem, elem, 'scf', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'scfT', resolution=resolution, overwrite=False)
-            create_vrt(elem, elem, 'cloud', resolution=resolution, overwrite=False)
-
-
-        else:
-            create_vrt(elem, elem, 'scf', resolution=resolution, overwrite=False)
-
-
-def create_vrt(folder, outfolder, suffix="scf", resolution=30, overwrite=False):
-    """
-    Creates a VRT using selected bands for the specified sensor.
-    """
-    vrtname = os.path.join(outfolder, os.path.basename(folder) + f'_{suffix}.vrt')
-
-    if os.path.exists(vrtname) and not overwrite:
-        print(f"{vrtname} already exists.")
-        return
-
-    # Determine the sensor type and get the bands
-    sensor = get_sensor(folder)
-    band_name_list = select_band_names(sensor, suffix)
-
-    # Find the band files in the folder
-    file_list = find_band_files(folder, band_name_list, sensor)
-    if not file_list:
-        print(f"No band files found for sensor: {sensor}, suffix: {suffix}.")
-        return
-
-    # Create the VRT using GDAL
-    create_vrt_with_gdal(file_list, vrtname, resolution, band_name_list)
 
 
 def select_band_names(sensor, suffix):
@@ -440,44 +297,7 @@ def select_band_names(sensor, suffix):
         return []
 
 
-def find_band_files(folder, band_name_list, sensor):
-    """
-    Finds the file paths for the selected bands in the folder.
-    """
-    file_list = []
-    for band in band_name_list:
-        pattern = os.path.join(folder, f"*{band}_*.tif")
-        file_list.extend(glob.glob(pattern))
 
-    # Handle Landsat (non-S2) cases with uppercase .TIF extension
-    if not file_list and sensor != 'S2':
-        for band in band_name_list:
-            pattern = os.path.join(folder, f"*{band}.TIF")
-            file_list.extend(glob.glob(pattern))
-
-    # Handle Sentinel-2 .tif extension cases
-    if sensor == 'S2' and not file_list:
-        for band in band_name_list:
-            pattern = os.path.join(folder, f"*{band}.tif")
-            file_list.extend(glob.glob(pattern))
-
-    return file_list
-
-
-def create_vrt_with_gdal(file_list, vrtname, resolution, band_name_list):
-    """no idea yet
-    Creates a VRT file using GDAL.
-    """
-    file_string = " ".join(file_list)
-    cmd = f"gdalbuildvrt -separate -r bilinear -tr {resolution} {resolution} {vrtname} {file_string}"
-    print(f"Running command: {cmd}")
-    os.system(cmd)
-
-    # Set the band descriptions in the VRT
-    VRT_dataset = gdal.Open(vrtname, gdal.GA_Update)
-    for idx, band_name in enumerate(band_name_list, 1):
-        VRT_dataset.GetRasterBand(idx).SetDescription(band_name)
-    VRT_dataset = None
 
 
 def open_image(image_path, ncdf_layer='fsc'):
@@ -555,6 +375,8 @@ def open_image(image_path, ncdf_layer='fsc'):
     return image_output, information
 
 
+
+
 def save_image(image_to_save, path_to_save, driver_name, datatype, geotransform, proj, NoDataValue=None):
     '''
     adfGeoTransform[0] / * top left x * /
@@ -610,174 +432,6 @@ def save_image(image_to_save, path_to_save, driver_name, datatype, geotransform,
     return;
 
 
-def reproj_point(x, y, srIn, srOut):
-    '''
-    trasform a point from one crt to another
-
-    Parameters
-    ----------
-    x : TYPE
-        x coord.
-    y : TYPE
-        y coord.
-    srIn : str
-        old crs.
-    srOut : str
-        target crs.
-
-    Returns
-    -------
-    x : int
-        output x coord.
-    y : int
-        output y coord.
-
-    '''
-    point = ogr.Geometry(ogr.wkbPoint)
-    point.AddPoint(x, y)
-
-    coordTransform = osr.CoordinateTransformation(srIn, srOut)
-
-    point.Transform(coordTransform)
-
-    (x, y) = point.GetX(), point.GetY()
-
-    return (x, y)
-
-
-def subimages_definer(dim_img, max_dim=9000):
-    """
-    Determines the optimal number of subdivisions (nrow, ncol) required to ensure
-    that the image can be processed without exceeding memory limitations.
-
-    Parameters
-    ----------
-    dim_img : list of int
-        Dimensions of the image as [x_pixels, y_pixels].
-    max_dim : int, optional
-        Maximum dimension that can be processed at once (default is 9000).
-
-    Returns
-    -------
-    x : int
-        Adjusted x dimension after subdivision.
-    y : int
-        Adjusted y dimension after subdivision.
-    nrow : int
-        Number of subdivisions along the x-axis.
-    ncol : int
-        Number of subdivisions along the y-axis.
-    del_row : int
-        Number of extra pixels to handle for odd-sized rows.
-    del_col : int
-        Number of extra pixels to handle for odd-sized columns.
-    """
-    x, y = dim_img  # Extract image dimensions (x and y)
-
-    # Initialize subdivision counts and deltas for odd dimensions
-    nrow, ncol = 1, 1
-    del_row, del_col = 0, 0
-
-    # Continue splitting the image until both dimensions fit within max_dim
-    while x > max_dim or y > max_dim:
-        if x > y:
-            # Split along the x-axis
-            if x % 2 != 0:  # Handle odd number of pixels
-                x = np.floor(x / 2)
-                del_row += 1
-            else:
-                x = np.floor(x / 2)
-            nrow *= 2  # Double the number of rows
-        else:
-            # Split along the y-axis
-            if y % 2 != 0:  # Handle odd number of pixels
-                y = np.floor(y / 2)
-                del_col += 1
-            else:
-                y = np.floor(y / 2)
-            ncol *= 2  # Double the number of columns
-
-    return int(x), int(y), nrow, ncol, del_row, del_col
-
-
-def extent_cutter(img_info, nrow, ncol, resolution, x, y):
-    """
-    Calculates the extents of the image subdivisions based on the number of rows
-    and columns, as well as the image resolution.
-
-    Parameters
-    ----------
-    img_info : dict
-        Dictionary containing image metadata, including its extent.
-    nrow : int
-        Number of subdivisions along the x-axis.
-    ncol : int
-        Number of subdivisions along the y-axis.
-    resolution : float
-        Image resolution (pixel size).
-    x : int
-        Number of pixels in each subdivision along the x-axis.
-    y : int
-        Number of pixels in each subdivision along the y-axis.
-
-    Returns
-    -------
-    extent_outputs : list of tuples
-        A list of tuples where each tuple contains the extent (min_x, min_y, max_x, max_y)
-        for a subdivision.
-    """
-    extent_input = img_info['extent']
-    minx, miny = extent_input[0], extent_input[1]
-
-    extent_outputs = []
-
-    # Iterate through each row and column to define extents for each subimage
-    for i in range(nrow):
-        x_min_i = minx + i * resolution * x
-        x_max_i = minx + (i + 1) * resolution * x
-
-        for j in range(ncol):
-            y_min_i = miny + j * resolution * y
-            y_max_i = miny + (j + 1) * resolution * y
-            extent_outputs.append((x_min_i, y_min_i, x_max_i, y_max_i))
-
-    return extent_outputs
-
-
-def process_image(img_info, max_dim=9000):
-    """
-    Integrates the subimage definition and extent calculation for processing large images.
-
-    Parameters
-    ----------
-    img_info : dict
-        Dictionary containing image metadata, including dimensions and extent.
-    max_dim : int, optional
-        Maximum dimension that can be processed at once (default is 9000).
-
-    Returns
-    -------
-    subimage_extents : list of tuples
-        List of extents for each subimage defined for processing.
-    """
-    # Get the image dimensions from img_info
-    dim_img = [img_info['X_Y_raster_size'][0], img_info['X_Y_raster_size'][1]]
-
-    # Step 1: Determine the subdivisions (nrow, ncol) and adjusted dimensions
-    x, y, nrow, ncol, del_row, del_col = subimages_definer(dim_img, max_dim)
-
-    print(f"Subdivided image into {nrow} rows and {ncol} columns")
-    print(f"Adjusted dimensions: {x} x {y} (extra rows: {del_row}, extra cols: {del_col})")
-
-    # Step 2: Calculate the extents for each subimage
-    resolution = img_info['geotransform'][1]
-    subimage_extents = extent_cutter(img_info, nrow, ncol, resolution, x, y)
-
-    print("Subimage extents calculated:")
-    for extent in subimage_extents:
-        print(extent)
-
-    return subimage_extents
 
 
 def define_datetime(sensor, acquisition_name, config):
@@ -836,73 +490,6 @@ def define_datetime(sensor, acquisition_name, config):
     return date_time, date
 
 
-def perform_pca_on_geotiff(input_tiff, valid_mask, variance_threshold=0.95, no_data_value=-999):
-    """
-    Reads a hyperspectral image, performs PCA to reduce dimensionality to the optimal number of components,
-    and saves the resulting PCA bands in a new GeoTIFF. PCA is applied only to valid areas defined by `valid_mask`.
-
-    Parameters:
-    - input_tiff: str, path to the input GeoTIFF file.
-    - valid_mask: numpy array, boolean mask where True indicates valid data.
-    - variance_threshold: float, the cumulative variance ratio to retain (default is 0.95).
-    - no_data_value: float, the value to assign for invalid pixels in the output image (default is -9999).
-    """
-    import os
-    import numpy as np
-    import rasterio
-    from sklearn.decomposition import PCA
-    from sklearn.preprocessing import StandardScaler
-
-    output_tiff = input_tiff[:-4] + '_PCA.tif'
-
-    if not os.path.exists(output_tiff):
-        # Load hyperspectral image
-        with rasterio.open(input_tiff) as src:
-            img_data = src.read().astype(np.float32)
-            n_bands, height, width = img_data.shape
-
-            # Check valid_mask dimensions
-            if valid_mask.shape != (height, width):
-                raise ValueError("valid_mask dimensions do not match the image dimensions.")
-
-            # Flatten the spatial dimensions
-            img_data_reshaped = img_data.reshape(n_bands, -1).T
-            valid_mask_flat = valid_mask.flatten()
-
-            # Filter data based on valid_mask
-            valid_data = img_data_reshaped[valid_mask_flat]
-
-            # Standardize valid data
-            scaler = StandardScaler()
-            valid_data_scaled = scaler.fit_transform(valid_data)
-
-            # Determine optimal number of components
-            pca = PCA()
-            pca.fit(valid_data_scaled)
-            cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-            optimal_components = np.argmax(cumulative_variance >= variance_threshold) + 1
-
-            print(f"Optimal number of components: {optimal_components}")
-
-            # Perform PCA with the optimal number of components
-            pca = PCA(n_components=optimal_components)
-            pca_data = pca.fit_transform(valid_data_scaled)
-
-            # Prepare the output array with no_data values
-            pca_data_full = np.full((optimal_components, height * width), no_data_value, dtype=np.float32)
-            pca_data_full[:, valid_mask_flat] = pca_data.T
-
-            # Reshape to (optimal_components, height, width)
-            pca_data_reshaped = pca_data_full.reshape(optimal_components, height, width)
-
-            # Write PCA bands to a new GeoTIFF file
-            profile = src.profile
-            profile.update(count=optimal_components, dtype=rasterio.float32, nodata=no_data_value)
-
-            with rasterio.open(output_tiff, 'w', **profile) as dst:
-                dst.write(pca_data_reshaped)
-
-        print("PCA transformation complete. Output saved as:", output_tiff)
 
 
 def get_hemisphere(raster_path):
@@ -943,17 +530,6 @@ def get_hemisphere(raster_path):
         return f"Error processing the raster: {e}"
 
 
-def give_time(start):
-    """
-    Prints the elapsed time since the given start time in hours, minutes, and seconds.
-
-    Parameters:
-        start (float): The start time (e.g., from time.time()).
-    """
-    elapsed = time.time() - start
-    hours, rem = divmod(elapsed, 3600)
-    minutes, seconds = divmod(rem, 60)
-    print(f"Elapsed time: {int(hours):02d}h:{int(minutes):02d}m:{int(seconds):02d}s")
 
 
 
