@@ -267,9 +267,19 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, a
 
 
     # Apply mask: Set FSC values to NoData where glacier_mask is not 255
-    fsc_data[glacier_map == 215] = thematic_map[glacier_map == 215]
-    fsc_data[glacier_map == 100] = thematic_map[glacier_map == 100]
+    # fsc_data[glacier_map == 215] = thematic_map[glacier_map == 215]
+    # fsc_data[glacier_map == 100] = thematic_map[glacier_map == 100]
+    glacier_map[glacier_map == 1] = 215 
+    glacier_map[glacier_map == 2] = 100 
 
+    mask = np.logical_and.reduce([
+        fsc_data > 0,
+        fsc_data <= 100,
+        glacier_map > 0
+    ])
+    
+
+    fsc_data[mask] = glacier_map[mask]
 
     # Save the modified raster
     with rasterio.open(output_path, 'w', **meta) as dst:

@@ -391,7 +391,7 @@ if __name__ == "__main__":
     
     resolution = 50
     epsg_target = 32719
-    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61/01_TEST_auxiliary_folder/DEM.tif'
+    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/L1-LC08/01_TEST_auxiliary_folder/DEM.tif'
 
 
     date = "2018-06-29"

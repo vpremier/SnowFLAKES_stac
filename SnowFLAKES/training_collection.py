@@ -7,6 +7,7 @@ Created on Fri Oct 25 12:07:46 2024
 """
 import numpy as np
 import os
+import pickle
 import glob
 from pathlib import Path
 from sklearn.cluster import KMeans
@@ -20,6 +21,7 @@ from sklearn.metrics import silhouette_score
 from skimage.filters import threshold_otsu
 from sklearn.preprocessing import StandardScaler
 from scipy.ndimage import binary_dilation, binary_erosion
+from joblib import Parallel, delayed
 
 from SnowFLAKES.utilities import *
 
@@ -90,9 +92,9 @@ def get_pixels_shadow(curr_diff_B_NIR, curr_shad_idx, curr_NDSI, curr_distance_i
     curr_shad_idx_norm = np.clip((curr_shad_idx - shad_idx_low_perc) / (shad_idx_high_perc - shad_idx_low_perc),
                                  0, 1)
     curr_score_snow_shadow = curr_diff_B_NIR_norm - curr_shad_idx_norm
-    threshold_shadow = np.percentile(curr_score_snow_shadow, 95)
+    threshold_shadow = np.percentile(curr_score_snow_shadow, 99)
     snow = np.logical_and.reduce(
-        (curr_score_snow_shadow >= threshold_shadow, curr_NDSI > 0.9, curr_distance_idx != 255)).flatten()
+        (curr_score_snow_shadow >= threshold_shadow, curr_NDSI > 0.7, curr_distance_idx != 255)).flatten()
     
     threshold_shadow_no_snow = np.percentile(curr_score_snow_shadow, 5)
     snowfree = (curr_score_snow_shadow <= threshold_shadow_no_snow).flatten()
@@ -110,10 +112,11 @@ def get_pixels_sun(curr_NDSI, curr_NDVI, curr_green, curr_distance_idx):
     curr_NDVI_norm = np.clip((curr_NDVI - NDVI_low_perc) / (NDVI_high_perc - NDVI_low_perc), 0, 1)
     curr_green_norm = np.clip((curr_green - green_low_perc) / (green_high_perc - green_low_perc), 0, 1)
     curr_score_snow_sun = curr_NDSI_norm - curr_NDVI_norm + curr_green_norm
-    threshold = np.percentile(curr_score_snow_sun, 95)
+    # fare una cosa gerarchica?
+    threshold = np.percentile(curr_score_snow_sun, 80) # rivedere il percentile
     snow = np.logical_and.reduce(
         (curr_score_snow_sun >= threshold, curr_NDSI > 0.7, curr_distance_idx != 255)).flatten()
-    
+    # modificare threshold
     snowfree = (curr_NDSI < 0).flatten()
 
     
@@ -329,6 +332,62 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
 
 
+
+def glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, 
+                    auxiliary_folder_path, Nprocesses=8):
+    
+    
+    # Load the model
+    with open(model_path, 'rb') as model_file:
+        svm_dict = pickle.load(model_file)
+    xgboost_model = svm_dict['xgboostModel']
+    normalizer = svm_dict['normalizer']
+    feature_names = svm_dict['feature_names']
+    
+    
+    
+    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
+    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
+
+    glacier_mask = open_image(glacier_mask_path)[0]
+    cloud_mask = open_image(path_cloud_mask)[0]
+    valid_mask = np.logical_not(no_data_mask)
+    
+    mask = valid_mask & (cloud_mask==1) & (glacier_mask == 1)
+
+    # Extract valid pixels
+    features = np.column_stack([
+        np.squeeze(data.sel(band=band).values)[mask]
+        for band in feature_names
+    ])
+    
+    
+    # Normalize features
+    features = np.nan_to_num(features)
+    features = normalizer.transform(features)
+
+    # Split features for parallel processing
+    feature_blocks = np.array_split(features, Nprocesses)
+
+    # Classify in parallel using XGBoost
+    print("Starting XGBoost classification...")
+    def classify_block(block):
+        return xgboost_model.predict(block)
+    
+    predictions_blocks = Parallel(n_jobs=Nprocesses, verbose=10)(
+        delayed(classify_block)(block) for block in feature_blocks
+    )
+    predictions = np.concatenate(predictions_blocks) + 1  # Adjust class indices
+    
+    # Create the output raster
+    class_map = np.zeros((data.sizes['y'], data.sizes['x']), dtype='uint8')
+    class_map[mask] = predictions
+    
+    return class_map
+        
+        
+    
+    
 def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path):
     
     NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]

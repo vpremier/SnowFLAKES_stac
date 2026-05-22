@@ -19,7 +19,6 @@ from SnowFLAKES.auxiliary_folder_population import *
 from SnowFLAKES.utilities import *
 from SnowFLAKES.training_collection import *
 from SnowFLAKES.SCF_functions import *
-from SnowFLAKES.shadow_mask_gen import *
 
 
 from stac.load_stac import load_cdse_collection, convert_sentinel2_bands
@@ -409,7 +408,10 @@ def run_snowflakes(config, data, scene_id):
             dt_end_glaciers_month is not None and
             is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
 
-            glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+            # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2/model_ice.p'
+
+            glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
             mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)
 
 

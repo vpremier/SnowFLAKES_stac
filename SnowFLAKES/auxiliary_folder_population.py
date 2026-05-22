@@ -30,7 +30,6 @@ from rasterio.warp import reproject, Resampling
 from rasterio.merge import merge
 
 from SnowFLAKES.utilities import *
-from SnowFLAKES.shadow_mask_gen import *
 
 from pysolar.solar import *
 

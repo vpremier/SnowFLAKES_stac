@@ -22,7 +22,9 @@ from shapely.geometry import mapping
 from rasterio.enums import Resampling
 from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
-from affine import Affine    
+from affine import Affine   
+import boto3
+ 
 # import odc.stac
 
 
@@ -37,6 +39,12 @@ from stac.utils_stac import *
         
 # collection = "cop-dem-glo-30-dged-cog"
 
+session = boto3.Session(profile_name="cdse")
+creds = session.get_credentials().get_frozen_credentials()
+
+os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
 
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
@@ -54,10 +62,11 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
     S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
 
-    load_dotenv(override=True)  # loads .env file
+    # load_dotenv(override=True)  # loads .env file
     os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    # os.environ["AWS_PROFILE"] = "cdse"
+    # os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
+    # os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
     os.environ["AWS_HTTPS"] = "YES"
     os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
     os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
@@ -299,8 +308,9 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
 
     load_dotenv(override=True)  # loads .env file
     os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
+    # os.environ["AWS_PROFILE"] = "cdse"
+    # os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
+    # os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
     # os.environ["AWS_HTTPS"] = "YES"
     # os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
     # os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"

@@ -1,9 +1,9 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61/area_061.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/test",
   "satellite": "Sentinel-2",
-  "date_start": "2021-03-27",
-  "date_end": "2021-03-31",
+  "date_start": "2020-05-10",
+  "date_end": "2020-05-16",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
