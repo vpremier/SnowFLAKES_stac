@@ -699,10 +699,15 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
     aspect_rad = np.radians(aspect)
 
     # Calculate the solar incidence angle
-    solar_incidence_angle = np.degrees(np.arccos(
-        np.cos(sun_zenith_rad) * np.cos(slope_rad) +
-        np.sin(sun_zenith_rad) * np.sin(slope_rad) * np.cos(aspect_rad - sun_azimuth_rad)
-    ))
+    cos_i = (
+    np.cos(sun_zenith_rad) * np.cos(slope_rad)
+    + np.sin(sun_zenith_rad) * np.sin(slope_rad)
+    * np.cos(aspect_rad - sun_azimuth_rad)
+    )
+
+    cos_i = np.clip(cos_i, -1.0, 1.0) # this take into account the numerical approximations
+    
+    solar_incidence_angle = np.degrees(np.arccos(cos_i))
 
     # Set no-data areas (where slope is invalid) to NaN
     solar_incidence_angle[np.isnan(slope)] = np.nan
