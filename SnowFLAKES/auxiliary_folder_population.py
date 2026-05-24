@@ -359,7 +359,7 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
     if os.path.exists(slopePath) and not overwrite:
         print('Slope file was already created and saved')
     else:
-        cmd = f"gdaldem slope {dem_path} {slopePath} -of GTiff -compute_edges"
+        cmd = f"gdaldem slope {dem_path} {slopePath} -of GTiff -compute_edges" 
         os.system(cmd)
         print(f"Slope saved at {slopePath}")
 
@@ -367,7 +367,7 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
     if os.path.exists(aspectPath) and not overwrite:
         print('Aspect file was already created and saved')
     else:
-        cmd = f"gdaldem aspect {dem_path} {aspectPath} -of GTiff -compute_edges"
+        cmd = f"gdaldem aspect {dem_path} {aspectPath} -of GTiff -compute_edges -zero_for_flat"
         os.system(cmd)
         print(f"Aspect saved at {aspectPath}")
 
