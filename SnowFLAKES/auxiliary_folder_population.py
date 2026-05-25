@@ -856,6 +856,198 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
 
 
 def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands):
+    """
+    Generate a snow-proximity / altitude-constrained distance index.
+
+    This function creates an auxiliary raster that describes how far each valid pixel is from
+    high-confidence snow pixels, while also masking out areas that are considered too low in
+    elevation to be relevant for snow training or snow classification.
+
+    The output raster is later used as an additional validity/proximity constraint during
+    training pixel selection. In the current SnowFLAKES workflow, pixels with value 255 are
+    treated as invalid or excluded.
+
+    The output file is saved as:
+
+        <scene_id>_index_of_distance.tif
+
+    inside `curr_aux_folder`.
+
+    Parameters
+    ----------
+    scene_id : str
+        Scene identifier. Used to infer the sensor type and to name the output file.
+
+    curr_aux_folder : str
+        Path to the current scene auxiliary folder.
+        This folder must contain:
+            *cloud_Mask.tif
+            *NDSI.tif
+
+    auxiliary_folder_path : str
+        Path to the general auxiliary folder.
+        This folder must contain:
+            *Water_Mask.tif
+            *DEM.tif
+
+    no_data_mask : numpy.ndarray
+        Boolean mask where True indicates no-data / invalid pixels.
+
+    bands : dict
+        Dictionary of spectral bands, usually returned by `define_bands(...)`.
+        This function requires:
+            bands['NIR']
+
+    Returns
+    -------
+    None
+        The function does not return an object.
+        It writes a GeoTIFF distance index to disk.
+
+    Output
+    ------
+    GeoTIFF
+        Path:
+            curr_aux_folder/<scene_id>_index_of_distance.tif
+
+        Data type:
+            uint8
+
+        Values:
+            0-254 : normalized distance/proximity index
+            255   : no-data / excluded pixel
+
+    Processing Steps
+    ----------------
+    1. Load auxiliary data:
+        - cloud mask
+        - water mask
+        - NDSI raster
+        - DEM raster
+        - NIR band from the input band dictionary
+
+    2. Build a valid-scene mask:
+        A pixel is valid only if it is:
+            - not cloud
+            - not water
+            - not no-data
+
+        Current assumptions:
+            cloud_mask == 2 means cloud
+            water_mask == 1 means water
+            no_data_mask == True means invalid
+
+    3. Identify high-confidence snow and snow-free pixels:
+        Snow-free pixels:
+            NDSI < 0
+
+        Snow pixels:
+            NDSI > 0.6
+            NIR > 0.45
+
+        These are stored in an internal `snow_map`:
+            0 = unclassified
+            1 = sure no-snow
+            2 = sure snow
+
+    4. Compute distance from sure-snow pixels:
+        The Euclidean distance transform is computed from pixels where:
+
+            snow_map == 2
+
+        The distance is then normalized to the range 0-1.
+
+    5. Estimate an elevation threshold:
+        The DEM values of sure-snow pixels are extracted.
+        If sure-snow pixels exist, the minimum snow-relevant elevation is estimated as:
+
+            altitude_min_threshold = 1st percentile of snow elevation - 500 m
+
+        Pixels below this threshold are excluded.
+
+    6. Combine distance and altitude:
+        The normalized distance index is kept only where:
+            - the pixel is valid
+            - the pixel is above the altitude threshold
+
+        Pixels outside this area are assigned 255.
+
+    7. Save the result as a GeoTIFF.
+
+    Notes
+    -----
+    The output is called an "index_of_distance", but larger values actually indicate
+    pixels farther away from high-confidence snow pixels after normalization.
+
+    This raster is used later in training selection with a rule such as:
+
+        curr_distance_idx != 255
+
+    meaning that pixels with value 255 are excluded.
+
+    Important Assumptions
+    ---------------------
+    - The DEM, NDSI, cloud mask, water mask, and spectral bands are already aligned
+      on the same grid.
+    - NIR reflectance is scaled such that a threshold of 0.45 is meaningful.
+    - NDSI is in the expected range, usually approximately -1 to 1.
+    - DEM units are meters.
+    - The CRS and geotransform are copied from the cloud mask metadata.
+
+    Potential Issues
+    ----------------
+    1. The function name has a typo:
+           adiacency_indexes
+       should probably be:
+           adjacency_indexes
+
+    2. `sensor = get_sensor(scene_id)` is currently unused.
+
+    3. `valid_mask = np.logical_not(no_data_mask)` is computed but not used.
+
+    4. The altitude mask is assigned twice:
+
+           altitude_mask = ...
+           altitude_mask = (dem >= altitude_min_threshold)
+
+       The second assignment can be problematic if `altitude_min_threshold` is NaN.
+
+    5. If no sure-snow pixels exist, `altitude_min_threshold` becomes NaN.
+       Because of the second altitude-mask assignment, the result may exclude all pixels.
+
+    6. If all distance values are equal, this normalization can divide by zero:
+
+           distance_from_snow_normalized =
+               (distance - min) / (max - min)
+
+    7. `np.nanmax(distance_from_snow)` can fail if all values are NaN.
+
+    8. The output name is:
+
+           <scene_id>_index_of_distance.tif
+
+       but other parts of the code search for:
+
+           *distance.tif
+
+       This works because the filename contains "distance", but the naming should be
+       kept consistent.
+
+    Example
+    -------
+    >>> adiacency_indexes(
+    ...     scene_id="S2A_MSIL2A_20240315T104031",
+    ...     curr_aux_folder="/path/to/scene/auxiliary",
+    ...     auxiliary_folder_path="/path/to/auxiliary",
+    ...     no_data_mask=no_data_mask,
+    ...     bands=bands
+    ... )
+
+    This creates:
+
+        /path/to/scene/auxiliary/S2A_MSIL2A_20240315T104031_index_of_distance.tif
+    """
+    
     sensor = get_sensor(scene_id)
 
     path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
