@@ -792,6 +792,9 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     curr_range = (70, 180)
     curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
                                                                        solar_incidence_angle < curr_range[1]))
+    
+    
+    self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle >= 90)
 
     # shadow_score = (
     #     index1_norm *
@@ -813,8 +816,9 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
 
     
     spectral_shadow = shadow_score > threshold
+    casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
     
-    shadow_mask = np.logical_and(spectral_shadow, curr_angle_valid)
+    shadow_mask = np.logical_or(casted_shadow, self_shadow)
 
     # shadow_mask = cv2.medianBlur(shadow_mask.astype(np.uint8)*255, 5)
 
@@ -825,7 +829,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     
     # try:
     #     threshold = np.percentile(shadow_score[curr_angle_valid], [10, 95])[0]
-    #     # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=50)
+    #     # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=100)
     #     # Create shadow mask: positive values indicate shadow
     #     shadow_mask = (shadow_score > threshold).astype(np.uint8)
     # except:
