@@ -203,6 +203,10 @@ def run_snowflakes(config, data, scene_id):
 
     bands = define_bands(data, valid_mask, sensor)
     
+    spectral_idx_computer(bands['GREEN'], bands['NIR'], 'normDiff', no_data_mask, 
+                          curr_aux_folder, sensor, f"{scene_id}_NDWI.tif", data)
+    
+    
     spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDVI.tif", data)
     spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', no_data_mask, 
@@ -409,7 +413,7 @@ def run_snowflakes(config, data, scene_id):
             is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
 
             # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2/model_ice.p'
+            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_samples_Lena/model_ice.p'
 
             glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
             mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)

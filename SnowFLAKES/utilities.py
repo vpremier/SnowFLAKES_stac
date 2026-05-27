@@ -7,6 +7,8 @@ Created on Mon Sep 16 18:03:27 2024
 """
 import os
 from osgeo import gdal, osr
+from pathlib import Path
+
 import netCDF4
 import numpy as np
 import glob
@@ -17,6 +19,31 @@ from datetime import datetime
 import geopandas as gpd
 
 from stac.load_stac_usgs import get_scene_center_time
+
+
+
+def find_path(folder, pattern):
+    # look for file containing a specific pattern in a given folder
+    matches = list(Path(folder).glob(pattern))
+
+    if not matches:
+        raise FileNotFoundError(
+            f"No file matching '{pattern}' in '{folder}'"
+        )
+
+    if len(matches) > 1:
+        print(f"Warning: multiple matches for {pattern}, using first")
+
+    return matches[0]
+
+
+
+def load_map(folder, pattern):
+    path = find_path(folder, pattern)
+    image = open_image(path)[0]
+    return path, image
+
+
 
 
 def find_closest_valid_scf(working_folder, date):
