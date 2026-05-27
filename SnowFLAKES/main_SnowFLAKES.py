@@ -26,6 +26,10 @@ from utils import load_with_retry
 
 
 def run_snowflakes(config, data, scene_id):
+    
+    print(f"Running SnowFLAKES for {scene_id}")
+    start = time.time()
+
 
     # Config info
     working_folder = config['output_directory']
@@ -123,11 +127,6 @@ def run_snowflakes(config, data, scene_id):
 
     
 
-    start = time.time()
-
-    print(f"Running SnowFLAKES for {scene_id}")
-
-    
     # Cloud Masking settings
     cloud_prob = float(config.get('Cloud cover probability', 0.6))
     average_over = int(config.get('average_over', 3))
@@ -136,21 +135,20 @@ def run_snowflakes(config, data, scene_id):
     
 
 
-    # load bands
+    # load bands: bands used for SCF
     all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
     all_bands_image = np.squeeze(data.sel(band=all_bands).values)
     all_bands_image[all_bands_image == no_data_value] = np.nan
     
+    # bands for cloud classification 
     cloud_bands = select_band_names(sensor, 'cloud')
    
     no_data_mask, valid_mask = generate_no_data_mask(all_bands_image, sensor, no_data_value=np.nan)
-
     
     # Auxiliary folder
     curr_aux_folder = os.path.join(scene_folder, "auxiliary")
     os.makedirs(curr_aux_folder, exist_ok=True)
 
-    # da rivedere come strutturo le cartelle!!!!
     
     # Cloud mask
     path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
@@ -185,8 +183,6 @@ def run_snowflakes(config, data, scene_id):
     no_data_percentage = np.sum(no_data_mask) / (data.sizes["y"] * data.sizes["x"])
     cloud_perc_corr = cloud_cover_percentage / (1 - no_data_percentage)
 
-    # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
-    valid_mask = np.logical_not(no_data_mask)
 
     if np.sum(no_data_mask) / len(valid_mask.flatten()) > 1 or cloud_perc_corr > 0.6:
         print('TOO MANY INVALID PIXELS...')
@@ -201,12 +197,12 @@ def run_snowflakes(config, data, scene_id):
     
 
 
+    
+    # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
     bands = define_bands(data, valid_mask, sensor)
     
     spectral_idx_computer(bands['GREEN'], bands['NIR'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDWI.tif", data)
-    
-    
     spectral_idx_computer(bands['NIR'], bands['RED'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDVI.tif", data)
     spectral_idx_computer(bands['GREEN'], bands['SWIR'], 'normDiff', no_data_mask, 
@@ -242,7 +238,11 @@ def run_snowflakes(config, data, scene_id):
     )
     
     # shadow mask
-    shadow_mask_path = generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands['NIR'])
+    shadow_mask_path = generate_shadow_mask(scene_id, 
+                                            curr_aux_folder, 
+                                            auxiliary_folder_path, 
+                                            no_data_mask, 
+                                            bands['NIR'])
    
     # adiecency map
     adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands)
@@ -280,8 +280,13 @@ def run_snowflakes(config, data, scene_id):
         if not os.path.exists(shapefile_path):
             print("Generating training shapefile.")
             try:
-                shapefile_path = collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path,
-                                                   SVM_folder_name, training_collection_no_data_mask, bands)
+                shapefile_path = collect_trainings(scene_id, 
+                                                   all_bands_image, 
+                                                   curr_aux_folder, 
+                                                   auxiliary_folder_path,
+                                                   SVM_folder_name, 
+                                                   training_collection_no_data_mask, 
+                                                   bands)
             except:
                 print("Error for training collection")
                 return

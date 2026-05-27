@@ -83,48 +83,63 @@ def read_masked_values(data_source, mask, bands=None):
 
 
 
-def get_pixels_shadow(curr_diff_B_NIR, curr_shad_idx, curr_NDSI, curr_distance_idx):
-    # Normalize indices and compute shadow metric
-    diff_B_NIR_low_perc, diff_B_NIR_high_perc = np.percentile(curr_diff_B_NIR, [2, 95])
-    shad_idx_low_perc, shad_idx_high_perc = np.percentile(curr_shad_idx, [2, 95])
-    curr_diff_B_NIR_norm = np.clip(
-        (curr_diff_B_NIR - diff_B_NIR_low_perc) / (diff_B_NIR_high_perc - diff_B_NIR_low_perc), 0, 1)
-    curr_shad_idx_norm = np.clip((curr_shad_idx - shad_idx_low_perc) / (shad_idx_high_perc - shad_idx_low_perc),
-                                 0, 1)
-    curr_score_snow_shadow = curr_diff_B_NIR_norm - curr_shad_idx_norm
-    threshold_shadow = np.percentile(curr_score_snow_shadow, 99)
-    snow = np.logical_and.reduce(
-        (curr_score_snow_shadow >= threshold_shadow, curr_NDSI > 0.9, curr_distance_idx != 255)).flatten()
+def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
     
-    threshold_shadow_no_snow = np.percentile(curr_score_snow_shadow, 5)
-    snowfree = (curr_score_snow_shadow <= threshold_shadow_no_snow).flatten()
+    # Compute 2nd and 95th percentiles
+    diff_B_NIR_low_perc, diff_B_NIR_high_perc = np.percentile(diff_B_NIR[mask_shadow], [2, 95])
+    shad_idx_low_perc, shad_idx_high_perc = np.percentile(shad_idx[mask_shadow], [2, 95])
+    
+    # Normalize indices 
+    diff_B_NIR_norm = np.clip((diff_B_NIR - diff_B_NIR_low_perc) / 
+                              (diff_B_NIR_high_perc - diff_B_NIR_low_perc), 0, 1)
+    shad_idx_norm = np.clip((shad_idx - shad_idx_low_perc) / 
+                            (shad_idx_high_perc - shad_idx_low_perc), 0, 1)
+    
+    # Compute shadow metric
+    score_snow_shadow = diff_B_NIR_norm - shad_idx_norm
+    
+    # threshold
+    threshold_snow = np.percentile(score_snow_shadow[mask_shadow], 99)
+    
+    snow = np.logical_and.reduce((mask_shadow,
+                                  score_snow_shadow >= threshold_snow,
+                                  NDSI > 0.9, 
+                                  distance_idx != 255))
+    
+    threshold_no_snow = np.percentile(score_snow_shadow, 5)
+    snowfree = (mask_shadow & (score_snow_shadow <= threshold_no_snow))
     
     return snow, snowfree
 
 
 
-def get_pixels_sun(curr_NDSI, curr_NDVI, curr_green, curr_distance_idx, curr_NDWI):
-    # Normalize indices and compute sun metric
-    NDSI_low_perc, NDSI_high_perc = np.percentile(curr_NDSI[np.logical_not(np.isnan(curr_NDSI))], [1, 99])
-    NDVI_low_perc, NDVI_high_perc = np.percentile(curr_NDVI[np.logical_not(np.isnan(curr_NDVI))], [1, 99])
-    green_low_perc, green_high_perc = np.percentile(curr_green, [1, 99])
-    curr_NDSI_norm = np.clip((curr_NDSI - NDSI_low_perc) / (NDSI_high_perc - NDSI_low_perc), 0, 1)
-    curr_NDVI_norm = np.clip((curr_NDVI - NDVI_low_perc) / (NDVI_high_perc - NDVI_low_perc), 0, 1)
-    curr_green_norm = np.clip((curr_green - green_low_perc) / (green_high_perc - green_low_perc), 0, 1)
-    curr_score_snow_sun = curr_NDSI_norm - curr_NDVI_norm + curr_green_norm
+def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, mask_sun):
     
-    # conditions of validity
+    # Compute 1th and 99th percentiles
+    NDSI_low_perc, NDSI_high_perc = np.percentile(NDSI[mask_sun], [1, 99])
+    NDVI_low_perc, NDVI_high_perc = np.percentile(NDVI[mask_sun], [1, 99])
+    green_low_perc, green_high_perc = np.percentile(green[mask_sun], [1, 99])
     
-    # fare una cosa gerarchica?
-    threshold = np.percentile(curr_score_snow_sun, 95) # rivedere il percentile
-    snow = np.logical_and.reduce(
-        (curr_score_snow_sun >= threshold, 
-         curr_NDSI > 0.7, 
-         curr_distance_idx != 255,
-         curr_NDWI < 0.5)).flatten()
+    # Normalize indices 
+    NDSI_norm = np.clip((NDSI - NDSI_low_perc) / (NDSI_high_perc - NDSI_low_perc), 0, 1)
+    NDVI_norm = np.clip((NDVI - NDVI_low_perc) / (NDVI_high_perc - NDVI_low_perc), 0, 1)
+    green_norm = np.clip((green - green_low_perc) / (green_high_perc - green_low_perc), 0, 1)
+    
+    # Compute sun metric
+    score_snow_sun = NDSI_norm - NDVI_norm + green_norm
+ 
+    # get the threshold
+    threshold = np.percentile(score_snow_sun[mask_sun], 95)
+    
+    # conditions of val
+    snow = np.logical_and.reduce((mask_sun,
+                                  score_snow_sun >= threshold, 
+                                  NDSI > 0.7, 
+                                  distance_idx != 255,
+                                  NDWI < 0.5))
+    
     # modificare threshold
-    snowfree = (curr_NDSI < 0).flatten()
-    
+    snowfree = (mask_sun & (NDSI < 0))
     
     return snow, snowfree
 
@@ -148,60 +163,65 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
     shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
-    NDSI = load_map(curr_aux_folder, '*NDVI.tif')
+    NDVI = load_map(curr_aux_folder, '*NDVI.tif')
     NDWI = load_map(curr_aux_folder, '*NDWI.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
-    distance_index = load_map(curr_aux_folder, '*distance.tif')
+    distance_idx = load_map(curr_aux_folder, '*distance.tif')
+    green = bands["GREEN"]
+    
+    # validity mask: a binary dilation is applied (avoid training collection
+    # near water bodies, clouds, etc).. glaciers??
+    curr_scene_valid = build_valid_scene(no_data_mask,
+                                         cloud_mask == 2,
+                                         water_mask == 1,
+                                         glacier_mask == 1)
+    
+    
+    # enlarge shadow - sun masks to create a buffer where training collection
+    # is avoided
+    shadow_mask_eroded = binary_erosion(
+        shadow_mask == 1,
+        iterations=5
+    )
+
+    sun_mask_eroded = binary_erosion(
+        shadow_mask == 0,
+        iterations=5
+    )
     
 
-    
-
-
-
-
-
-
-    # curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 2, water_mask == 1, no_data_mask)))
-    
-    curr_scene_valid = ~binary_dilation(
-        np.logical_or.reduce((cloud_mask == 2, water_mask == 1, no_data_mask,
-                              glacier_mask == 1)),
-        iterations=2
-        )
-        
-
-    # ingrandire la water mask
-
+    # define solar incidence angle ranges
     max_SIA = np.nanmax(solar_incidence_angle[curr_scene_valid])
     
     if max_SIA <= 90: 
         ranges = ((0, 20), (20, 45), (45, 70), (70, max_SIA))
-    
     else:
         ranges = ((0, 20), (20, 45), (45, 70), (70, 90), (90, 180))
 
-    # new_90 = min(np.nanmax(solar_incidence_angle[curr_scene_valid])-1, 90)
 
     # get a number of training proportional to the area belonging to that range 
     range_samples = calculate_training_samples(solar_incidence_angle, ranges, total_samples)
-    # ranges = ((70, 90))
 
-    # ranges = ((0,20), (20, 30), (30, 40), (40, 50), (50, 60), (60, 70), (70, 80), (80, 90), (90, 180))
+
+
+
     empty = np.zeros(curr_scene_valid.shape, dtype='uint8')
-
     percentage_per_angles_list = []
+    
+    # collect training for each SIA range 
     for curr_range, sample_count in range_samples.items():
         
-        # if curr_range[0] == 20:
+        # if curr_range[0] == 0:
         #     break
 
         # Initialize as empty arrays
         representative_pixels_mask_snow = np.array([])
         representative_pixels_mask_noSnow = np.array([])
         
-        curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
-                                                                           solar_incidence_angle < curr_range[1]))
+        curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
+                                                  solar_incidence_angle >= curr_range[0],
+                                                  solar_incidence_angle < curr_range[1]))
         
         percentage_of_scene_valid = np.sum(curr_angle_valid) / np.sum(curr_scene_valid)
         print(percentage_of_scene_valid)
@@ -209,92 +229,75 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         percentage_per_angles_list.append(percentage_of_scene_valid)
 
         # SHADOW 
-        # Shrink mask by 3 pixels
-        shadow_mask_eroded = binary_erosion(
-            shadow_mask == 1,
-            iterations=5
-        )
 
+        # mask angles and shadow
         mask_shadow = curr_angle_valid & shadow_mask_eroded
-        
-
                 
         if np.any(mask_shadow):
-            print('Collecting trainings in shadow')
-
             
-            curr_distance_idx = read_masked_values(distance_index_path, mask_shadow)
-            curr_NDSI = read_masked_values(NDSI_path, mask_shadow)
-            curr_shad_idx = read_masked_values(shad_idx_path, mask_shadow)
-            curr_diff_B_NIR = read_masked_values(diff_B_NIR_path, mask_shadow)
+            print('Collecting trainings in shadow')
             curr_bands = read_masked_values(all_bands_image, mask_shadow)
-    
-            snow_shad, snowfree_shad = get_pixels_shadow(curr_diff_B_NIR, 
-                                                            curr_shad_idx, 
-                                                            curr_NDSI, 
-                                                            curr_distance_idx)
-    
+
+            snow_shad, snowfree_shad = get_pixels_shadow(diff_B_NIR, 
+                                                         shad_idx, 
+                                                         NDSI, 
+                                                         distance_idx,
+                                                         mask_shadow)
+
             if np.sum(snow_shad) > 10:
-                representative_pixels_mask_snow = get_representative_pixels(curr_bands, snow_shad,
-                                                                            sample_count=int(sample_count / 2), k=5,
+                representative_pixels_mask_snow = get_representative_pixels(curr_bands, 
+                                                                            snow_shad[mask_shadow],
+                                                                            sample_count=int(sample_count / 2), 
+                                                                            k=5,
                                                                             n_closest='auto')
                 
-            if np.sum(snowfree_shad) > 10:
-                representative_pixels_mask_noSnow = get_representative_pixels(curr_bands,
-                                                                              snowfree_shad,
-                                                                              sample_count=int(sample_count / 2), k=5,
-                                                                              n_closest='auto') * 2
+        #     if np.sum(snowfree_shad) > 10:
+        #         representative_pixels_mask_noSnow = get_representative_pixels(curr_bands,
+        #                                                                       snowfree_shad,
+        #                                                                       sample_count=int(sample_count / 2), k=5,
+        #                                                                       n_closest='auto') * 2
                 
-            # Check if masks have been assigned; if not, set as zeros
-            if representative_pixels_mask_snow.size == 0:
-                representative_pixels_mask_snow = np.zeros(mask_shadow.sum(), dtype='uint8')
-            if representative_pixels_mask_noSnow.size == 0:
-                representative_pixels_mask_noSnow = np.zeros(mask_shadow.sum(), dtype='uint8')
+        #     # Check if masks have been assigned; if not, set as zeros
+        #     if representative_pixels_mask_snow.size == 0:
+        #         representative_pixels_mask_snow = np.zeros(mask_shadow.sum(), dtype='uint8')
+        #     if representative_pixels_mask_noSnow.size == 0:
+        #         representative_pixels_mask_noSnow = np.zeros(mask_shadow.sum(), dtype='uint8')
     
-            representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
-            empty[mask_shadow] = representative_pixels_mask
+        #     representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
+        #     empty[mask_shadow] = representative_pixels_mask
             
-            print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
-            print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
+        #     print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
+        #     print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
         
         # SUN   
         representative_pixels_mask_snow = np.array([])
         representative_pixels_mask_noSnow = np.array([])
        
-        # Shrink mask by 3 pixels
-        sun_mask_eroded = binary_erosion(
-            shadow_mask == 0,
-            iterations=5
-        )
-        
-        mask_sun = curr_angle_valid & sun_mask_eroded
-        
-        
-        
-        
 
-        
-    
-    
+        # mask angles and sun
+        mask_sun = curr_angle_valid & sun_mask_eroded
     
         if np.any(mask_sun):
             print('Collecting trainings in sun')
 
-            curr_NDSI = read_masked_values(NDSI_path, mask_sun)
-            curr_NDVI = read_masked_values(NDVI_path, mask_sun)
-            curr_green = read_masked_values(all_bands_image, mask_sun, bands=[1])
-            curr_distance_idx = read_masked_values(distance_index_path, mask_sun)
-            curr_NDWI = read_masked_values(NDWI_path, mask_sun)
+
 
             curr_bands = read_masked_values(all_bands_image, mask_sun)
             
     
     
-            snow_sun, snowfree_sun = get_pixels_sun(curr_NDSI, 
-                                                    curr_NDVI, 
-                                                    curr_green, 
-                                                    curr_distance_idx,
-                                                    curr_NDWI)
+            snow_sun, snowfree_sun = get_pixels_sun(NDSI, 
+                                                    NDVI, 
+                                                    green, 
+                                                    distance_idx,
+                                                    NDWI,
+                                                    mask_sun)
+            
+            print(np.sum(snow_sun))
+            
+            plt.imshow(mask_sun)
+            plt.imshow(snowfree_sun)
+
             
             
             # Shrink mask by 3 pixels
@@ -629,6 +632,7 @@ def get_representative_pixels(bands_data, valid_mask, sample_count=50, k='auto',
         2D mask with representative pixels marked as 1.
     """
     # Extract "valid" pixels for clustering
+    # valid_pixels = np.transpose(bands_data[:, valid_mask])  # Shape (pixels, bands)
     valid_pixels = bands_data[valid_mask, :]  # Shape (pixels, bands)
 
     # Normalize the valid pixels

@@ -8,7 +8,7 @@ Created on Mon Sep 16 18:03:27 2024
 import os
 from osgeo import gdal, osr
 from pathlib import Path
-
+from scipy.ndimage import binary_dilation
 import netCDF4
 import numpy as np
 import glob
@@ -39,10 +39,20 @@ def find_path(folder, pattern):
 
 
 def load_map(folder, pattern):
+    # load the map
     path = find_path(folder, pattern)
     image = open_image(path)[0]
-    return path, image
+    return image
 
+
+
+def build_valid_scene(no_data_mask, *invalid_masks, iterations=2):
+    """
+    Combine arbitrary boolean masks into a validity mask.
+    """
+    invalid = np.logical_or.reduce(invalid_masks + (no_data_mask,))
+    invalid_dilated = binary_dilation(invalid, iterations=iterations)
+    return ~invalid_dilated
 
 
 
@@ -171,7 +181,6 @@ def create_empty_files(working_folder):
 
 
 
-
 def scenes_skip(working_folder):
     txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_scenes_to_skip.log'))[0]
     with open(txt_scenes_to_skip_path, "r") as file:
@@ -211,7 +220,6 @@ def empty_items_to_skip(working_folder):
 
 
 
-
 def get_sensor(acquisition_name):
     """Determines the satellite mission based on the acquisition name."""
     acquisition_name = os.path.basename(acquisition_name)
@@ -232,7 +240,6 @@ def get_sensor(acquisition_name):
         return 'PRISMA'
     else:
         raise ValueError(f"Invalid acquisition name: {acquisition_name}")
-
 
 
 
@@ -280,8 +287,6 @@ def define_bands(data, valid_mask, sensor):
 
 
 
-
-
 def select_band_names(sensor, suffix):
     """
     Returns the list of band names based on the sensor and suffix.
@@ -322,8 +327,6 @@ def select_band_names(sensor, suffix):
         # Graceful fallback with logging instead of exception
         print(f"Warning: Unsupported sensor or suffix combination: sensor={sensor}, suffix={suffix}")
         return []
-
-
 
 
 
