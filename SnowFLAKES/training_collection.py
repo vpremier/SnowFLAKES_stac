@@ -88,7 +88,8 @@ def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
                                   distance_idx != 255))
     
     threshold_no_snow = np.percentile(score_snow_shadow[mask_shadow], 5)
-    snowfree = (mask_shadow & (score_snow_shadow <= threshold_no_snow))
+    snowfree = np.logical_and.reduce((mask_shadow,
+                                      score_snow_shadow <= threshold_no_snow))
     
     return snow, snowfree
 
@@ -117,10 +118,12 @@ def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, mask_sun):
                                   score_snow_sun >= threshold, 
                                   NDSI > 0.7, 
                                   distance_idx != 255,
-                                  NDWI < 0.5))
+                                  NDWI < 0.1)) # avoi water and ice
     
     # modificare threshold
-    snowfree = (mask_sun & (NDSI < 0))
+    snowfree = np.logical_and.reduce((mask_sun,
+                                       NDSI < -0.3,
+                                       NDWI < 0.1))
     
     return snow, snowfree
 
@@ -157,20 +160,19 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     # near water bodies, clouds, etc).. glaciers??
     curr_scene_valid = build_valid_scene(no_data_mask,
                                          cloud_mask == 2,
-                                         water_mask == 1,
-                                         glacier_mask == 1)
+                                         water_mask == 1)
     
     
     # enlarge shadow - sun masks to create a buffer where training collection
     # is avoided
     shadow_mask_eroded = binary_erosion(
         shadow_mask == 1,
-        iterations=5
+        iterations=3
     )
 
     sun_mask_eroded = binary_erosion(
         shadow_mask == 0,
-        iterations=5
+        iterations=3
     )
     
 
@@ -211,7 +213,9 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         # SHADOW --------------------------------------------------------------
 
         # mask angles and shadow
-        mask_shadow = curr_angle_valid & shadow_mask_eroded
+        mask_shadow = np.logical_and.reduce((curr_angle_valid, 
+                                             shadow_mask_eroded,
+                                             glacier_mask==0)) # no dilation applied for glacier here
                 
         if np.any(mask_shadow):
             
@@ -288,14 +292,14 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
             # Shrink mask by 3 pixels
             snow_sun_eroded = binary_erosion(
                 snow_sun,
-                iterations=1
+                iterations=2
             )
             
             
             # Shrink mask by 3 pixels
             snowfree_sun_eroded = binary_erosion(
                 snowfree_sun,
-                iterations=1
+                iterations=2
             )
     
             if np.sum(snow_sun_eroded) > 10:

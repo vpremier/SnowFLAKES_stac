@@ -261,15 +261,13 @@ def run_snowflakes(config, data, scene_id):
             with rasterio.open(glaciers_mask_path) as src:
                 glaciers_mask = src.read(1)  # Read the cloud mask (first band)
     
-            # Apply an N-pixel buffer using binary dilation
-            N = 3  # Replace this with the desired buffer size
-            structure = np.ones((2 * N + 1, 2 * N + 1))  # Define the dilation kernel
-            glaciers_mask = binary_dilation(glaciers_mask, structure=structure).astype(int)
-            training_collection_no_data_mask = np.logical_or(no_data_mask, glaciers_mask == 1)
+            # # Apply an N-pixel buffer using binary dilation
+            # N = 3  # Replace this with the desired buffer size
+            # structure = np.ones((2 * N + 1, 2 * N + 1))  # Define the dilation kernel
+            # glaciers_mask = binary_dilation(glaciers_mask, structure=structure).astype(int)
             
             
         else:
-            training_collection_no_data_mask = no_data_mask
             dt_start_glaciers_month = None
             dt_end_glaciers_month = None
 
@@ -285,7 +283,7 @@ def run_snowflakes(config, data, scene_id):
                                                    curr_aux_folder, 
                                                    auxiliary_folder_path,
                                                    SVM_folder_name, 
-                                                   training_collection_no_data_mask, 
+                                                   no_data_mask, 
                                                    bands)
             except:
                 print("Error for training collection")
