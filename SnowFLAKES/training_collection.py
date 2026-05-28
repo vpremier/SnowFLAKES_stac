@@ -16,7 +16,6 @@ import rasterio
 import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import Point
-from scipy.spatial.distance import cdist
 from sklearn.metrics import silhouette_score
 from skimage.filters import threshold_otsu
 from sklearn.preprocessing import StandardScaler
@@ -24,6 +23,44 @@ from scipy.ndimage import binary_dilation, binary_erosion
 from joblib import Parallel, delayed
 
 from SnowFLAKES.utilities import *
+
+
+
+def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
+    """
+    Calculate the number of training samples for each angle range proportional to the pixel distribution.
+
+    Parameters:
+        solar_incidence_angle (np.ndarray): 2D array representing the solar incidence angle map.
+        ranges (list of tuple): List of angle ranges (start, end).
+        total_samples (int): Total number of training samples to distribute.
+
+    Returns:
+        dict: A dictionary with ranges as keys and the number of training samples as values.
+    """
+    # Flatten the angle map for easier processing
+    flattened_map = solar_incidence_angle.flatten()
+
+    # Initialize a dictionary to store the count for each range
+    range_pixel_counts = {r: 0 for r in ranges}
+
+    # Count pixels in each range
+    for r in ranges:
+        range_pixel_counts[r] = np.sum((flattened_map >= r[0]) & (flattened_map < r[1]))
+
+    # Calculate the total number of pixels considered
+    total_pixels = sum(range_pixel_counts.values())
+
+    threshold = 0.01  # 1%
+
+    range_samples = {
+        r: int(total_samples * (count / total_pixels)) + 20
+        if total_pixels > 0 and (count / total_pixels) > threshold
+        else 0
+        for r, count in range_pixel_counts.items()
+    }
+
+    return range_samples
 
 
 
@@ -50,7 +87,7 @@ def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
                                   NDSI > 0.9, 
                                   distance_idx != 255))
     
-    threshold_no_snow = np.percentile(score_snow_shadow, 5)
+    threshold_no_snow = np.percentile(score_snow_shadow[mask_shadow], 5)
     snowfree = (mask_shadow & (score_snow_shadow <= threshold_no_snow))
     
     return snow, snowfree
@@ -184,7 +221,6 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
             
             print('Collecting trainings in shadow')
             
-            dd
             snow_shad, snowfree_shad = get_pixels_shadow(diff_B_NIR, 
                                                          shad_idx, 
                                                          NDSI, 
@@ -252,14 +288,14 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
             # Shrink mask by 3 pixels
             snow_sun_eroded = binary_erosion(
                 snow_sun,
-                iterations=3
+                iterations=1
             )
             
             
             # Shrink mask by 3 pixels
             snowfree_sun_eroded = binary_erosion(
                 snowfree_sun,
-                iterations=3
+                iterations=1
             )
     
             if np.sum(snow_sun_eroded) > 10:
@@ -704,7 +740,6 @@ def plot_valid_pixels_percentage(ranges, percentage_per_angles_list, svm_folder_
     print(f"Plot saved to: {output_path}")
     
     
-# to be updated
 
 
 
@@ -713,48 +748,6 @@ def plot_valid_pixels_percentage(ranges, percentage_per_angles_list, svm_folder_
 
 
 
-def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
-    """
-    Calculate the number of training samples for each angle range proportional to the pixel distribution.
-
-    Parameters:
-        solar_incidence_angle (np.ndarray): 2D array representing the solar incidence angle map.
-        ranges (list of tuple): List of angle ranges (start, end).
-        total_samples (int): Total number of training samples to distribute.
-
-    Returns:
-        dict: A dictionary with ranges as keys and the number of training samples as values.
-    """
-    # Flatten the angle map for easier processing
-    flattened_map = solar_incidence_angle.flatten()
-
-    # Initialize a dictionary to store the count for each range
-    range_pixel_counts = {r: 0 for r in ranges}
-
-    # Count pixels in each range
-    for r in ranges:
-        range_pixel_counts[r] = np.sum((flattened_map >= r[0]) & (flattened_map < r[1]))
-
-    # Calculate the total number of pixels considered
-    total_pixels = sum(range_pixel_counts.values())
-
-    # Calculate the proportion of samples for each range
-    # range_samples = {
-    #     r: int(total_samples * (count / total_pixels)) + 20 if total_pixels > 0 else 0
-    #     for r, count in range_pixel_counts.items()
-    # }
-    
-    threshold = 0.01  # 1%
-
-    range_samples = {
-        r: int(total_samples * (count / total_pixels)) + 20
-        if total_pixels > 0 and (count / total_pixels) > threshold
-        else 0
-        for r, count in range_pixel_counts.items()
-    }
-
-
-    return range_samples
 
 
 

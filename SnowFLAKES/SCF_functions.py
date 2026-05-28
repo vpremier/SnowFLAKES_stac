@@ -46,8 +46,8 @@ def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
                                  out_shape=(data.sizes["y"], data.sizes["x"]))
 
     # Extract training values using the masks
-    snow_training = read_masked_values(all_bands_image, mask_snow)
-    no_snow_training = read_masked_values(all_bands_image, mask_no_snow)
+    snow_training = all_bands_image[:, mask_snow].T
+    no_snow_training = all_bands_image[:, mask_no_snow].T
 
     training_array = np.concatenate((snow_training, no_snow_training), axis=0)
     class_array = np.concatenate((np.ones(snow_training.shape[0]), np.zeros(no_snow_training.shape[0])), axis=0)

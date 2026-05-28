@@ -184,12 +184,11 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-04-30")
-    end = pd.Timestamp("2020-05-01")
-    # start = pd.Timestamp("2022-02-27")
-    # end = pd.Timestamp("2022-02-28")
+    # start = pd.Timestamp("2022-02-03")
+    # end = pd.Timestamp("2020-05-04")
+    start = pd.Timestamp("2016-06-20")
+    end = pd.Timestamp("2016-06-21")
     # shape of the AOI
-    # config_path = './config_azufre.json'
     config_path = './config_azufre.json'
 
     

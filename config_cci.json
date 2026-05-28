@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2_xgboost",
+  "shapefile": "/mnt/CEPH_PROJECTS/ALPSNOW/Sara/SCF_RETRIEVAL/casestudy_Izas/single_dates/20200503/SENSORS_DATA/S2/sat_data/extent.gpkg",
+  "output_directory": "/mnt/CEPH_PROJECTS/ALPSNOW/Sara/SCF_RETRIEVAL/casestudy_Izas/single_dates/20200503/SENSORS_DATA/S2/sat_data/SnowFLAKES",
   "satellite": "Sentinel-2",
-  "date_start": "2016-06-20",
-  "date_end": "2016-06-21",
+  "date_start": "2020-05-03",
+  "date_end": "2020-05-04",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -15,12 +15,12 @@
   "resampling_params": {
     "resolution": 20,
     "extent_target": [
-      344000,
-      6080000,
-      369000,
-      6114000
+      709760,
+      4733720,
+      711780,
+      4736120
     ],
-    "epsg_target": 32719
+    "epsg_target": 25830
   },
   "overwrite": false,
   "no_data_value": "nan",
@@ -30,7 +30,7 @@
   "average_over": "5",
   "dilation_cloud_cover": "3",
   "Overwrite_cloud": "0",
-  "classify_glaciers": "yes",
+  "classify_glaciers": "no",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "glaciers_model_name": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/glaciers_classification/Azufre/round_02/round_02_Snow_model.p",
   "start_glaciers_month": "10",

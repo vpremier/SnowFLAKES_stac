@@ -313,10 +313,10 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
         save_image(
             empty_glacier_mask,
             glacier_mask_path,
-            driver='GTiff',
-            bands=1,
-            geotransform=geotransform,
-            projection=raster.GetProjection()
+            'GTiff',
+            1,
+            geotransform,
+            raster.GetProjection()
         )
 
     return glacier_mask_path
