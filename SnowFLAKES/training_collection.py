@@ -27,62 +27,6 @@ from SnowFLAKES.utilities import *
 
 
 
-
-def read_masked_values(data_source, mask, bands=None):
-    """
-    Reads pixel values corresponding to a logical mask from either
-    a multispectral GeoTIFF or a NumPy array stack.
-
-    Parameters
-    ----------
-    data_source : str or numpy.ndarray
-        Path to a GeoTIFF file OR a NumPy array with shape (bands, height, width).
-    mask : numpy.ndarray
-        2D boolean mask (True where values should be extracted).
-    bands : list of int, optional
-        List of band indices to read (1-based for GeoTIFF, 0-based for NumPy).
-        If None, all bands are used.
-
-    Returns
-    -------
-    masked_values : numpy.ndarray
-        2D array with shape (num_pixels, num_bands).
-    """
-
-    masked_values_per_band = []
-
-    # Case 1: GeoTIFF path
-    if isinstance(data_source, str):
-        with rasterio.open(data_source) as src:
-
-            if bands is None:
-                bands = list(range(1, src.count + 1))
-
-            for band in bands:
-                data = src.read(band)
-                masked_values_per_band.append(data[mask])
-
-    # Case 2: NumPy stack
-    elif isinstance(data_source, np.ndarray):
-
-        n_bands = data_source.shape[0]
-
-        if bands is None:
-            bands = list(range(n_bands))
-
-        for band in bands:
-            data = data_source[band]
-            masked_values_per_band.append(data[mask])
-
-    else:
-        raise TypeError("data_source must be either a file path or a numpy array")
-
-    masked_values = np.stack(masked_values_per_band, axis=-1)
-
-    return masked_values
-
-
-
 def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
     
     # Compute 2nd and 95th percentiles
@@ -170,6 +114,8 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
     green = bands["GREEN"]
     
+    NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
+    
     # validity mask: a binary dilation is applied (avoid training collection
     # near water bodies, clouds, etc).. glaciers??
     curr_scene_valid = build_valid_scene(no_data_mask,
@@ -215,9 +161,6 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         # if curr_range[0] == 0:
         #     break
 
-        # Initialize as empty arrays
-        representative_pixels_mask_snow = np.array([])
-        representative_pixels_mask_noSnow = np.array([])
         
         curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
                                                   solar_incidence_angle >= curr_range[0],
@@ -228,109 +171,114 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
         percentage_per_angles_list.append(percentage_of_scene_valid)
 
-        # SHADOW 
+        # SHADOW --------------------------------------------------------------
 
         # mask angles and shadow
         mask_shadow = curr_angle_valid & shadow_mask_eroded
                 
         if np.any(mask_shadow):
             
+            # initialize empty masks
+            representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
+            representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
+            
             print('Collecting trainings in shadow')
-            curr_bands = read_masked_values(all_bands_image, mask_shadow)
-
+            
+            dd
             snow_shad, snowfree_shad = get_pixels_shadow(diff_B_NIR, 
                                                          shad_idx, 
                                                          NDSI, 
                                                          distance_idx,
                                                          mask_shadow)
-
+            # erosion
+            # Shrink mask by 3 pixels
+            # snow_shad_eroded = binary_erosion(
+            #     snow_shad,
+            #     iterations=3
+            # )
+            
+            
+            # # Shrink mask by 3 pixels
+            # snowfree_shad_eroded = binary_erosion(
+            #     snowfree_shad,
+            #     iterations=3
+            # )
+            
             if np.sum(snow_shad) > 10:
-                representative_pixels_mask_snow = get_representative_pixels(curr_bands, 
-                                                                            snow_shad[mask_shadow],
+                representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
+                                                                            snow_shad,
                                                                             sample_count=int(sample_count / 2), 
                                                                             k=5,
                                                                             n_closest='auto')
                 
-        #     if np.sum(snowfree_shad) > 10:
-        #         representative_pixels_mask_noSnow = get_representative_pixels(curr_bands,
-        #                                                                       snowfree_shad,
-        #                                                                       sample_count=int(sample_count / 2), k=5,
-        #                                                                       n_closest='auto') * 2
-                
-        #     # Check if masks have been assigned; if not, set as zeros
-        #     if representative_pixels_mask_snow.size == 0:
-        #         representative_pixels_mask_snow = np.zeros(mask_shadow.sum(), dtype='uint8')
-        #     if representative_pixels_mask_noSnow.size == 0:
-        #         representative_pixels_mask_noSnow = np.zeros(mask_shadow.sum(), dtype='uint8')
-    
-        #     representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
-        #     empty[mask_shadow] = representative_pixels_mask
+            if np.sum(snowfree_shad) > 10:
+                representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
+                                                                              snowfree_shad,
+                                                                              sample_count=int(sample_count / 2), 
+                                                                              k=5,
+                                                                              n_closest='auto') * 2
+            # merge the two masks
+            representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
+            empty[mask_shadow] = representative_pixels_mask[mask_shadow]
             
-        #     print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
-        #     print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
+            print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
+            print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
+            
+            
+            
         
-        # SUN   
-        representative_pixels_mask_snow = np.array([])
-        representative_pixels_mask_noSnow = np.array([])
-       
+        # SUN --------------------------------------------------------------
 
         # mask angles and sun
         mask_sun = curr_angle_valid & sun_mask_eroded
     
         if np.any(mask_sun):
+            
+            # initialize empty masks
+            representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
+            representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
+            
             print('Collecting trainings in sun')
 
-
-
-            curr_bands = read_masked_values(all_bands_image, mask_sun)
-            
-    
-    
             snow_sun, snowfree_sun = get_pixels_sun(NDSI, 
                                                     NDVI, 
                                                     green, 
                                                     distance_idx,
                                                     NDWI,
                                                     mask_sun)
-            
-            print(np.sum(snow_sun))
-            
-            plt.imshow(mask_sun)
-            plt.imshow(snowfree_sun)
 
             
             
             # Shrink mask by 3 pixels
             snow_sun_eroded = binary_erosion(
-                snow_sun == 0,
-                iterations=5
+                snow_sun,
+                iterations=3
             )
             
             
             # Shrink mask by 3 pixels
             snowfree_sun_eroded = binary_erosion(
-                snowfree_sun == 0,
-                iterations=5
+                snowfree_sun,
+                iterations=3
             )
     
-            if np.sum(snow_sun) > 10:
-                representative_pixels_mask_snow = get_representative_pixels(curr_bands, snow_sun_eroded,
-                                                                            sample_count=int(sample_count / 2), k=5,
+            if np.sum(snow_sun_eroded) > 10:
+                representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
+                                                                            snow_sun_eroded,
+                                                                            sample_count=int(sample_count / 2), 
+                                                                            k=5,
                                                                             n_closest='auto')
     
             if np.sum(snowfree_sun_eroded) > 10:
-                representative_pixels_mask_noSnow = get_representative_pixels(curr_bands, snowfree_sun_eroded,
-                                                                              sample_count=int(sample_count / 2), k=10,
+                representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image, 
+                                                                              snowfree_sun_eroded,
+                                                                              sample_count=int(sample_count / 2), 
+                                                                              k=10,
                                                                               n_closest='auto') * 2
-
-            # Check if masks have been assigned; if not, set as zeros
-            if representative_pixels_mask_snow.size == 0:
-                representative_pixels_mask_snow = np.zeros(mask_sun.sum(), dtype='uint8')
-            if representative_pixels_mask_noSnow.size == 0:
-                representative_pixels_mask_noSnow = np.zeros(mask_sun.sum(), dtype='uint8')
     
+            # merge the two masks
             representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
-            empty[mask_sun] = representative_pixels_mask
+            empty[mask_sun] = representative_pixels_mask[mask_sun]
 
             print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
             print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
@@ -632,8 +580,9 @@ def get_representative_pixels(bands_data, valid_mask, sample_count=50, k='auto',
         2D mask with representative pixels marked as 1.
     """
     # Extract "valid" pixels for clustering
-    # valid_pixels = np.transpose(bands_data[:, valid_mask])  # Shape (pixels, bands)
-    valid_pixels = bands_data[valid_mask, :]  # Shape (pixels, bands)
+    valid_pixels = bands_data[:, valid_mask].T   # (pixels, bands)
+    coords = np.argwhere(valid_mask)
+    # valid_pixels = bands_data[valid_mask, :]  # Shape (pixels, bands)
 
     # Normalize the valid pixels
     scaler = StandardScaler()
@@ -669,12 +618,14 @@ def get_representative_pixels(bands_data, valid_mask, sample_count=50, k='auto',
         closest_indices = np.argsort(distances)[:n_closest]
 
         # Map the closest indices back to the original image coordinates
-        original_indices = np.argwhere(valid_mask)[cluster_indices]
-        selected_pixels = original_indices[closest_indices]
+        # original_indices = np.argwhere(valid_mask)[cluster_indices]
+        # selected_pixels = original_indices[closest_indices]
+        selected_pixels = coords[cluster_indices][closest_indices]
 
         # Set these pixels in the representative mask
-        representative_pixels_mask[selected_pixels] = 1
-
+        # representative_pixels_mask[selected_pixels] = 1
+        representative_pixels_mask[selected_pixels[:, 0], selected_pixels[:, 1]] = 1
+        
     return representative_pixels_mask
 
 
@@ -806,146 +757,6 @@ def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
     return range_samples
 
 
-def kernel_rbf(X, gamma):
-    """
-    Computes the RBF (Gaussian) kernel matrix for the dataset X.
-
-    Parameters:
-    - X: np.ndarray, shape (n_samples, n_features)
-        The input data.
-    - gamma: float
-        The parameter for the RBF kernel, defined as 1 / (2 * sigma^2).
-
-    Returns:
-    - K: np.ndarray, shape (n_samples, n_samples)
-        The RBF kernel matrix.
-    """
-    pairwise_sq_dists = cdist(X, X, 'sqeuclidean')
-    K = np.exp(-gamma * pairwise_sq_dists)
-    return K
-
-
-def kernel_kmeans(X, n_clusters, gamma, max_iter=100):
-    """
-    Performs k-means clustering using an RBF kernel instead of Euclidean distance.
-
-    Parameters:
-    - X: np.ndarray, shape (n_samples, n_features)
-        The input data.
-    - n_clusters: int
-        Number of clusters.
-    - gamma: float
-        Parameter for the RBF kernel, defined as 1 / (2 * sigma^2).
-    - max_iter: int, optional, default=100
-        Maximum number of iterations for the algorithm.
-
-    Returns:
-    - labels: np.ndarray, shape (n_samples,)
-        The cluster labels for each sample.
-    - centroids: np.ndarray, shape (n_clusters, n_features)
-        The approximated centroids in the original feature space.
-    """
-    # Step 1: Compute the kernel matrix
-    K = rbf_kernel(X, gamma)
-
-    # Step 2: Initialize cluster assignments randomly
-    n_samples = X.shape[0]
-    labels = np.random.randint(0, n_clusters, n_samples)
-
-    # Step 3: Kernel k-means iteration
-    for _ in range(max_iter):
-        # Compute distances to centroids in the transformed space
-        distances = np.zeros((n_samples, n_clusters))
-        for k in range(n_clusters):
-            cluster_k = K[:, labels == k]
-            N_k = np.sum(labels == k)
-            if N_k > 0:
-                # Compute the distance to the "centroid" in the kernel space
-                distances[:, k] = np.diag(K) - 2 * np.sum(cluster_k, axis=1) / N_k + \
-                                  np.sum(K[labels == k][:, labels == k]) / (N_k ** 2)
-
-        # Update labels based on minimal distance
-        new_labels = np.argmin(distances, axis=1)
-
-        # Check for convergence
-        if np.all(labels == new_labels):
-            break
-
-        labels = new_labels
-
-    # Step 4: Compute approximate centroids in the original space
-    centroids = np.array([X[labels == k].mean(axis=0) for k in range(n_clusters)])
-
-    return labels, centroids
-
-
-def cop_k_means_vectorized(X, fixed_labels, k=3, max_iter=100, tol=1e-4):
-    """
-    A simplified, vectorized COP-k-means implementation.
-    Fixed points (fixed_labels != -1) are not reassigned.
-    Unconstrained points (fixed_labels == -1) are assigned via a vectorized distance computation.
-
-    Parameters:
-      X: array of shape (n_samples, n_features)
-      fixed_labels: array of shape (n_samples,) with values:
-          0 for sure snow (class 1),
-         -1 for unconstrained,
-          2 for sure no snow (class 3)
-      k: number of clusters (should be 3)
-      max_iter: maximum iterations
-
-    Returns:
-      assignments: cluster assignments (0, 1, or 2) for each sample
-      centroids: array of shape (k, n_features)
-    """
-    n_samples, n_features = X.shape
-    assignments = np.full(n_samples, -1, dtype=int)
-
-    # Set fixed assignments:
-    assignments[fixed_labels == 0] = 0
-    assignments[fixed_labels == 2] = 2
-
-    # Initialize centroids using a seeded approach:
-    centroids = np.zeros((k, n_features))
-    idx0 = np.flatnonzero(fixed_labels == 0)
-    centroids[0] = X[idx0[0]] if len(idx0) > 0 else X[np.random.choice(n_samples)]
-
-    idx2 = np.flatnonzero(fixed_labels == 2)
-    centroids[2] = X[idx2[0]] if len(idx2) > 0 else X[np.random.choice(n_samples)]
-
-    idx_unconstrained = np.flatnonzero(fixed_labels == -1)
-    centroids[1] = X[np.random.choice(idx_unconstrained)] if len(idx_unconstrained) > 0 else X[
-        np.random.choice(n_samples)]
-
-    for iteration in range(max_iter):
-        prev_assignments = assignments.copy()
-        # Get indices of unconstrained points
-        unconstrained_idx = np.flatnonzero(fixed_labels == -1)
-        if unconstrained_idx.size > 0:
-            # Extract unconstrained points
-            U = X[unconstrained_idx]  # shape: (n_unconstrained, n_features)
-            # Compute squared Euclidean distances using vectorized dot-product formula:
-            # dist(i, j) = ||U[i] - centroids[j]||^2
-            #             = sum(U[i]**2) + sum(centroids[j]**2) - 2 * U[i] dot centroids[j]
-            U_sq = np.sum(U ** 2, axis=1)[:, np.newaxis]  # shape: (n_unconstrained, 1)
-            C_sq = np.sum(centroids ** 2, axis=1)[np.newaxis, :]  # shape: (1, k)
-            dists = U_sq + C_sq - 2 * np.dot(U, centroids.T)  # shape: (n_unconstrained, k)
-
-            # Assign each unconstrained point to the closest centroid
-            assignments[unconstrained_idx] = np.argmin(dists, axis=1)
-
-        # Update centroids for each cluster (k is small, so a loop is fine)
-        for c in range(k):
-            indices = np.flatnonzero(assignments == c)
-            if len(indices) > 0:
-                centroids[c] = np.mean(X[indices], axis=0)
-
-        # Check for convergence
-        if np.array_equal(assignments, prev_assignments):
-            print(f"Converged at iteration {iteration}")
-            break
-
-    return assignments, centroids
 
 
 

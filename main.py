@@ -212,7 +212,6 @@ if __name__ == "__main__":
 
 
     for date_start, date_end in date_pairs:
-        dd
         
         run_workflow(date_start, date_end, config_path)
 
