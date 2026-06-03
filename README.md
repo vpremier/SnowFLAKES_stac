@@ -48,3 +48,61 @@ python-dotenv \
 pystac-client \
 dask \
 odc-stac
+
+## 🛠️ Set Up Your Credentials
+
+Prepare your AWS configuration and credentials before running the workflow.
+
+### 1. Install AWS CLI
+
+```bash
+sudo apt update
+sudo apt install awscli
+```
+
+### 2. Configure AWS Credentials
+
+Run:
+
+```bash
+aws configure
+```
+
+You will be prompted to enter your AWS Requester Pays credentials:
+
+```text
+AWS Access Key ID [None]: ****************
+AWS Secret Access Key [None]: ********************
+Default region name [eu-central-1]:
+Default output format [text]:
+```
+
+For more information, see the USGS tutorial:
+
+https://code.usgs.gov/eros-user-services/accessing_landsat_data/tutorials/introduction-to-landsat-cloud-access-direct-requester-pays/-/blob/main/Intro_to_Landsat_Direct_Requester_Pays_v2.ipynb
+
+### Configure Both USGS and CDSE Credentials
+
+Set up credentials for:
+
+- **USGS account** (default profile)
+- **Copernicus Data Space Ecosystem (CDSE)** account (`cdse` profile)
+
+Your `~/.aws/credentials` file should look like:
+
+```ini
+[default]
+aws_access_key_id = ********************
+aws_secret_access_key = ********************
+
+[cdse]
+CDSE_USERNAME = ********************
+CDSE_PASSWORD = ********************
+AWS_ACCESS_KEY_ID = ********************
+AWS_SECRET_ACCESS_KEY = ********************
+```
+
+
+The `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values for the `cdse` profile can be generated from:
+
+https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
