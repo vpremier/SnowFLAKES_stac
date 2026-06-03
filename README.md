@@ -6,7 +6,7 @@ This guide describes how to:
 
 ---
 
-## 📦 Environment Setup
+## 1. 📦 Environment Setup
 
 We recommend using **micromamba** for a fast and reproducible environment.
 
@@ -15,9 +15,8 @@ We recommend using **micromamba** for a fast and reproducible environment.
 Follow the official guide:
 👉 https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html
 
----
 
-## 🛠️ Create the Environment
+###️ Create the Environment
 
 Example environment creation:
 
@@ -51,7 +50,7 @@ odc-stac
 
 ---
 
-## 🛠️ Set Up Your Credentials
+## 2. 🛠️ Set Up Your Credentials
 
 Prepare your AWS configuration and credentials before running the workflow.
 
@@ -62,7 +61,7 @@ sudo apt update
 sudo apt install awscli
 ```
 
-### 2. Configure AWS Credentials
+### Configure AWS Credentials
 
 Run:
 
