@@ -47,6 +47,7 @@ python-dotenv \
 pystac-client \
 dask \
 odc-stac
+```
 
 ---
 
