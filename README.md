@@ -49,11 +49,13 @@ pystac-client \
 dask \
 odc-stac
 
+---
+
 ## 🛠️ Set Up Your Credentials
 
 Prepare your AWS configuration and credentials before running the workflow.
 
-### 1. Install AWS CLI
+### Install AWS CLI
 
 ```bash
 sudo apt update
