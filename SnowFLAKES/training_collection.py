@@ -95,7 +95,7 @@ def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
 
 
 
-def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, mask_sun):
+def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, swir, mask_sun):
     
     # Compute 1th and 99th percentiles
     NDSI_low_perc, NDSI_high_perc = np.percentile(NDSI[mask_sun], [1, 99])
@@ -118,6 +118,8 @@ def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, mask_sun):
                                   score_snow_sun >= threshold, 
                                   NDSI > 0.7, 
                                   distance_idx != 255,
+                                  green > 0.6,
+                                  swir < 0.2,
                                   NDWI < 0.1)) # avoi water and ice
     
     # modificare threshold
@@ -153,6 +155,9 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
     green = bands["GREEN"]
+    swir = bands["SWIR"]
+    nir = bands["NIR"]
+
     
     NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
     
@@ -285,6 +290,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                                                     green, 
                                                     distance_idx,
                                                     NDWI,
+                                                    swir,
                                                     mask_sun)
 
             

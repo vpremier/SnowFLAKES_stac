@@ -1,9 +1,9 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/FULL_DOMAIN/61/area_061.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/test",
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/test_s2",
   "satellite": "Sentinel-2",
   "date_start": "2020-05-10",
-  "date_end": "2020-05-16",
+  "date_end": "2020-05-11",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -16,10 +16,10 @@
   "resampling_params": {
     "resolution": 50,
     "extent_target": [
-      427500,
-      6937500,
-      479500,
-      6996500
+      366000,
+      6205000,
+      428500,
+      6342500
     ],
     "epsg_target": 32719
   },
