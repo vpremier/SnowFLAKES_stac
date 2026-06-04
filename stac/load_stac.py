@@ -213,12 +213,23 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     return data
             
     
-def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None, 
-                            extent_target=None, epsg_target=None, 
-                            reproj_type=Resampling.bilinear, suffix='toa',
-                            na_value = "NaN", calibration=True, ow=False,
-                            max_cc = 90, idList = [], filter_by_geometry = True,
-                            save = True, shp=None, exclude_tiles=None):        
+def convert_sentinel2_bands(outdir,
+                            date,
+                            resolution=None,
+                            img4ext = None,
+                            extent_target=None,
+                            epsg_target=None,
+                            reproj_type=Resampling.bilinear,
+                            suffix='toa',
+                            na_value = "NaN",
+                            calibration=True,
+                            ow=False,
+                            max_cc = 90,
+                            idList = [],
+                            filter_by_geometry = True,
+                            save = True,
+                            shp=None,
+                            exclude_tiles=None):
     """
     Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
     reprojects it to a user-defined grid, applies radiometric calibration, and
@@ -299,9 +310,6 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
     )
     logging.info("Started Sentinel-2 loading from CDSE")
 
-
-
-    
     # credentials:  S3 Credentials from CDSE 
     # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
     S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
@@ -362,13 +370,14 @@ def convert_sentinel2_bands(outdir, date, resolution=None, img4ext = None,
             # Ensure it's in WGS84 (required by STAC APIs)
             gdf = gdf.to_crs(epsg=4326)
             
-            # Merge all geometries into one (important if multiple features) 
-            geom = gdf.unary_union
+            # Merge all geometries into one (important if multiple features)
+            # TODO: Check if we can use gdf.union_all() should be used instead of gdf.unary_union
+            # geom = gdf.unary_union
+            geom = gdf.union_all()
             geom = geom.simplify(0.05, preserve_topology=True)
             geometry = mapping(geom)
             
         else:
-      
       
             bbox_of_interest = get_bbox_wgs84(img4ext=img4ext, 
                                               extent_target=extent_target, 

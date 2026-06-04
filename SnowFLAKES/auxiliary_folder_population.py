@@ -1144,8 +1144,6 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
 
 def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
     '''
-
-
     Parameters
     ----------
     water_mask_path : str
@@ -1204,7 +1202,7 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
             save_image(water_mask.astype('uint8'), target_wb_mask_path, 'GTiff', 1, img_info['geotransform'],
                        img_info['projection'])
 
-    return target_wb_mask_path;
+    return target_wb_mask_path
 
 
 

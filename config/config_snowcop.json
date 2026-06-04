@@ -28,7 +28,7 @@
   "External_water_mask": null,
   "Compute_clouds": "yes",
   "Cloud_cover_probability": "0.6",
-  "average_over": "5",
+  "average_over": "3",
   "dilation_cloud_cover": "3",
   "Overwrite_cloud": "0",
   "classify_glaciers": "no",

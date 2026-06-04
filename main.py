@@ -190,7 +190,7 @@ if __name__ == "__main__":
     # end = pd.Timestamp("2018-04-05")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
-    config_path = './config_snowcop.json'
+    config_path = './config/config_snowcop.json'
     # config_path = './config_azufre.json'
 
     

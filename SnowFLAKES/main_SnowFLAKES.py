@@ -30,7 +30,6 @@ def run_snowflakes(config, data, scene_id):
     print(f"Running SnowFLAKES for {scene_id}")
     start = time.time()
 
-
     # Config info
     working_folder = config['output_directory']
     scene_folder = os.path.join(config['output_directory'], scene_id)
@@ -57,7 +56,7 @@ def run_snowflakes(config, data, scene_id):
     # log files: create log files
     skipped_scenes_file, cloud_scenes_file, _ = create_empty_files(working_folder)
 
-    scenes_to_skip = scenes_skip(working_folder)
+    # scenes_to_skip = scenes_skip(working_folder)
     scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
     
     if scene_id in scenes_to_skip_clouds:
@@ -72,15 +71,13 @@ def run_snowflakes(config, data, scene_id):
     else:
         no_data_value = float(no_data_value)
 
-    
-    
     # Generate water mask
     print("Generating water mask...")
     external_water_mask_path = config['External_water_mask']
     if not external_water_mask_path:
         water_mask_path = water_identifier(data, auxiliary_folder_path)
     else:
-        # to be updated
+        #TODO: to be updated
         water_mask_path = water_mask_cutting(external_water_mask_path, ref_img_path, auxiliary_folder_path)
 
     print(f"Water mask saved at {water_mask_path}")
@@ -125,16 +122,6 @@ def run_snowflakes(config, data, scene_id):
     SCF_folder = os.path.join(scene_folder, "SCF")
     os.makedirs(SCF_folder, exist_ok=True)
 
-    
-
-    # Cloud Masking settings
-    cloud_prob = float(config.get('Cloud cover probability', 0.6))
-    average_over = int(config.get('average_over', 3))
-    dilation_size = int(config.get('dilation_cloud_cover', 3))
-    overwrite_cloud = int(config.get('Overwrite_cloud', 0))
-    
-
-
     # load bands: bands used for SCF
     all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
     all_bands_image = np.squeeze(data.sel(band=all_bands).values)
@@ -165,12 +152,11 @@ def run_snowflakes(config, data, scene_id):
         average_over = int(config.get('average_over', 3))
         dilation_size = int(config.get('dilation_cloud_cover', 3))
         overwrite_cloud = int(config.get('Overwrite_cloud', 0))
-  
-    
-        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, cloud_bands, 
-                                                                       no_data_value, path_cloud_mask, 
-                                                                       cloud_prob, overwrite_cloud=0,
-                                                                       average_over=2, dilation_size=3)      
+
+        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, cloud_bands,
+                                                                       no_data_value, path_cloud_mask,
+                                                                       cloud_prob, overwrite_cloud=overwrite_cloud,
+                                                                       average_over=average_over, dilation_size=dilation_size)
         
     elif sensor == 'L7' or sensor == 'L8':
         # to be changed!!!
@@ -196,8 +182,6 @@ def run_snowflakes(config, data, scene_id):
         return
     
 
-
-    
     # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
     bands = define_bands(data, valid_mask, sensor)
     
