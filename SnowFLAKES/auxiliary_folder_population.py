@@ -631,7 +631,7 @@ def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder,
         dst.write(idx_out, 1)
         
     print(f"Spectral index {idx_name} saved at {output_path}")
-    return;
+    return
     
     
 
@@ -785,9 +785,6 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     # Combine indices to create a composite shadow score
     # Shadow pixels maximize index1 and index2, minimize ndvi and evi
     # shadow_score = (index1_norm + index2_norm) - (ndvi_norm + evi_norm + normalize(NIR))
-    
-    
-    
     
     curr_range = (70, 180)
     curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
@@ -1136,12 +1133,6 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
 
 
 
-
-
-
-
-
-
 def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
     '''
     Parameters
@@ -1203,11 +1194,6 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
                        img_info['projection'])
 
     return target_wb_mask_path
-
-
-
-
-
 
 
 

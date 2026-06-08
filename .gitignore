@@ -9,3 +9,7 @@ __pycache__/
 # Ignore environment files
 .env
 .env-
+
+# Ignore folders
+analysis_outputs
+scripts
