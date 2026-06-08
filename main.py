@@ -184,8 +184,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2023-06-04")
-    end = pd.Timestamp("2023-06-05")
+    start = pd.Timestamp("2020-02-03")
+    end = pd.Timestamp("2020-02-04")
     # start = pd.Timestamp("2018-04-04")
     # end = pd.Timestamp("2018-04-05")
     # shape of the AOI
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
 
     for date_start, date_end in date_pairs:
-        xx
+        aa
         run_workflow(date_start, date_end, config_path)
 
         
