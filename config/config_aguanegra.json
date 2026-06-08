@@ -37,7 +37,6 @@
   "start_glaciers_month": "10",
   "end_glaciers_month": "04",
   "SVM_folder_name": "SCF",
-  "PCA": "no",
   "exclude_tiles": null,
   "simple_class": false
 }

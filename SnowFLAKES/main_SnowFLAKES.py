@@ -71,6 +71,23 @@ def run_snowflakes(config, data, scene_id):
     else:
         no_data_value = float(no_data_value)
 
+    
+
+    # Load DEM, and compute slope and aspect
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+
+    if not os.path.exists(dem_path):
+        print("Downloading DEM from CDSE...")
+        dem = load_cdse_collection("cop-dem-glo-30-dged-cog",
+                                   auxiliary_folder_path,
+                                   resolution=config['resampling_params']['resolution'],
+                                   extent_target=config['resampling_params']['extent_target'],
+                                   epsg_target=config['resampling_params']['epsg_target'])
+
+    slopePath, aspectPath = calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', overwrite=False)
+
+
+
     # Generate water mask
     print("Generating water mask...")
     external_water_mask_path = config['External_water_mask']
@@ -101,23 +118,9 @@ def run_snowflakes(config, data, scene_id):
 
     else:
         print("No glacier mask created.")
-    
-    
-    
-    # Load DEM, and compute slope and aspect
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-    
-    if not os.path.exists(dem_path):
-        print("Downloading DEM from CDSE...")
-        dem = load_cdse_collection("cop-dem-glo-30-dged-cog", 
-                                   auxiliary_folder_path,
-                                   resolution=config['resampling_params']['resolution'], 
-                                   extent_target=config['resampling_params']['extent_target'], 
-                                   epsg_target=config['resampling_params']['epsg_target'])
 
-    slopePath, aspectPath = calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', overwrite=False)
-    
-    
+
+
     # Snow Cover Fraction
     SCF_folder = os.path.join(scene_folder, "SCF")
     os.makedirs(SCF_folder, exist_ok=True)
@@ -138,7 +141,6 @@ def run_snowflakes(config, data, scene_id):
 
     
     # Cloud mask
-    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
     Compute_clouds = config.get('Compute_clouds', 'no') == 'yes'
     
     
@@ -152,11 +154,14 @@ def run_snowflakes(config, data, scene_id):
         average_over = int(config.get('average_over', 3))
         dilation_size = int(config.get('dilation_cloud_cover', 3))
         overwrite_cloud = int(config.get('Overwrite_cloud', 0))
-
-        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, cloud_bands,
-                                                                       no_data_value, path_cloud_mask,
-                                                                       cloud_prob, overwrite_cloud=overwrite_cloud,
-                                                                       average_over=average_over, dilation_size=dilation_size)
+  
+    
+        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
+                                                                       curr_aux_folder,
+                                                                       auxiliary_folder_path,
+                                                                       no_data_value, path_cloud_mask, 
+                                                                       cloud_prob, overwrite_cloud=0,
+                                                                       average_over=2, dilation_size=3)      
         
     elif sensor == 'L7' or sensor == 'L8':
         # to be changed!!!
@@ -201,9 +206,6 @@ def run_snowflakes(config, data, scene_id):
                           curr_aux_folder, sensor, f"{scene_id}_NormDiffGreenRed.tif", data)
     spectral_idx_computer(bands['NIR'], bands['RED'], 'EVI', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_EVI.tif", data)
-    spectral_idx_computer(bands['GREEN'], bands['RED'], 'NDSIplus', no_data_mask, 
-                          curr_aux_folder, sensor, f"{scene_id}_NDSIplus.tif",
-                          data, B3=bands['NIR'], B4=bands['SWIR'])
     spectral_idx_computer(bands['GREEN'], bands['RED'], 'idx6', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_idx6.tif", data, B3=bands['NIR'])
     spectral_idx_computer(bands['RED'], bands['SWIR'], 'bandRatioGlaciers', no_data_mask,

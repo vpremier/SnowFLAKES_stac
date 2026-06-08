@@ -22,6 +22,27 @@ from stac.load_stac_usgs import get_scene_center_time
 
 
 
+def save_tif(array, reference_raster_path, output_path, dtype=rasterio.uint8):
+    """
+    Save an array as a GeoTIFF using metadata from a reference raster.
+    """
+
+    with rasterio.open(reference_raster_path) as src:
+        meta = src.meta.copy()
+
+    meta.update(
+        dtype=dtype,
+        count=1
+    )
+
+    with rasterio.open(output_path, "w", **meta) as dst:
+        dst.write(array.astype(dtype), 1)
+
+    print(f"Saved to: {output_path}")
+    
+    
+    
+    
 def find_path(folder, pattern):
     # look for file containing a specific pattern in a given folder
     matches = list(Path(folder).glob(pattern))
@@ -407,59 +428,6 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-def save_image(image_to_save, path_to_save, driver_name, datatype, geotransform, proj, NoDataValue=None):
-    '''
-    adfGeoTransform[0] / * top left x * /
-    adfGeoTransform[1] / * w - e pixel resolution * /
-    adfGeoTransform[2] / * rotation, 0 if image is "north up" * /
-    adfGeoTransform[3] / * top left y * /
-    adfGeoTransform[4] / * rotation, 0 if image is "north up" * /
-    adfGeoTransform[5] / * n - s pixel resolution * /
-
-
-    enum  	GDALDataType {
-    GDT_Unknown = 0, GDT_Byte = 1, GDT_UInt16 = 2, GDT_Int16 = 3,
-    GDT_UInt32 = 4, GDT_Int32 = 5, GDT_Float32 = 6, GDT_Float64 = 7,
-    GDT_CInt16 = 8, GDT_CInt32 = 9, GDT_CFloat32 = 10, GDT_CFloat64 = 11,
-    GDT_TypeCount = 12}
-    '''
-
-    driver = gdal.GetDriverByName(driver_name)
-
-    if len(np.shape(image_to_save)) == 2:
-        bands = 1
-        cols = np.shape(image_to_save)[1]
-        rows = np.shape(image_to_save)[0]
-
-    if len(np.shape(image_to_save)) > 2:
-        bands = np.shape(image_to_save)[0]
-        cols = np.shape(image_to_save)[2]
-        rows = np.shape(image_to_save)[1]
-
-    outDataset = driver.Create(path_to_save, cols, rows, bands, datatype)
-
-    outDataset.SetGeoTransform(geotransform)
-
-    if proj != None:
-        outDataset.SetProjection(proj)
-
-    if bands > 1:
-
-        for i in range(1, bands + 1):
-            outDataset.GetRasterBand(i).WriteArray(image_to_save[(i - 1), :, :], 0, 0)
-            if NoDataValue != None:
-                outDataset.GetRasterBand(i).SetNoDataValue(NoDataValue)
-
-    else:
-        outDataset.GetRasterBand(1).WriteArray(image_to_save, 0, 0)
-        if NoDataValue != None:
-            outDataset.GetRasterBand(1).SetNoDataValue(NoDataValue)
-
-    outDataset = None
-
-    print('Image Saved')
-
-    return;
 
 
 

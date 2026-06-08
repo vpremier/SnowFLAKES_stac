@@ -184,14 +184,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-05-10")
-    end = pd.Timestamp("2020-05-11")
+    start = pd.Timestamp("2020-02-03")
+    end = pd.Timestamp("2020-02-04")
     # start = pd.Timestamp("2018-04-04")
     # end = pd.Timestamp("2018-04-05")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
-    config_path = './config/config_snowcop.json'
-    # config_path = './config_azufre.json'
+    # config_path = './config/config_snowcop.json'
+    config_path = './config/config_azufre.json'
 
     
     step = pd.Timedelta(days=60)
@@ -220,22 +220,12 @@ if __name__ == "__main__":
             
 
 
-# write readme`
 # remove auxiliary?
     
 # add layer uncertainty
 # guarda land cover
 
 
-# fare lo stesso per Landsat
-
-# provare ASTER???
-
-
-### to do
-
-# add time duration
-# write documentatio 
     
 
 

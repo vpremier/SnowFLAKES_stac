@@ -82,156 +82,140 @@ def water_identifier(data, auxiliary_folder_path):
         water mask path.
 
     '''
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
     
     # path to the water mask file
     water_mask_file = glob.glob("/mnt/CEPH_BASEDATA/GIS/WORLD/WATER/Global_water_mask/*")[0]
 
     target_wb_mask_path = os.path.join(auxiliary_folder_path, "Water_Mask.tif")
 
-    if not os.path.exists(target_wb_mask_path):
+    if os.path.exists(target_wb_mask_path):
+        return target_wb_mask_path
         
-        # ---- get CRS and bounds from xarray ----
-        epsg_code = data.epsg.item()
-        
-        resolution = float(abs(data.x[1] - data.x[0]))
-
-        E_min_old = float(data.x.min())
-        E_max_old = float(data.x.max() + resolution)
-        N_min_old = float(data.y.min() - resolution)
-        N_max_old = float(data.y.max())
-
-        
-        # ---- water mask CRS ----
-        with rasterio.open(water_mask_file) as d_target:
-            srOut = d_target.crs
-        
-        # ---- transform extent to water-mask CRS ----
-        if epsg_code != 4326:
-        
-            transformer = Transformer.from_crs(
-                f"EPSG:{epsg_code}",
-                srOut,
-                always_xy=True
-            )
-        
-            E_min, N_min = transformer.transform(E_min_old, N_min_old)
-            E_max, N_max = transformer.transform(E_max_old, N_max_old)
-        
-            resolution /= 100000
-        
-        else:
-        
-            E_min = E_min_old
-            E_max = E_max_old
-            N_min = N_min_old
-            N_max = N_max_old
-        
-        
-        # ---- compute tile corners (unchanged logic) ----
-        V1 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_min / 10) * 10))
-        V2 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_max / 10) * 10))
-        V3 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_min / 10) * 10))
-        V4 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_max / 10) * 10))
-        
-        V_LIST = [V1, V2, V3, V4]
-        
-        nome_tile = []
-        
-        for v in V_LIST:
-        
-            if v[0] >= 0:
-                E = str(int(np.floor(v[0] / 10) * 10))
-                lat = "E"
-                W = None
-            else:
-                W = str(int(abs(np.floor(v[0] / 10) * 10)))
-                lat = "W"
-                E = None
-        
-            if v[1] >= 0:
-                N = str(int(np.ceil(v[1] / 10) * 10))
-                lon = "N"
-                S = None
-            else:
-                S = str(int(abs(np.floor(v[1] / 10) * 10)))
-                lon = "S"
-                N = None
-        
-            if W is None and N is None:
-                nome = f"extent_{E}{lat}_{S}{lon}v1_4_2021.tif"
-            elif W is None and S is None:
-                nome = f"extent_{E}{lat}_{N}{lon}v1_4_2021.tif"
-            elif E is None and N is None:
-                nome = f"extent_{W}{lat}_{S}{lon}v1_4_2021.tif"
-            else:
-                nome = f"extent_{W}{lat}_{N}{lon}v1_4_2021.tif"
-        
-            file = f"/mnt/CEPH_BASEDATA/GIS/WORLD/WATER/Global_water_mask/{nome}"
-        
-            if file not in nome_tile:
-                nome_tile.append(file)
-        
-        
+    # ---- get CRS and bounds from xarray ----
+    epsg_code = data.epsg.item()
     
-        # ---- open and mosaic tiles ----
-        src_files = [rasterio.open(f) for f in nome_tile]
-        mosaic, mosaic_transform = merge(src_files)
-        
-        
-        # ---- target grid from xarray ----
-        width = data.sizes["x"]
-        height = data.sizes["y"]
-        
-        dst_transform = from_bounds(E_min_old, N_min_old, E_max_old, N_max_old, width, height)
-        dst_crs = f"EPSG:{epsg_code}"
-        
-        dst = np.empty((height, width), dtype=np.float32)
-        
-        
-        # ---- reproject to Sentinel grid ----
-        reproject(
-            source=mosaic[0],
-            destination=dst,
-            src_transform=mosaic_transform,
-            src_crs=src_files[0].crs,
-            dst_transform=dst_transform,
-            dst_crs=dst_crs,
-            resampling=Resampling.nearest,
-        )
-        
-        
-        # Postprocess mask
-        
-        if np.sum(dst == 255) > 0:
-        
-            K = np.ones((30, 30)).astype(np.uint8)
-        
-            Water_dilated = cv2.dilate((dst == 255).astype(np.uint8), K, iterations=1)
-        
-            dst[Water_dilated == 1] = 255
-            dst[dst == 210] = 1
-            dst[dst == 255] = 1
-        
-        
-        # Save result
-        
-        profile = {
-            "driver": "GTiff",
-            "height": height,
-            "width": width,
-            "count": 1,
-            "dtype": "uint8",
-            "crs": f"EPSG:{epsg_code}",
-            "transform": dst_transform
-        }
-        
-        with rasterio.open(target_wb_mask_path, "w", **profile) as dst_file:
-            dst_file.write(dst.astype("uint8"), 1)
-        
-        
-        for src in src_files:
-            src.close()
+    resolution = float(abs(data.x[1] - data.x[0]))
 
+    E_min_old = float(data.x.min())
+    E_max_old = float(data.x.max() + resolution)
+    N_min_old = float(data.y.min() - resolution)
+    N_max_old = float(data.y.max())
+
+    
+    # ---- water mask CRS ----
+    with rasterio.open(water_mask_file) as d_target:
+        srOut = d_target.crs
+    
+    # ---- transform extent to water-mask CRS ----
+    if epsg_code != 4326:
+    
+        transformer = Transformer.from_crs(
+            f"EPSG:{epsg_code}",
+            srOut,
+            always_xy=True
+        )
+    
+        E_min, N_min = transformer.transform(E_min_old, N_min_old)
+        E_max, N_max = transformer.transform(E_max_old, N_max_old)
+    
+        resolution /= 100000
+    
+    else:
+    
+        E_min = E_min_old
+        E_max = E_max_old
+        N_min = N_min_old
+        N_max = N_max_old
+    
+    
+    # ---- compute tile corners (unchanged logic) ----
+    V1 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_min / 10) * 10))
+    V2 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_max / 10) * 10))
+    V3 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_min / 10) * 10))
+    V4 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_max / 10) * 10))
+    
+    V_LIST = [V1, V2, V3, V4]
+    
+    nome_tile = []
+    
+    for v in V_LIST:
+    
+        if v[0] >= 0:
+            E = str(int(np.floor(v[0] / 10) * 10))
+            lat = "E"
+            W = None
+        else:
+            W = str(int(abs(np.floor(v[0] / 10) * 10)))
+            lat = "W"
+            E = None
+    
+        if v[1] >= 0:
+            N = str(int(np.ceil(v[1] / 10) * 10))
+            lon = "N"
+            S = None
+        else:
+            S = str(int(abs(np.floor(v[1] / 10) * 10)))
+            lon = "S"
+            N = None
+    
+        if W is None and N is None:
+            nome = f"extent_{E}{lat}_{S}{lon}v1_4_2021.tif"
+        elif W is None and S is None:
+            nome = f"extent_{E}{lat}_{N}{lon}v1_4_2021.tif"
+        elif E is None and N is None:
+            nome = f"extent_{W}{lat}_{S}{lon}v1_4_2021.tif"
+        else:
+            nome = f"extent_{W}{lat}_{N}{lon}v1_4_2021.tif"
+    
+        file = f"/mnt/CEPH_BASEDATA/GIS/WORLD/WATER/Global_water_mask/{nome}"
+    
+        if file not in nome_tile:
+            nome_tile.append(file)
+    
+    
+
+    # ---- open and mosaic tiles ----
+    src_files = [rasterio.open(f) for f in nome_tile]
+    mosaic, mosaic_transform = merge(src_files)
+    
+    
+    # ---- target grid from xarray ----
+    width = data.sizes["x"]
+    height = data.sizes["y"]
+    
+    dst_transform = from_bounds(E_min_old, N_min_old, E_max_old, N_max_old, width, height)
+    dst_crs = f"EPSG:{epsg_code}"
+    
+    dst = np.empty((height, width), dtype=np.float32)
+    
+    
+    # ---- reproject to Sentinel grid ----
+    reproject(
+        source=mosaic[0],
+        destination=dst,
+        src_transform=mosaic_transform,
+        src_crs=src_files[0].crs,
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=Resampling.nearest,
+    )
+    
+    
+    # Postprocess mask
+    if np.sum(dst == 255) > 0:
+        K = np.ones((30, 30)).astype(np.uint8)
+    
+        Water_dilated = cv2.dilate((dst == 255).astype(np.uint8), K, iterations=1)
+    
+        dst[Water_dilated == 1] = 255
+        dst[dst == 210] = 1
+        dst[dst == 255] = 1
+    
+    
+    # Save result
+    save_tif(dst, dem_path, target_wb_mask_path, dtype=rasterio.uint8)
 
     return target_wb_mask_path
 
@@ -310,14 +294,9 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
     else:
         # Create an empty raster if no glaciers are found
         empty_glacier_mask = np.zeros_like(img)
-        save_image(
-            empty_glacier_mask,
-            glacier_mask_path,
-            'GTiff',
-            1,
-            geotransform,
-            raster.GetProjection()
-        )
+        
+        # save tif
+        save_tif(empty_glacier_mask, water_mask_path, glacier_mask_path, dtype=rasterio.uint8)
 
     return glacier_mask_path
 
@@ -339,8 +318,7 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
         GDAL resampling method for reprojection (e.g., 'bilinear', 'cubic'). The default is 'cubic'.
     overwrite : bool, optional
         If True, overwrite existing slope and aspect files. The default is False.
-    Ancillary_folder : bool, optional
-        If True, save files in an ancillary folder within the output directory. The default is False.
+
 
     Returns
     -------
@@ -412,8 +390,8 @@ def create_default_cloud_mask(data, path_cloud_mask):
         
         
 
-def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask, 
-                         cloud_prob, overwrite_cloud=0,
+def S2_clouds_classifier(data, scene_id, curr_aux_folder, auxiliary_folder_path,
+                         no_data_value, cloud_prob, overwrite_cloud=0, 
                          average_over=2, dilation_size=3):
     from s2cloudless import S2PixelCloudDetector
     """
@@ -431,6 +409,16 @@ def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask,
         path_cloud_mask: Path to the generated cloud mask.
         cloud_cover_percentage: Cloud cover percentage.
     """
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+
+    # output path
+    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
+    
+    # bands for cloud classification 
+    sensor = get_sensor(scene_id)
+    cloud_bands = select_band_names(sensor, 'cloud')
+
 
     # load the bands
     available_bands = list(data.coords["band"].values) 
@@ -484,8 +472,8 @@ def S2_clouds_classifier(data, cloud_bands, no_data_value, path_cloud_mask,
             cloud_cover_percentage = np.sum(cloud_mask[0, :, :] == 2) / \
                                      (np.shape(cloud_mask[0, :, :])[0] * np.shape(cloud_mask[0, :, :])[1])
 
-            save_image(cloud_mask[0, :, :], temporary_cloud_mask_path, 'GTiff', 1, 
-                       data.rio.transform().to_gdal(), CRS.from_epsg(data.epsg.item()).to_wkt())
+            save_tif(cloud_mask[0, :, :], dem_path, temporary_cloud_mask_path, dtype=rasterio.uint8)
+  
         except Exception as e:
             print(f"Error during cloud classification: {e}")
             # Handle the error appropriately, e.g., log it or raise an exception
