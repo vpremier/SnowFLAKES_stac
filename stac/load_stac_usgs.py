@@ -19,14 +19,26 @@ from shapely.geometry import mapping
 from shapely.geometry import box
 import json 
 from rasterio.session import AWSSession
-import stackstac
 from datetime import datetime
 import rasterio as rio
+from osgeo import gdal
 
 from stac.utils_stac import *
+# from utils_stac import *
 
 
+    
+    
+session = boto3.Session(profile_name="default")
+creds = session.get_credentials().get_frozen_credentials()
 
+os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
+os.environ["AWS_REQUEST_PAYER"] = "requester"
+    
+ 
+    
 def fetch_stac_server(params):
     """ 
     Queries the STAC server (STAC) backend.
@@ -198,7 +210,8 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     )
     logging.info("Started Landsat loading from USGS STAC catalogue")
     
-    
+
+        
     items = get_query_items(date, img4ext = img4ext, extent_target=extent_target, 
                             resolution=resolution, epsg_target=epsg_target, 
                             max_cc = max_cc, filter_by_geometry = filter_by_geometry, 
@@ -254,6 +267,7 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                     10: 'lwir11'
                 }
 
+    import stackstac
 
     # create folder
     if save:
@@ -261,23 +275,20 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
         
         
-    # import stackstac
     
     try:
-        session = boto3.Session(profile_name="default")
-        aws_session = AWSSession(session)
+
+        # with rio.Env(aws_session):
+        data = stackstac.stack(
+           items=items,
+           bounds=extent_target,
+           epsg=epsg_target,
+           resolution=resolution,
+           resampling=reproj_type,
+           assets=list(bands.values()),
+           xy_coords="center"
+        )
     
-        with rio.Env(aws_session):
-            data = stackstac.stack(
-               items=items,
-               bounds=extent_target,
-               epsg=epsg_target,
-               resolution=resolution,
-               resampling=reproj_type,
-               assets=list(bands.values()),
-               xy_coords="center"
-            )
-        
         # Replace 0 with NaN
         data = data.where(data != 0, np.nan)
         
@@ -400,7 +411,7 @@ if __name__ == "__main__":
 
 
     data, merged_image_id = convert_landsat_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
-                            epsg_target=None, reproj_type=Resampling.cubic, 
+                            epsg_target=epsg_target, reproj_type=Resampling.cubic, 
                             suffix='toa', na_value = "NaN", calibration=True, 
                             ow=False, platform = 'LANDSAT_8')
     

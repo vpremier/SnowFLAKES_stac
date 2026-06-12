@@ -7,6 +7,7 @@ Created on Mon Sep 16 14:59:20 2024
 """
 import os
 import numpy as np
+import subprocess
 import shutil
 import glob
 from datetime import datetime as dt
@@ -71,6 +72,31 @@ def run_snowflakes(config, data, scene_id):
 
     if not os.path.exists(dem_path):
         print("Downloading DEM from CDSE...")
+    
+        # subprocess.run([
+        #     "python",
+        #     "-c",
+        #     (
+        #         "import sys;"
+        #         "import json;"
+        #         "from stac.load_stac import load_cdse_collection;"
+        #         "load_cdse_collection("
+        #         "sys.argv[1], "
+        #         "sys.argv[2], "
+        #         "resolution=int(sys.argv[3]), "
+        #         "extent_target=json.loads(sys.argv[4]), "
+        #         "epsg_target=int(sys.argv[5])"
+        #         ")"
+        #     ),
+        #     "cop-dem-glo-30-dged-cog",
+        #     auxiliary_folder_path,
+        #     str(config['resampling_params']['resolution']),
+        #     str(config['resampling_params']['extent_target']),
+        #     str(config['resampling_params']['epsg_target'])
+        # ])
+    
+    
+    
         dem = load_cdse_collection("cop-dem-glo-30-dged-cog",
                                    auxiliary_folder_path,
                                    resolution=config['resampling_params']['resolution'],
