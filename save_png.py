@@ -78,7 +78,7 @@ if __name__ == "__main__":
     # ----------------------------
     # Find all classification files
     # ----------------------------
-    class_files = list(glob.glob(base_dir + os.sep + "*/SCF/*SnowFLAKES*.tif"))
+    class_files = list(glob.glob(base_dir + os.sep + "*/SCF/*SnowFLAKES.tif"))
     
     print(f"Found {len(class_files)} classification files")
     

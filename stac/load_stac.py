@@ -27,8 +27,23 @@ import stackstac
 from rasterio.session import AWSSession
 from osgeo import gdal
 
+import fsspec
+import gc
+
 from stac.utils_stac import *
 
+def reset_s3_state():
+    # 1. Clear GDAL config
+    gdal.SetConfigOption("AWS_ACCESS_KEY_ID", "")
+    gdal.SetConfigOption("AWS_SECRET_ACCESS_KEY", "")
+    gdal.SetConfigOption("AWS_SESSION_TOKEN", "")
+    gdal.SetConfigOption("AWS_S3_ENDPOINT", "")
+
+    # 2. Try to break fsspec caches
+    fsspec.filesystem("s3", skip_instance_cache=True)
+
+    # 3. Force GC (helps with Python wrappers only)
+    gc.collect()
 
 # clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01
 # clms_urban-atlas_street-tree-layer_europe_V005ha_vector_static_v01
@@ -61,7 +76,8 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     # out directory
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, "DEM.tif")
-    
+    reset_s3_state()
+
     session = boto3.Session(profile_name="cdse")
     configure_gdal(session)
     aws_session = AWSSession(session)
