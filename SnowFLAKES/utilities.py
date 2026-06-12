@@ -22,7 +22,7 @@ from stac.load_stac_usgs import get_scene_center_time
 
 
 
-def save_tif(array, reference_raster_path, output_path, dtype=rasterio.uint8):
+def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=rasterio.uint8):
     """
     Save an array as a GeoTIFF using metadata from a reference raster.
     """
@@ -32,6 +32,7 @@ def save_tif(array, reference_raster_path, output_path, dtype=rasterio.uint8):
 
     meta.update(
         dtype=dtype,
+        nodata=nodata,
         count=1
     )
 
@@ -72,8 +73,13 @@ def build_valid_scene(no_data_mask, *invalid_masks, iterations=2):
     Combine arbitrary boolean masks into a validity mask.
     """
     invalid = np.logical_or.reduce(invalid_masks + (no_data_mask,))
-    invalid_dilated = binary_dilation(invalid, iterations=iterations)
-    return ~invalid_dilated
+    
+    if iterations>=1:
+        invalid_dilated = binary_dilation(invalid, iterations=iterations)
+        return ~invalid_dilated
+    
+    else:
+        return ~invalid
 
 
 

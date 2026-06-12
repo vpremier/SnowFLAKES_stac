@@ -25,6 +25,37 @@ from SnowFLAKES.training_collection import *
 from SnowFLAKES.utilities import *
 
 
+# for i in range(99,150):
+#     if snow_training.T[0,i] < 0.4:
+#         plt.figure()
+#         plt.plot(snow_training.T[:,i])
+#         plt.title(i)
+#         plt.ylim([0,1])
+    
+    
+
+# import numpy as np
+# import geopandas as gpd
+# from shapely.geometry import Point
+
+# # 28° campione
+# idx = 100
+
+# # Pixel corrispondente
+# rows, cols = np.where(mask_snow)
+# row = rows[idx]
+# col = cols[idx]
+
+# # Coordinate del pixel
+# x, y = data.rio.transform() * (col + 0.5, row + 0.5)
+
+# # Punto geometrico
+# pt = Point(x, y)
+
+# # Trova la feature dello shapefile che contiene il punto
+# matches = shapefile[shapefile.contains(pt)]
+
+# print(matches.index+1)
 
 
 def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
@@ -96,36 +127,25 @@ def hyp_disatance(svmModel, svmMatrix):
 def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask, svm_model_filename,
                 Nprocesses=8, overwrite=False):
     
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    path_water_mask = glob.glob(os.path.join(auxiliary_folder_path, '*Water_Mask.tif'))[0]
-    diff_B_NIR_path = glob.glob(os.path.join(curr_aux_folder, '*diffBNIR.tif'))[0]
-    shadow_mask_path = glob.glob(os.path.join(curr_aux_folder, '*shadow_mask.tif'))[0]
-    distance_index_path = glob.glob(os.path.join(curr_aux_folder, '*distance.tif'))[0]
+    
+    # subdirectory SCF
+    scf_folder = curr_aux_folder.replace('auxiliary', 'SCF')
+    
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
 
+    
+    # Load masks and other necessary data
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
+    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
+    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    distance_idx = load_map(curr_aux_folder, '*distance.tif')
 
-    scf_folder = os.path.dirname(curr_aux_folder) + os.sep + "SCF"
+    
 
     # Load the SVM model
     svm_model = pickle.load(open(svm_model_filename, 'rb'), encoding='latin1')
-
-    with rasterio.open(path_cloud_mask) as src:
-        cloud_mask = src.read(1)  # Read the cloud mask (first band)
-
-    with rasterio.open(path_water_mask) as src:
-        water_mask = src.read(1)  # Read the water mask (first band)
-
-    with rasterio.open(shadow_mask_path) as src:
-        shadow_mask = src.read(1)  # Read the shadow mask (first band)
-
-    with rasterio.open(diff_B_NIR_path) as src:
-        diff_B_NIR = src.read(1)
-        
-    with rasterio.open(distance_index_path) as src:
-        dist_idx = src.read(1)  # Reading first band
-        profile = src.profile
-
-
-    profile.update(dtype='uint8', count=1, compress='lzw', nodata=255, driver='GTiff')
 
     SV = svm_model['SV']
     svm = svm_model['svmModel']
@@ -181,15 +201,14 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     SCF_map[cloud_mask == 2] = 205
     SCF_map[water_mask == 1] = 210
     SCF_map[water_mask == 255] = 210
-    SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, dist_idx == 255))] = 0
+    SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
 
     valid_mask[np.logical_not(valid_mask)] = 255
 
-    # Write the SCF map to a file, overwriting if necessary
-    with rasterio.open(FSC_SVM_map_path, 'w', **profile) as dst:
-        dst.write(SCF_map, 1)
+    # save output tif file
+    save_tif(SCF_map, dem_path, FSC_SVM_map_path, dtype=rasterio.uint8)
+    
 
-    print(f"SCF map saved to {FSC_SVM_map_path}")
     return FSC_SVM_map_path
 
 
@@ -224,9 +243,8 @@ def check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, shapefile_pat
 
 
     # Use the representative pixel selection function to get new training samples
-    transposed_bands = all_bands_image.reshape(all_bands_image.shape[0], -1).T
-    representative_pixels_mask = get_representative_pixels(transposed_bands,
-                                                           valid_mask.flatten(),
+    representative_pixels_mask = get_representative_pixels(all_bands_image,
+                                                           valid_mask,
                                                            k=min(k, np.sum(valid_mask.flatten())),
                                                            n_closest=n_closest).reshape(scf_data.shape)
 

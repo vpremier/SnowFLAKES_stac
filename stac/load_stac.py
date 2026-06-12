@@ -11,7 +11,6 @@ import os
 import geopandas as gpd
 import numpy as np
 from pyproj import CRS
-import stackstac
 import time
 import re
 import logging
@@ -24,10 +23,9 @@ from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
 from affine import Affine   
 import boto3
- 
-# import odc.stac
-
-
+import stackstac
+from rasterio.session import AWSSession
+from osgeo import gdal
 
 from stac.utils_stac import *
 
@@ -39,13 +37,20 @@ from stac.utils_stac import *
         
 # collection = "cop-dem-glo-30-dged-cog"
 
-session = boto3.Session(profile_name="cdse")
-creds = session.get_credentials().get_frozen_credentials()
 
-os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
-os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
-os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
+def configure_gdal(session):
+    creds = session.get_credentials().get_frozen_credentials()
 
+    gdal.SetConfigOption("AWS_ACCESS_KEY_ID", creds.access_key)
+    gdal.SetConfigOption("AWS_SECRET_ACCESS_KEY", creds.secret_key)
+    gdal.SetConfigOption("AWS_SESSION_TOKEN", creds.token or "")
+
+    gdal.SetConfigOption("AWS_S3_ENDPOINT", "eodata.dataspace.copernicus.eu")
+    gdal.SetConfigOption("AWS_VIRTUAL_HOSTING", "FALSE")
+    gdal.SetConfigOption("AWS_HTTPS", "YES")
+    
+    
+    
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
                             reproj_type=Resampling.bilinear, save=True, 
@@ -57,25 +62,20 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, "DEM.tif")
     
+    session = boto3.Session(profile_name="cdse")
+    configure_gdal(session)
+    aws_session = AWSSession(session)
+    
+    gdal_env = stackstac.DEFAULT_GDAL_ENV.updated({
+        "GDAL_NUM_THREADS": -1,
+        "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "YES",
+    })
 
-    # credentials:  S3 Credentials from CDSE 
-    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
-    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
-
-    # load_dotenv(override=True)  # loads .env file
-    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    # os.environ["AWS_PROFILE"] = "cdse"
-    # os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    # os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    os.environ["AWS_HTTPS"] = "YES"
-    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
-    os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
     
     # option 1 - use stackstac
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    # cat = pystac_client.Client.open(CDSE_URL)
-    
-    
+        
     retry = Retry(
         total=5,
         backoff_factor=8,  # waits 0, 16s, 32s, 64s, 128s between retries
@@ -131,48 +131,20 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     
     items = list(cat.search(**params).items_as_dicts())
     print(f"Number of STAC items returned: {len(items)}")
-    
-    data = stackstac.stack(
-        items=items,
-        bounds=extent_target,
-        epsg=epsg_target,
-        resolution=resolution,
-        resampling=reproj_type,
-        gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-            {
-                "GDAL_NUM_THREADS": -1,
-                "GDAL_HTTP_UNSAFESSL": "YES",
-                "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                "AWS_VIRTUAL_HOSTING": "FALSE",
-                "AWS_HTTPS": "YES"
-            }
-            ),
-        )
+
+
+    with rio.Env(aws_session):
+        data = stackstac.stack(
+            items=items,
+            bounds=extent_target,
+            epsg=epsg_target,
+            resolution=resolution,
+            resampling=reproj_type,
+            gdal_env=gdal_env
+            )
     
     data = data.mean(dim="time", skipna=True)
-
-    
-            # con questa configurazione non dava più problemi
-            # "GDAL_HTTP_MAX_RETRY":"5",
-            #     "GDAL_HTTP_RETRY_DELAY":"2",
-            #     "GDAL_HTTP_TIMEOUT":"30",
-            #     "GDAL_NUM_THREADS":"1",
-            #     "CPL_VSIL_CURL_USE_HEAD":"NO",
-            #     "GDAL_DISABLE_READDIR_ON_OPEN":"EMPTY_DIR",
-            #     "CPL_VSIL_CURL_USE_HEAD": "NO",
-            #     "GDAL_HTTP_TCP_KEEPALIVE": "NO"
             
-            # questa era commentata
-            # "GDAL_NUM_THREADS": "1",
-            # "GDAL_HTTP_UNSAFESSL": "YES",
-            # "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-            # "AWS_VIRTUAL_HOSTING": "FALSE",
-            # "AWS_HTTPS": "YES",
-            # "GDAL_HTTP_MAX_RETRY": "5",
-            # "GDAL_HTTP_RETRY_DELAY": "2",
-            # "GDAL_HTTP_TIMEOUT": "30",
-            
-    
     #  === Extract info_src from xarray ===
     transform = Affine(
         resolution, 0, extent_target[0],
@@ -310,25 +282,21 @@ def convert_sentinel2_bands(outdir,
     )
     logging.info("Started Sentinel-2 loading from CDSE")
 
-    # credentials:  S3 Credentials from CDSE 
-    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
-    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
 
-    load_dotenv(override=True)  # loads .env file
-    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
-    # os.environ["AWS_PROFILE"] = "cdse"
-    # os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-    # os.environ["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    # os.environ["AWS_HTTPS"] = "YES"
-    # os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
-    # os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
+    session = boto3.Session(profile_name="cdse")
+    configure_gdal(session)
+    aws_session = AWSSession(session)
+    
+    gdal_env = stackstac.DEFAULT_GDAL_ENV.updated({
+        "GDAL_NUM_THREADS": -1,
+        "AWS_VIRTUAL_HOSTING": "FALSE",
+        "AWS_HTTPS": "YES",
+    })
     
 
-    
     
     # option 1 - use stackstac
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
-    # cat = pystac_client.Client.open(CDSE_URL)
     
     retry = Retry(
         total=5,
@@ -461,34 +429,17 @@ def convert_sentinel2_bands(outdir,
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
 
     try:
-        data = stackstac.stack(
-            items=items,
-            bounds=extent_target,
-            epsg=epsg_target,
-            resolution=resolution,
-            assets=bands,
-            resampling=reproj_type,
-            xy_coords="center",
-            gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-                {
-                    "GDAL_NUM_THREADS": -1,
-                    "GDAL_HTTP_UNSAFESSL": "YES",
-                    "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                    "AWS_VIRTUAL_HOSTING": "FALSE",
-                    "AWS_HTTPS": "YES",
-                }
-                ),
-            )
-        
-        # dask_chunk_size = 1024
-        # data = odc.stac.load(
-        #     items,
-        #     bands=bands,
-        #     chunks={"y":dask_chunk_size, "x":dask_chunk_size, "time": 1},
-        #     crs=epsg_target,
-        #     resolution=resolution,
-        #     bounds=extent_target,
-        # )
+        with rio.Env(aws_session):
+            
+            data = stackstac.stack(
+                items=items,
+                bounds=extent_target,
+                epsg=epsg_target,
+                resolution=resolution,
+                assets=bands,
+                resampling=reproj_type,
+                xy_coords="center",
+                gdal_env=gdal_env)
         
         # Replace 0 with NaN
         data = data.where(data != 0, np.nan)

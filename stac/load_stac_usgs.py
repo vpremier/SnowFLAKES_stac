@@ -18,20 +18,13 @@ from pyproj import CRS
 from shapely.geometry import mapping
 from shapely.geometry import box
 import json 
-
+from rasterio.session import AWSSession
+import stackstac
 from datetime import datetime
 import rasterio as rio
 
 from stac.utils_stac import *
 
-
-session = boto3.Session(profile_name="default")
-creds = session.get_credentials().get_frozen_credentials()
-
-os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
-os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
-os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
-os.environ["AWS_REQUEST_PAYER"] = "requester"
 
 
 def fetch_stac_server(params):
@@ -54,6 +47,7 @@ def fetch_stac_server(params):
 
 
 
+
 def use_s3_assets(items):
     for item in items:
         for key, asset in item["assets"].items():
@@ -65,7 +59,7 @@ def use_s3_assets(items):
 
 
 def get_MTL_file(query_item):
-    session = boto3.Session()  # Attempt to create a session using default credentials
+    session = boto3.Session(profile_name="default")
     s3_client = session.client('s3')
     object_key  = query_item['assets']['MTL.json']['alternate']['s3']['href']
 
@@ -82,14 +76,12 @@ def get_MTL_file(query_item):
     return json.loads(json_content)
 
 
- 
+
 
 def get_query_items(date, img4ext = None, extent_target=None, resolution=None,
                     epsg_target=None, max_cc = 90, filter_by_geometry = True, 
                     shp=None, platform = 'LANDSAT_8', idList = []):
     
-
-
     
     # define target information (extent, resolution etc)
     if img4ext:
@@ -269,19 +261,22 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
         
         
-    import stackstac
+    # import stackstac
     
     try:
-
-        data = stackstac.stack(
-           items=items,
-           bounds=extent_target,
-           epsg=epsg_target,
-           resolution=resolution,
-           resampling=reproj_type,
-           assets=list(bands.values()),
-           xy_coords="center"
-        )
+        session = boto3.Session(profile_name="default")
+        aws_session = AWSSession(session)
+    
+        with rio.Env(aws_session):
+            data = stackstac.stack(
+               items=items,
+               bounds=extent_target,
+               epsg=epsg_target,
+               resolution=resolution,
+               resampling=reproj_type,
+               assets=list(bands.values()),
+               xy_coords="center"
+            )
         
         # Replace 0 with NaN
         data = data.where(data != 0, np.nan)
@@ -384,6 +379,9 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
 
     
     return data, merged_image_id
+
+
+
 
 
 if __name__ == "__main__":    

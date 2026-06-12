@@ -25,6 +25,59 @@ from joblib import Parallel, delayed
 from SnowFLAKES.utilities import *
 
 
+import numpy as np
+from scipy.signal import find_peaks, savgol_filter
+
+
+def valley_threshold(values, bins=100,
+                     min_prominence=0.05,
+                     min_peak_distance=5):
+    """
+    Returns:
+        threshold : float or None
+        peak_locations : histogram-bin locations of detected peaks
+    """
+
+    # Histogram
+    hist, bin_edges = np.histogram(values, bins=bins)
+
+    # Smooth histogram
+    hist_smooth = savgol_filter(hist, window_length=11, polyorder=3)
+
+    # Detect peaks
+    peaks, properties = find_peaks(
+        hist_smooth,
+        prominence=min_prominence * hist_smooth.max(),
+        distance=min_peak_distance
+    )
+
+    # Need at least two significant peaks
+    if len(peaks) < 2:
+        return None, []
+
+    # Take the two most prominent peaks
+    idx = np.argsort(properties["prominences"])[-2:]
+    peaks = peaks[idx]
+    peaks = np.sort(peaks)
+
+    p1, p2 = peaks
+
+    # Valley between peaks
+    valley_idx = np.argmin(hist_smooth[p1:p2+1]) + p1
+
+    threshold = 0.5 * (
+        bin_edges[valley_idx] +
+        bin_edges[valley_idx + 1]
+    )
+
+    peak_locations = [
+        0.5 * (bin_edges[p] + bin_edges[p + 1])
+        for p in peaks
+    ]
+
+    return threshold, peak_locations
+
+
 
 def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
     """
@@ -80,16 +133,33 @@ def get_pixels_shadow(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
     score_snow_shadow = diff_B_NIR_norm - shad_idx_norm
     
     # threshold
-    threshold_snow = np.percentile(score_snow_shadow[mask_shadow], 99)
-    
-    snow = np.logical_and.reduce((mask_shadow,
-                                  score_snow_shadow >= threshold_snow,
-                                  NDSI > 0.9, 
-                                  distance_idx != 255))
-    
+    # threshold_snow = np.percentile(score_snow_shadow[mask_shadow], 99)
+    threshold_snow, _ = valley_threshold(score_snow_shadow[mask_shadow])
     threshold_no_snow = np.percentile(score_snow_shadow[mask_shadow], 5)
-    snowfree = np.logical_and.reduce((mask_shadow,
-                                      score_snow_shadow <= threshold_no_snow))
+    
+
+        
+    if threshold_snow:
+        if threshold_no_snow>threshold_snow:
+            threshold_no_snow = threshold_snow
+            
+        snow = np.logical_and.reduce((mask_shadow,
+                                      score_snow_shadow >= threshold_snow,
+                                      NDSI > 0.9, 
+                                      distance_idx != 255))
+        
+        snowfree = np.logical_and.reduce((mask_shadow,
+                                          score_snow_shadow <= threshold_no_snow))
+    else: 
+        
+        snow = np.logical_and.reduce((mask_shadow,
+                                      NDSI > 0.9, 
+                                      distance_idx != 255))
+        
+        snowfree = np.logical_and.reduce((mask_shadow,
+                                      distance_idx == 255))
+    
+
     
     return snow, snowfree
 
@@ -115,7 +185,7 @@ def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, swir, nir, mask_sun):
     
     # conditions of val
     snow = np.logical_and.reduce((mask_sun,
-                                  score_snow_sun >= threshold, 
+                                  # score_snow_sun >= threshold, 
                                   NDSI > 0.7, 
                                   distance_idx != 255,
                                   green > 0.6,
@@ -123,17 +193,19 @@ def get_pixels_sun(NDSI, NDVI, green, distance_idx, NDWI, swir, nir, mask_sun):
                                   NDWI < 0.1)) # avoi water and ice
     
     # modificare threshold
-    snowfree_1 = np.logical_and.reduce((mask_sun,
-                                       NDSI < -0.3,
-                                       NDWI < 0.1)) 
-    snowfree_2 = np.logical_and.reduce((mask_sun,
-                                        NDSI > -0.1,
-                                        NDSI < 0.1,
-                                        nir < 0.45,
-                                        distance_idx == 255))
+    # snowfree_1 = np.logical_and.reduce((mask_sun,
+    #                                    NDSI < -0.3,
+    #                                    NDWI < 0.1)) 
+    # snowfree_2 = np.logical_and.reduce((mask_sun,
+    #                                     NDSI > -0.1,
+    #                                     NDSI < 0.1,
+    #                                     nir < 0.45,
+    #                                     distance_idx == 255))
     
-    snowfree = snowfree_1 | snowfree_2
-  
+    # snowfree = snowfree_1 | snowfree_2
+    snowfree = np.logical_and.reduce((mask_sun,
+                                        NDSI < 0))
+
     
     return snow, snowfree
 
@@ -210,8 +282,6 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     # collect training for each SIA range 
     for curr_range, sample_count in range_samples.items():
         
-        # if curr_range[0] == 0:
-        #     break
 
         
         curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
@@ -227,10 +297,10 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
         # mask angles and shadow
         mask_shadow = np.logical_and.reduce((curr_angle_valid, 
-                                             shadow_mask_eroded,
-                                             glacier_mask==0)) # no dilation applied for glacier here
+                                             shadow_mask_eroded))
+                                             # glacier_mask==0)) # no dilation applied for glacier here
                 
-        if np.any(mask_shadow):
+        if np.sum(mask_shadow) > 10:
             
             # initialize empty masks
             representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
@@ -285,7 +355,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
         # mask angles and sun
         mask_sun = curr_angle_valid & sun_mask_eroded
     
-        if np.any(mask_sun):
+        if np.sum(mask_sun) > 10:
             
             # initialize empty masks
             representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')

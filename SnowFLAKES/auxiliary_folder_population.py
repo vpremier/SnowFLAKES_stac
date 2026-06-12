@@ -1038,21 +1038,24 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
     """
     
     sensor = get_sensor(scene_id)
-
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    path_water_mask = glob.glob(os.path.join(auxiliary_folder_path, '*Water_Mask.tif'))[0]
-    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-    dem_path = glob.glob(os.path.join(auxiliary_folder_path, '*DEM.tif'))[0]
-
-    valid_mask = np.logical_not(no_data_mask)
+    
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+    dem = open_image(dem_path)[0]
 
     # Load masks and other necessary data
-    cloud_mask, curr_image_info = open_image(path_cloud_mask)
-    water_mask = open_image(path_water_mask)[0]
-    curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 2, water_mask == 1, no_data_mask)))
-    dem = open_image(dem_path)[0]
-    NDSI = open_image(NDSI_path)[0]
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
+    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
+    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
     NIR = bands['NIR']
+
+    curr_scene_valid = build_valid_scene(no_data_mask,
+                                         cloud_mask == 2,
+                                         water_mask == 1,
+                                         iterations=0)
+
+
 
     # Create the snow map
     snow_map = np.zeros_like(NDSI, dtype=np.uint8)
@@ -1098,21 +1101,11 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
 
     # Save the result as a GeoTIFF
     output_path = os.path.join(curr_aux_folder, f"{scene_id}_index_of_distance.tif")
-    transform = from_origin(curr_image_info['geotransform'][0], curr_image_info['geotransform'][3],
-                            curr_image_info['geotransform'][1], -curr_image_info['geotransform'][5])
-    with rasterio.open(
-            output_path,
-            "w",
-            driver="GTiff",
-            height=index_of_distance_uint8.shape[0],
-            width=index_of_distance_uint8.shape[1],
-            count=1,
-            dtype=rasterio.uint8,
-            crs=curr_image_info['projection'],
-            transform=transform,
-            nodata=no_data_value,
-    ) as dst:
-        dst.write(index_of_distance_uint8, 1)
+
+    save_tif(index_of_distance_uint8, dem_path, output_path, 
+             nodata=no_data_value, dtype=rasterio.uint8)
+
+
 
 
 # to be updated

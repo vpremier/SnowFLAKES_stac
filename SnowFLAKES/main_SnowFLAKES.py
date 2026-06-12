@@ -56,13 +56,6 @@ def run_snowflakes(config, data, scene_id):
     # log files: create log files
     skipped_scenes_file, cloud_scenes_file, _ = create_empty_files(working_folder)
 
-    # scenes_to_skip = scenes_skip(working_folder)
-    scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
-    
-    if scene_id in scenes_to_skip_clouds:
-        print(f"{scene_id} is in the lists to skip!")
-        return
-    
     
     # No data value
     no_data_value = config['no_data_value']
@@ -156,10 +149,10 @@ def run_snowflakes(config, data, scene_id):
         overwrite_cloud = int(config.get('Overwrite_cloud', 0))
   
     
-        cloud_mask_path, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
+        path_cloud_mask, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
                                                                        curr_aux_folder,
                                                                        auxiliary_folder_path,
-                                                                       no_data_value, path_cloud_mask, 
+                                                                       no_data_value, 
                                                                        cloud_prob, overwrite_cloud=0,
                                                                        average_over=2, dilation_size=3)      
         
