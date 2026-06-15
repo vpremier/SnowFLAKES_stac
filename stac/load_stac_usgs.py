@@ -28,14 +28,15 @@ from stac.utils_stac import *
 
 
     
-    
-session = boto3.Session(profile_name="default")
-creds = session.get_credentials().get_frozen_credentials()
+def setup_usgs_credentials():
 
-os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
-os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
-os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
-os.environ["AWS_REQUEST_PAYER"] = "requester"
+    session = boto3.Session(profile_name="default")
+    creds = session.get_credentials().get_frozen_credentials()
+    
+    os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+    os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
+    os.environ["AWS_REQUEST_PAYER"] = "requester"
     
  
     

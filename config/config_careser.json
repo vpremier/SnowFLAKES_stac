@@ -2,8 +2,8 @@
   "shapefile": "/mnt/CEPH_PROJECTS/PROSNOW/Careser/careser.geojson",
   "output_directory": "/mnt/CEPH_PROJECTS/PROSNOW/Careser/Sentinel2",
   "satellite": "Sentinel-2",
-  "date_start": "2025-05-19",
-  "date_end": "2025-07-18",
+  "date_start": "2026-05-08",
+  "date_end": "2026-05-31",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -38,5 +38,5 @@
   "end_glaciers_month": "04",
   "SVM_folder_name": "SCF",
   "exclude_tiles": null,
-  "simple_class": true
+  "simple_class": false
 }

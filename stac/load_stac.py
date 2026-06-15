@@ -24,26 +24,10 @@ from pystac_client.stac_api_io import StacApiIO
 from affine import Affine   
 import boto3
 import stackstac
-from rasterio.session import AWSSession
-from osgeo import gdal
-
-import fsspec
-import gc
 
 from stac.utils_stac import *
 
-def reset_s3_state():
-    # 1. Clear GDAL config
-    gdal.SetConfigOption("AWS_ACCESS_KEY_ID", "")
-    gdal.SetConfigOption("AWS_SECRET_ACCESS_KEY", "")
-    gdal.SetConfigOption("AWS_SESSION_TOKEN", "")
-    gdal.SetConfigOption("AWS_S3_ENDPOINT", "")
 
-    # 2. Try to break fsspec caches
-    fsspec.filesystem("s3", skip_instance_cache=True)
-
-    # 3. Force GC (helps with Python wrappers only)
-    gc.collect()
 
 # clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01
 # clms_urban-atlas_street-tree-layer_europe_V005ha_vector_static_v01
@@ -53,18 +37,17 @@ def reset_s3_state():
 # collection = "cop-dem-glo-30-dged-cog"
 
 
-def configure_gdal(session):
+# load_stac.py
+
+def setup_cdse_credentials():
+    session = boto3.Session(profile_name="cdse")
     creds = session.get_credentials().get_frozen_credentials()
 
-    gdal.SetConfigOption("AWS_ACCESS_KEY_ID", creds.access_key)
-    gdal.SetConfigOption("AWS_SECRET_ACCESS_KEY", creds.secret_key)
-    gdal.SetConfigOption("AWS_SESSION_TOKEN", creds.token or "")
+    os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
+    os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
 
-    gdal.SetConfigOption("AWS_S3_ENDPOINT", "eodata.dataspace.copernicus.eu")
-    gdal.SetConfigOption("AWS_VIRTUAL_HOSTING", "FALSE")
-    gdal.SetConfigOption("AWS_HTTPS", "YES")
-    
-    
+
     
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
@@ -73,21 +56,20 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     
     start = time.time()
 
+    
     # out directory
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, "DEM.tif")
-    reset_s3_state()
 
-    session = boto3.Session(profile_name="cdse")
-    configure_gdal(session)
-    aws_session = AWSSession(session)
-    
-    gdal_env = stackstac.DEFAULT_GDAL_ENV.updated({
-        "GDAL_NUM_THREADS": -1,
-        "AWS_VIRTUAL_HOSTING": "FALSE",
-        "AWS_HTTPS": "YES",
-    })
 
+    # credentials:  S3 Credentials from CDSE 
+    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
+    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
+
+    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
+    os.environ["AWS_HTTPS"] = "YES"
+    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
+    os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
     
     # option 1 - use stackstac
     CDSE_URL = "https://stac.dataspace.copernicus.eu/v1"
@@ -149,15 +131,23 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     print(f"Number of STAC items returned: {len(items)}")
 
 
-    with rio.Env(aws_session):
-        data = stackstac.stack(
-            items=items,
-            bounds=extent_target,
-            epsg=epsg_target,
-            resolution=resolution,
-            resampling=reproj_type,
-            gdal_env=gdal_env
-            )
+    data = stackstac.stack(
+        items=items,
+        bounds=extent_target,
+        epsg=epsg_target,
+        resolution=resolution,
+        resampling=reproj_type,
+        gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
+             {
+                 "GDAL_NUM_THREADS": -1,
+                 "GDAL_HTTP_UNSAFESSL": "YES",
+                 "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+                 "AWS_VIRTUAL_HOSTING": "FALSE",
+                 "AWS_HTTPS": "YES"
+             }
+             ),
+         )
+    
     
     data = data.mean(dim="time", skipna=True)
             
@@ -299,15 +289,14 @@ def convert_sentinel2_bands(outdir,
     logging.info("Started Sentinel-2 loading from CDSE")
 
 
-    session = boto3.Session(profile_name="cdse")
-    configure_gdal(session)
-    aws_session = AWSSession(session)
-    
-    gdal_env = stackstac.DEFAULT_GDAL_ENV.updated({
-        "GDAL_NUM_THREADS": -1,
-        "AWS_VIRTUAL_HOSTING": "FALSE",
-        "AWS_HTTPS": "YES",
-    })
+    # credentials:  S3 Credentials from CDSE 
+    # see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
+    S3_ENDPOINT = "eodata.dataspace.copernicus.eu"
+
+    os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
+    os.environ["AWS_HTTPS"] = "YES"
+    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
+    os.environ["GDAL_HTTP_UNSAFESSL"] = "YES"
     
 
     
@@ -445,18 +434,26 @@ def convert_sentinel2_bands(outdir,
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
 
     try:
-        with rio.Env(aws_session):
-            
-            data = stackstac.stack(
-                items=items,
-                bounds=extent_target,
-                epsg=epsg_target,
-                resolution=resolution,
-                assets=bands,
-                resampling=reproj_type,
-                xy_coords="center",
-                gdal_env=gdal_env)
-        
+    
+        data = stackstac.stack(
+            items=items,
+            bounds=extent_target,
+            epsg=epsg_target,
+            resolution=resolution,
+            assets=bands,
+            resampling=reproj_type,
+            xy_coords="center",
+            gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
+                 {
+                     "GDAL_NUM_THREADS": -1,
+                     "GDAL_HTTP_UNSAFESSL": "YES",
+                     "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+                     "AWS_VIRTUAL_HOSTING": "FALSE",
+                     "AWS_HTTPS": "YES"
+                 }
+                 ),
+             )
+    
         # Replace 0 with NaN
         data = data.where(data != 0, np.nan)
         
@@ -535,7 +532,7 @@ if __name__ == "__main__":
 
     resolution = 20
     epsg_target = 32719
-    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/tile/T19HCC/S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931/T19HCC_20250206T143811_B01_toa.tif'
+    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/Sentinel2/01_TEST_auxiliary_folder/DEM.tif'
 
     shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
     extent_target = get_shape_extent(shape_name, epsg=32719, outres =500)

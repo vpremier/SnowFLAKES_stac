@@ -22,7 +22,7 @@ from SnowFLAKES.training_collection import *
 from SnowFLAKES.SCF_functions import *
 
 
-from stac.load_stac import load_cdse_collection, convert_sentinel2_bands
+from stac.load_stac import load_cdse_collection, convert_sentinel2_bands, setup_cdse_credentials
 from utils import load_with_retry
 
 
@@ -72,6 +72,8 @@ def run_snowflakes(config, data, scene_id):
 
     if not os.path.exists(dem_path):
         print("Downloading DEM from CDSE...")
+        setup_cdse_credentials()
+        print("Main sees:", os.environ.get("AWS_ACCESS_KEY_ID"))      
 
         dem = load_cdse_collection("cop-dem-glo-30-dged-cog",
                                    auxiliary_folder_path,

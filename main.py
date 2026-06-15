@@ -100,6 +100,8 @@ def run_workflow(date_start, date_end, config_path):
                 
                 if config["satellite"] == "Sentinel-2":
                     # Sentinel-2: STAC API from CDSE
+                    load_stac.setup_cdse_credentials()
+
                     data, scene_id = load_stac.convert_sentinel2_bands(outdir, 
                                                                        date, 
                                                                        resolution=resolution, 
@@ -111,6 +113,8 @@ def run_workflow(date_start, date_end, config_path):
                     
                 elif config["satellite"].startswith("Landsat"):
                     # Landsat: USGS STAC
+                    load_stac_usgs.setup_usgs_credentials()
+
                     data, scene_id = load_stac_usgs.convert_landsat_bands(outdir, 
                                                                           date, 
                                                                           resolution=resolution, 
@@ -184,14 +188,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-05-01")
-    end = pd.Timestamp("2020-05-31")
-    # start = pd.Timestamp("2018-04-04")
-    # end = pd.Timestamp("2018-04-05")
+    start = pd.Timestamp("2019-03-01")
+    end = pd.Timestamp("2026-05-31")
+    # start = pd.Timestamp("2020-04-04")
+    # end = pd.Timestamp("2020-04-07")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
-    config_path = './config/config_careser_landsat.json'
+    config_path = './config/config_careser.json'
 
     
     step = pd.Timedelta(days=60)
@@ -210,7 +214,6 @@ if __name__ == "__main__":
         ))
     
         current = next_date
-
 
     for date_start, date_end in date_pairs:
         
