@@ -188,14 +188,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2019-03-01")
-    end = pd.Timestamp("2026-05-31")
+    start = pd.Timestamp("2015-04-01")
+    end = pd.Timestamp("2023-05-31")
     # start = pd.Timestamp("2020-04-04")
     # end = pd.Timestamp("2020-04-07")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
-    config_path = './config/config_careser.json'
+    config_path = './config/config_snowcop.json'
 
     
     step = pd.Timedelta(days=60)

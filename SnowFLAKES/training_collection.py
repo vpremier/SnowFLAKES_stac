@@ -442,12 +442,9 @@ def glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder,
     feature_names = svm_dict['feature_names']
     
     
-    
-    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
 
-    glacier_mask = open_image(glacier_mask_path)[0]
-    cloud_mask = open_image(path_cloud_mask)[0]
+    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     valid_mask = np.logical_not(no_data_mask)
     
     mask = valid_mask & (cloud_mask==1) & (glacier_mask == 1)

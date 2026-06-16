@@ -399,10 +399,10 @@ def run_snowflakes(config, data, scene_id):
             is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
 
             # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_samples_Lena/model_ice.p'
+            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
 
             glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-            mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)
+            mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
 
 
         print("Process completed. Condition met, and no points found where SCF > 0 and NDSI < 0.")

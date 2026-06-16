@@ -270,7 +270,7 @@ def check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, shapefile_pat
 
 
 
-def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path):
+def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask):
     # Define output path
     output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
 
@@ -279,9 +279,12 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, a
         meta = src.meta.copy()
         fsc_data = src.read(1)  # Read first band
 
-    # Open the raster
-    with rasterio.open(thematic_map_path) as src:
-        thematic_map = src.read(1)
+        
+    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    valid_mask = np.logical_not(no_data_mask)
+    
+    mask = valid_mask & (cloud_mask==1) & (glacier_mask == 1)
 
 
     # Apply mask: Set FSC values to NoData where glacier_mask is not 255
@@ -289,12 +292,13 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, a
     # fsc_data[glacier_map == 100] = thematic_map[glacier_map == 100]
     glacier_map[glacier_map == 1] = 215 
     glacier_map[glacier_map == 2] = 100 
+    glacier_map[glacier_map == 3] = 0 
 
-    mask = np.logical_and.reduce([
-        fsc_data > 0,
-        fsc_data <= 100,
-        glacier_map > 0
-    ])
+    # mask = np.logical_and.reduce([
+    #     fsc_data > 0,
+    #     fsc_data <= 100,
+    #     glacier_map > 0
+    # ])
     
 
     fsc_data[mask] = glacier_map[mask]
