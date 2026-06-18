@@ -1,9 +1,9 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/test",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/L1-LC08",
   "satellite": "Landsat-8",
-  "date_start": "2020-01-26",
-  "date_end": "2020-01-27",
+  "date_start": "2023-10-17",
+  "date_end": "2023-10-18",
   "query_landsat": true,
   "query_sentinel2": false,
   "download_landsat": false,
@@ -38,5 +38,5 @@
   "SVM_folder_name": "SCF",
   "PCA": "no",
   "exclude_tiles": null,
-  "simple_class": false
+  "simple_class": true
 }

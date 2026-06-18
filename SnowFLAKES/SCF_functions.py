@@ -58,12 +58,27 @@ from SnowFLAKES.utilities import *
 # print(matches.index+1)
 
 
-def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
+def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
+    
+    solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
+    hillshade = np.cos(np.deg2rad(solar_incidence_angle))
+    
+    X = all_bands_image[:, mask].T
+
+    feat = hillshade[mask].reshape(-1, 1)
+
+    return np.hstack((X, feat))
+
+
+def model_training(scene_id, all_bands_image, data, shapefile_path, curr_aux_folder, gamma=None):
     gamma_range = np.logspace(-2, 2, 100)
 
     # Load the shapefile
     shapefile = gpd.read_file(shapefile_path)
     SCF_folder = os.path.dirname(shapefile_path)
+    
+  
+
 
     # Create a mask with the same dimensions as the raster, setting snow (1) and no-snow (2) points
     mask_snow = geometry_mask([geom for geom in shapefile.geometry[shapefile['value'] == 1]],
@@ -77,8 +92,19 @@ def model_training(scene_id, all_bands_image, data, shapefile_path, gamma=None):
                                  out_shape=(data.sizes["y"], data.sizes["x"]))
 
     # Extract training values using the masks
-    snow_training = all_bands_image[:, mask_snow].T
-    no_snow_training = all_bands_image[:, mask_no_snow].T
+    snow_training = build_feature_matrix(
+        all_bands_image,
+        mask_snow,
+        curr_aux_folder
+    )
+    
+    no_snow_training = build_feature_matrix(
+        all_bands_image,
+        mask_no_snow,
+        curr_aux_folder
+    )
+
+
 
     training_array = np.concatenate((snow_training, no_snow_training), axis=0)
     class_array = np.concatenate((np.ones(snow_training.shape[0]), np.zeros(no_snow_training.shape[0])), axis=0)
@@ -141,7 +167,6 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
-
     
 
     # Load the SVM model
@@ -164,7 +189,13 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
         print(f"Saving prediction to {FSC_SVM_map_path}.")
 
     print('Image classification...\n')
-    Image_array_to_classify = all_bands_image[:, valid_mask].transpose()
+    Image_array_to_classify = build_feature_matrix(
+        all_bands_image,
+        valid_mask,
+        curr_aux_folder
+    )
+    
+
     normalizer = svm_model['normalizer']
 
     Samples_to_classify = normalizer.transform(Image_array_to_classify)

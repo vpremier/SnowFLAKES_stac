@@ -43,7 +43,6 @@ def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=raster
     
     
     
-    
 def find_path(folder, pattern):
     # look for file containing a specific pattern in a given folder
     matches = list(Path(folder).glob(pattern))
@@ -433,11 +432,6 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-
-
-
-
-
 def define_datetime(sensor, acquisition_name, config):
     from datetime import datetime
     '''
@@ -495,7 +489,6 @@ def define_datetime(sensor, acquisition_name, config):
 
 
 
-
 def get_hemisphere(raster_path):
     """
     Determines whether a raster is in the Northern or Southern Hemisphere
@@ -535,7 +528,39 @@ def get_hemisphere(raster_path):
 
 
 
+def snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
 
+    # subdirectory SCF
+    scf_folder = curr_aux_folder.replace('auxiliary', 'SCF')
+    
+    scf_map = load_map(scf_folder, '*SnowFLAKES.tif')
+    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
+    
+    
+    # check snow presence around the glacier (buffer of 100 pixels)
+    
+    # Convert glacier mask to boolean
+    glacier = glacier_mask > 0
+    
+    # Create 100-pixel buffer around glacier
+    glacier_buffer = binary_dilation(glacier, iterations=100)
+    
+    # Keep only the ring outside the glacier
+    buffer_ring = glacier_buffer & (~glacier)
+    
+    n_buffer_pixels = np.count_nonzero(buffer_ring)
+    
+    if n_buffer_pixels == 0:
+        return True
+    
+    snow_pixels = np.count_nonzero(
+        (scf_map > 0) & buffer_ring
+    )
+    
+    snow_fraction = snow_pixels / n_buffer_pixels
+    
+    # Return True if less than 5% snow covered
+    return snow_fraction < 0.5
 
 
 

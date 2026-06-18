@@ -107,7 +107,7 @@ def run_workflow(date_start, date_end, config_path):
                                                                        resolution=resolution, 
                                                                        extent_target=extent_target, 
                                                                        epsg_target=epsg_target,
-                                                                       save = False,
+                                                                       save = True,
                                                                        shp=config['shapefile'],
                                                                        exclude_tiles=config['exclude_tiles'])
                     
@@ -120,7 +120,7 @@ def run_workflow(date_start, date_end, config_path):
                                                                           resolution=resolution, 
                                                                           extent_target=extent_target, 
                                                                           epsg_target=epsg_target,
-                                                                          save = False,
+                                                                          save = True,
                                                                           platform = config["satellite"].upper().replace("-", "_"),
                                                                           shp=config['shapefile'],
                                                                           exclude_tiles=config['exclude_tiles'])
@@ -188,14 +188,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-04-01")
-    end = pd.Timestamp("2023-05-31")
-    # start = pd.Timestamp("2020-04-04")
-    # end = pd.Timestamp("2020-04-07")
+    start = pd.Timestamp("2020-05-03")
+    end = pd.Timestamp("2020-05-04")
+    # start = pd.Timestamp("2024-03-05")
+    # end = pd.Timestamp("2024-03-06")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
-    config_path = './config/config_snowcop.json'
+    config_path = './config/config_cci.json'
 
     
     step = pd.Timedelta(days=60)
@@ -216,7 +216,6 @@ if __name__ == "__main__":
         current = next_date
 
     for date_start, date_end in date_pairs:
-        
         run_workflow(date_start, date_end, config_path)
 
         

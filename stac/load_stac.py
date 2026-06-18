@@ -26,6 +26,7 @@ import boto3
 import stackstac
 
 from stac.utils_stac import *
+# from utils_stac import *
 
 
 
@@ -530,12 +531,11 @@ def convert_sentinel2_bands(outdir,
 
 if __name__ == "__main__":    
 
-    resolution = 20
-    epsg_target = 32719
-    img4ext = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/Sentinel2/01_TEST_auxiliary_folder/DEM.tif'
+    setup_cdse_credentials()
+    resolution = 50
+    epsg_target = 25832
 
-    shape_name = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Echaurren/EsteroGlaciarEchaurren/polygon/polygon.shp'
-    extent_target = get_shape_extent(shape_name, epsg=32719, outres =500)
+    extent_target = [573030.3488, 5048649.9999, 813030.3488, 5308649.9999]
 
     date = "2025-02-06"
 
@@ -543,13 +543,13 @@ if __name__ == "__main__":
 
     start = time.time()
 
-    idList = ['S2C_MSIL1C_20250206T143811_N0511_R096_T19HCC_20250206T161931']
 
-    data = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
-                            epsg_target=None, reproj_type=Resampling.cubic, 
+    data, scene_id = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=None, 
+                            epsg_target=epsg_target, extent_target=extent_target, reproj_type=Resampling.cubic, 
                             suffix='toa', na_value = "NaN", calibration=True, 
-                            ow=False)
+                            ow=False, save=False)
 
+    # data = data.load()
     end = time.time()
     print(f"Total runtime of the program is {end - start} seconds")
 

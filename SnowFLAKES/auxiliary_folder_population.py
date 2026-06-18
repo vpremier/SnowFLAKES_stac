@@ -1178,8 +1178,8 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
 
 
 
-def landsat_cloud_classifier(data, cloud_bands, no_data_value,
-                             path_cloud_mask, sensor, valid_mask, Nprocesses=8,
+def landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
+                             auxiliary_folder_path, valid_mask, Nprocesses=8,
                              dilate_iterations=5):
     from xgboost import XGBClassifier
     import pickle
@@ -1192,6 +1192,17 @@ def landsat_cloud_classifier(data, cloud_bands, no_data_value,
     import glob
     import os
     
+
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+
+    # output path
+    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
+    
+    # bands for cloud classification 
+    sensor = get_sensor(scene_id)
+    cloud_bands = select_band_names(sensor, 'cloud')
+
     cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
     cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
 
@@ -1271,24 +1282,9 @@ def landsat_cloud_classifier(data, cloud_bands, no_data_value,
     class_map = np.nan_to_num(class_map, nan=0).astype(np.uint8)
     class_map[class_map == 0] = 1
     
-    # Save raster using metadata from xarray
-    with rasterio.open(
-        path_cloud_mask,
-        "w",
-        driver="GTiff",
-        height=data.sizes['y'],
-        width=data.sizes['x'],
-        count=1,
-        dtype="uint8",
-        crs=CRS.from_epsg(data.epsg.item()),
-        transform=data.rio.transform(),
-    ) as dst:
-        dst.write(class_map, 1)
+    save_tif(class_map, dem_path, path_cloud_mask, dtype=rasterio.uint8)
+    
 
-        
-        
-
-    print(f"Classified and processed raster saved to {path_cloud_mask}.")
 
     clud_tot = open_image(path_cloud_mask)[0]
 

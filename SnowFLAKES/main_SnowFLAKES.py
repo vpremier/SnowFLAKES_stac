@@ -162,8 +162,8 @@ def run_snowflakes(config, data, scene_id):
         
     elif sensor == 'L7' or sensor == 'L8':
         # to be changed!!!
-        path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, cloud_bands, no_data_value,
-                                                                           path_cloud_mask, sensor, valid_mask,
+        path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
+                                                                           auxiliary_folder_path, valid_mask, 
                                                                            Nprocesses=8, dilate_iterations=5)
     
 
@@ -236,55 +236,21 @@ def run_snowflakes(config, data, scene_id):
     
     
     if predefined_model == 'no':
-        if (classify_glaciers == 'yes' and
-            dt_start_glaciers_month is not None and
-            dt_end_glaciers_month is not None and
-            is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
-    
-            with rasterio.open(glaciers_mask_path) as src:
-                glaciers_mask = src.read(1)  # Read the cloud mask (first band)
-    
-            # # Apply an N-pixel buffer using binary dilation
-            # N = 3  # Replace this with the desired buffer size
-            # structure = np.ones((2 * N + 1, 2 * N + 1))  # Define the dilation kernel
-            # glaciers_mask = binary_dilation(glaciers_mask, structure=structure).astype(int)
-            
-            
-        else:
-            dt_start_glaciers_month = None
-            dt_end_glaciers_month = None
 
-        shapefile_path = os.path.join(scene_folder, scene_id, SVM_folder_name,
-                                      'representative_pixels_for_training_samples.shp')
-        
-        
-        if not os.path.exists(shapefile_path):
-            print("Generating training shapefile.")
-            try:
-                shapefile_path = collect_trainings(scene_id, 
-                                                   all_bands_image, 
-                                                   curr_aux_folder, 
-                                                   auxiliary_folder_path,
-                                                   SVM_folder_name, 
-                                                   no_data_mask, 
-                                                   bands)
-            except:
-                print("Error for training collection")
-                return
-        else:
-            print("Shapefile already present, skipping.")
-            
-            
-            
-        # Controlla se il file shapefile esiste ed è valido
-        if not os.path.exists(shapefile_path) or os.path.getsize(shapefile_path) == 0:
-            print(f"Skipping scene {scene_id} due to missing geometries.")
+        print("Generating training shapefile.")
+        try:
+            shapefile_path = collect_trainings(scene_id, 
+                                               all_bands_image, 
+                                               curr_aux_folder, 
+                                               auxiliary_folder_path,
+                                               SVM_folder_name, 
+                                               no_data_mask, 
+                                               bands)
+        except:
+            print("Error for training collection")
+            return
 
-            # Save the scene in the log file
-            with open(skipped_scenes_file, "a") as f:
-                f.write(f"{scene_id}\n")
-                
-            return  # Skip to the next scene
+            
             
         # Load the shapefile
         gdf = gpd.read_file(shapefile_path)
@@ -294,7 +260,7 @@ def run_snowflakes(config, data, scene_id):
         print(unique_values)
         thematic_map_path = thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
                                                     no_data_mask, SVM_folder_name, classify_glaciers,
-                                                    date_time, dt_start_glaciers_month, dt_end_glaciers_month)
+                                                    date_time)
     
 
         if unique_values != {1, 2}:
@@ -335,68 +301,38 @@ def run_snowflakes(config, data, scene_id):
                 # take the model of the closest image
                 svm_model_filename = os.path.join(os.path.dirname(closest), "svm_model.p")
                 
-                # # train with another image
-                # shapefile_closest = glob.glob(os.path.dirname(closest) + "/*.shp").pop()
-                # data_closest, _ = convert_sentinel2_bands(working_folder, 
-                #                                           date_closest, 
-                #                                           resolution=config['resampling_params']['resolution'], 
-                #                                           extent_target=config['resampling_params']['extent_target'], 
-                #                                           epsg_target=config['resampling_params']['epsg_target'],
-                #                                           save = False)
-                # load_with_retry(data_closest, max_retries=20, wait_seconds=2)
-                
-                # all_bands_image_closest = np.squeeze(data_closest.sel(band=all_bands).values)
-                # all_bands_image_closest[all_bands_image_closest == no_data_value] = np.nan
-                
-                # svm_model_filename = model_training(scene_id_closest, 
-                #                                     all_bands_image_closest, 
-                #                                     data_closest, 
-                #                                     shapefile_closest, 
-                #                                     gamma=None)
                 
                 
                 # Run SCF prediction
                 FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
                                                svm_model_filename, Nprocesses=1, overwrite=True)
                 
-                if (classify_glaciers == 'yes' and
-                    dt_start_glaciers_month is not None and
-                    dt_end_glaciers_month is not None and
-                    is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
+                # check if there is snow around the glacier
+                if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
+                    
+                    # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+                    model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
 
-                    glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-                    mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, thematic_map_path, auxiliary_folder_path)
+                    glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+                    mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
                     
                     
                 return
                 
             
-
- 
         
         # else SnowFLAKES
-
         print('TRAINING')
         svm_model_filename = model_training(scene_id, all_bands_image, data, 
-                                            shapefile_path, gamma=None)
+                                            shapefile_path, curr_aux_folder, gamma=None)
 
         # Run SCF prediction
         FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
                                        svm_model_filename, Nprocesses=1, overwrite=True)
 
-        # Result check
-        shapefile_path = check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, 
-                                           shapefile_path, curr_aux_folder, k=5, n_closest=5)
 
 
-
-   
-
-
-        if (classify_glaciers == 'yes' and
-            dt_start_glaciers_month is not None and
-            dt_end_glaciers_month is not None and
-            is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
+        if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
 
             # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
             model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
