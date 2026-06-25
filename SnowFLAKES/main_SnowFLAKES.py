@@ -329,8 +329,27 @@ def run_snowflakes(config, data, scene_id):
         # Run SCF prediction
         FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
                                        svm_model_filename, Nprocesses=1, overwrite=True)
+        
+        
+        # repeat the training selection
+        shapefile_path = collect_trainings(scene_id, 
+                                           all_bands_image, 
+                                           curr_aux_folder, 
+                                           auxiliary_folder_path,
+                                           SVM_folder_name, 
+                                           no_data_mask, 
+                                           bands,
+                                           FSC_SVM_map_path=FSC_SVM_map_path)
 
+        svm_model_filename = model_training(scene_id, all_bands_image, data, 
+                                            shapefile_path, curr_aux_folder, gamma=None)
 
+        # Run SCF prediction
+        FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
+                                       svm_model_filename, Nprocesses=1, overwrite=True)
+        
+        remove_low_scf(FSC_SVM_map_path)
+        
 
         if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
 

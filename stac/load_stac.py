@@ -459,7 +459,7 @@ def convert_sentinel2_bands(outdir,
         data = data.where(data != 0, np.nan)
         
         # Group by day and compute mean
-        data = data.groupby("time.day").mean(dim="time", skipna=True)
+        data = data.groupby("time.day").max(dim="time", skipna=True)
         
 
 

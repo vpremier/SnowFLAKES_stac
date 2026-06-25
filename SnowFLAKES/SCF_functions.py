@@ -63,13 +63,125 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     hillshade = np.cos(np.deg2rad(solar_incidence_angle))
     
+    shadow = load_map(curr_aux_folder, '*shad_idx.tif')
+    
     X = all_bands_image[:, mask].T
 
-    feat = hillshade[mask].reshape(-1, 1)
+    hillshade_feat = hillshade[mask].reshape(-1, 1)
+    shadow_feat = shadow[mask].reshape(-1, 1)
 
-    return np.hstack((X, feat))
+    # concatenate all features
+    return np.hstack((
+        X,
+        hillshade_feat,
+        shadow_feat
+    ))
 
 
+
+
+def compute_snow_sun_shadow_ratio(
+    shapefile_path,
+    data,
+    all_bands_image,
+    curr_aux_folder,
+    band_names=None,
+):
+    """
+    Compute median snow reflectance in sun and shadow training samples
+    and the corresponding sun/shadow ratio for each band.
+
+    Parameters
+    ----------
+    shapefile_path : str
+        Training shapefile path.
+    data : xarray.Dataset
+        Dataset used to derive transform and raster dimensions.
+    all_bands_image : np.ndarray
+        Image cube passed to build_feature_matrix().
+    curr_aux_folder : str
+        Auxiliary folder passed to build_feature_matrix().
+    band_names : list, optional
+        Names of spectral bands. If None, generic names are used.
+
+    Returns
+    -------
+    ratio_df : pandas.DataFrame
+        Columns:
+        - band
+        - median_sun
+        - median_shadow
+        - sun_shadow_ratio
+    """
+
+    # ------------------------------------------------------------------
+    # Read shapefile
+    # ------------------------------------------------------------------
+    shp = gpd.read_file(shapefile_path)
+
+    # ------------------------------------------------------------------
+    # Snow + Sun mask
+    # ------------------------------------------------------------------
+    mask_snow_sun = geometry_mask(
+        shp.loc[
+            (shp["value"] == 1) &
+            (shp["illum"] == 1),
+            "geometry"
+        ],
+        transform=data.rio.transform(),
+        invert=True,
+        out_shape=(data.sizes["y"], data.sizes["x"])
+    )
+
+    # ------------------------------------------------------------------
+    # Snow + Shadow mask
+    # ------------------------------------------------------------------
+    mask_snow_shadow = geometry_mask(
+        shp.loc[
+            (shp["value"] == 1) &
+            (shp["illum"] == 2),
+            "geometry"
+        ],
+        transform=data.rio.transform(),
+        invert=True,
+        out_shape=(data.sizes["y"], data.sizes["x"])
+    )
+
+    # ------------------------------------------------------------------
+    # Extract spectral values
+    # ------------------------------------------------------------------
+    snow_sun_training = build_feature_matrix(
+        all_bands_image,
+        mask_snow_sun,
+        curr_aux_folder
+    )
+
+    snow_shadow_training = build_feature_matrix(
+        all_bands_image,
+        mask_snow_shadow,
+        curr_aux_folder
+    )
+
+    # ------------------------------------------------------------------
+    # Median per band
+    # ------------------------------------------------------------------
+    median_sun = np.nanmedian(snow_sun_training, axis=0)
+    median_shadow = np.nanmedian(snow_shadow_training, axis=0)
+
+    # ------------------------------------------------------------------
+    # Sun / Shadow ratio
+    # ------------------------------------------------------------------
+    ratio = np.divide(
+        median_sun,
+        median_shadow,
+        out=np.full_like(median_sun, np.nan, dtype=float),
+        where=median_shadow > 0
+    )
+
+
+    return ratio
+    
+    
 def model_training(scene_id, all_bands_image, data, shapefile_path, curr_aux_folder, gamma=None):
     gamma_range = np.logspace(-2, 2, 100)
 

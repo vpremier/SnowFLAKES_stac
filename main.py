@@ -107,7 +107,7 @@ def run_workflow(date_start, date_end, config_path):
                                                                        resolution=resolution, 
                                                                        extent_target=extent_target, 
                                                                        epsg_target=epsg_target,
-                                                                       save = True,
+                                                                       save = False,
                                                                        shp=config['shapefile'],
                                                                        exclude_tiles=config['exclude_tiles'])
                     
@@ -188,14 +188,14 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-05-03")
-    end = pd.Timestamp("2020-05-04")
+    start = pd.Timestamp("2017-08-29")
+    end = pd.Timestamp("2017-08-30")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
-    config_path = './config/config_cci.json'
+    config_path = './config/config_snowcop.json'
 
     
     step = pd.Timedelta(days=60)

@@ -1,9 +1,9 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Sentinel2-sia-shad",
+  "output_directory": "/mnt/CEPH_PROJECTS/PROSNOW/vale",
   "satellite": "Sentinel-2",
-  "date_start": "2017-08-29",
-  "date_end": "2017-08-30",
+  "date_start": "2017-08-10",
+  "date_end": "2017-08-15",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -14,14 +14,14 @@
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
-    "resolution": 50,
+    "resolution": 25,
     "extent_target": [
-      366000,
-      6205000,
-      428500,
-      6342500
+      518000.0,
+      5087000.0,
+      635500.0,
+      5163000.0
     ],
-    "epsg_target": 32719
+    "epsg_target": 32632
   },
   "overwrite": false,
   "no_data_value": "nan",
