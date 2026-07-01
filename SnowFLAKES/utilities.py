@@ -564,24 +564,28 @@ def snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path
 
 
 
-def remove_low_scf(FSC_SVM_map_path, bands, dem_path):
+def remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path):
     
     # Load the SCF map 
     with rasterio.open(FSC_SVM_map_path) as scf_src:
         scf_data = scf_src.read(1)  # Reading first band
-      
-    # DEM 
-    with rasterio.open(dem_path) as DEM_src:
-        DEM = DEM_src.read(1)  # Reading first band
-        
-        
-    swir = bands["SWIR"]
+     
+    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    distance_idx = load_map(curr_aux_folder, '*distance.tif')
 
-    condition = np.logical_and.reduce((swir > 0.4,
-                                scf_data < 50,
-                                DEM > 3000))
     
-    scf_data[condition] = 0
+    swir = bands["SWIR"]
+    green = bands["GREEN"]
+
+    condition1 = np.logical_and.reduce((swir > 0.4,
+                                scf_data < 50,
+                                shadow_mask == 0))
+    
+    condition2 = np.logical_and.reduce((green < 0.15,
+                                scf_data < 50,
+                                shadow_mask == 0))
+    
+    scf_data[condition1 | condition2] = 0
     
     save_tif(scf_data, dem_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 

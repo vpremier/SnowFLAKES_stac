@@ -188,8 +188,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-01-01")
-    end = pd.Timestamp("2017-08-30")
+    start = pd.Timestamp("2015-01-12")
+    end = pd.Timestamp("2018-03-13")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI

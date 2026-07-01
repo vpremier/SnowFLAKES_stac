@@ -179,8 +179,8 @@ def get_pixels_shadow(green, swir, NDSI, distance_idx, mask_shadow):
     
     
     snowfree = np.logical_and.reduce((mask_shadow,
-                                      NDSI < 0.5,
-                                      green < 0.1,
+                                      NDSI < 0.6,
+                                      green < 0.08,
                                       swir > 0.01))
     
     return snow, snowfree

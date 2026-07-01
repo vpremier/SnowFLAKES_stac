@@ -348,7 +348,7 @@ def run_snowflakes(config, data, scene_id):
         FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
                                        svm_model_filename, Nprocesses=1, overwrite=True)
         
-        remove_low_scf(FSC_SVM_map_path)
+        remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path)
         
 
         if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
