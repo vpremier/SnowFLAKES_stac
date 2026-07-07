@@ -120,7 +120,7 @@ def run_workflow(date_start, date_end, config_path):
                                                                           resolution=resolution, 
                                                                           extent_target=extent_target, 
                                                                           epsg_target=epsg_target,
-                                                                          save = True,
+                                                                          save = False,
                                                                           platform = config["satellite"].upper().replace("-", "_"),
                                                                           shp=config['shapefile'],
                                                                           exclude_tiles=config['exclude_tiles'])
@@ -188,8 +188,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-01-12")
-    end = pd.Timestamp("2018-03-13")
+    start = pd.Timestamp("2021-07-01")
+    end = pd.Timestamp("2021-09-01")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI

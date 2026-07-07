@@ -165,23 +165,22 @@ def get_pixels_shadow2(diff_B_NIR, shad_idx, NDSI, distance_idx, mask_shadow):
     return snow, snowfree
 
 
-def get_pixels_shadow(green, swir, NDSI, distance_idx, mask_shadow):
+def get_pixels_shadow(green, diffBNIR, distance_idx, mask_shadow):
 
 
     # conditions of val
     snow = np.logical_and.reduce((
         mask_shadow,
-        NDSI > 0.7,
+        diffBNIR > 0.12,
         distance_idx != 255,
-        green > 0.1,
-        swir < 0.01
+        green > 0.1
     ))
     
     
     snowfree = np.logical_and.reduce((mask_shadow,
-                                      NDSI < 0.6,
-                                      green < 0.08,
-                                      swir > 0.01))
+                                      diffBNIR > 0,
+                                      diffBNIR < 0.08,
+                                      green < 0.075))
     
     return snow, snowfree
     
@@ -389,8 +388,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
             #                                              mask_shadow)
             
             snow_shad, snowfree_shad = get_pixels_shadow(green, 
-                                                         swir, 
-                                                         NDSI, 
+                                                         diff_B_NIR, 
                                                          distance_idx,
                                                          mask_shadow)
   
