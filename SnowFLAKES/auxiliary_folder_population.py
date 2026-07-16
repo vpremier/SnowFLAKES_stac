@@ -22,6 +22,8 @@ from pathlib import Path
 import rioxarray
 from rasterio.crs import CRS
 from skimage.filters import threshold_otsu
+from omnicloudmask import predict_from_array
+from scipy.ndimage import binary_dilation
 
 
 from rasterio.transform import from_origin
@@ -353,6 +355,62 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
 
 
 
+
+
+
+def create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder,
+                         dilation_iterations=3):
+
+    # get sensor
+    sensor = get_sensor(scene_id)
+
+    # Load DEM
+    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+
+    # output path
+    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
+
+    # Input: (3, height, width) array with Red, Green, NIR bands
+    if sensor == 'S2':
+        input_array = np.squeeze(
+            data.sel(band=["B04", "B03", "B8A"]).values
+        ).astype(np.float32)
+
+    elif sensor in ['L5', 'L7', 'L8']:
+        input_array = np.squeeze(
+            data.sel(band=["red", "green", "nir08"]).values
+        ).astype(np.float32)
+
+    # Output:
+    # 0 = Clear
+    # 1 = Thick Cloud
+    # 2 = Thin Cloud
+    # 3 = Cloud Shadow
+    mask = predict_from_array(input_array, no_data_value=np.nan)
+    mask = np.squeeze(mask)
+
+    # -------------------------
+    # Dilate only thick clouds
+    # -------------------------
+    thick_cloud = (mask == 1)
+
+    dilated = binary_dilation(
+        thick_cloud,
+        iterations=dilation_iterations
+    )
+
+    # Assign only newly dilated pixels to class 1
+    mask[dilated] = 1
+
+    cloud_cover_percentage = np.sum(mask == 1) / mask.size
+
+    save_tif(mask, dem_path, path_cloud_mask, dtype=rasterio.uint8)
+
+    return path_cloud_mask, cloud_cover_percentage
+
+
+         
+        
 def create_default_cloud_mask(data, path_cloud_mask):
     """
     Create a default cloud mask (all ones) matching the grid of an xarray dataset.
@@ -719,36 +777,18 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     Parameters:
     - curr_aux_folder: Path to the auxiliary folder containing GeoTIFF files for indices.
     """
-    # Find the paths to the necessary GeoTIFF files
-    ndvi_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
-    idx6_path = glob.glob(os.path.join(curr_aux_folder, '*idx6.tif'))[0]
-    evi_path = glob.glob(os.path.join(curr_aux_folder, '*EVI.tif'))[0]
-    shad_idx_path = glob.glob(os.path.join(curr_aux_folder, '*shad_idx.tif'))[0]
+    
+    # Load masks and other necessary data
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    ndvi = load_map(curr_aux_folder, '*NDVI.tif')
+    index1 = load_map(curr_aux_folder, '*idx6.tif')
+    index2 = load_map(curr_aux_folder, '*shad_idx.tif')
+    evi = load_map(curr_aux_folder, '*EVI.tif')
+    solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
+    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
 
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    path_water_mask = glob.glob(os.path.join(auxiliary_folder_path, '*Water_Mask.tif'))[0]
+    NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
 
-    solar_incidence_angle_path = glob.glob(os.path.join(curr_aux_folder, '*solar_incidence_angle.tif'))[0]
-
-    # Read input GeoTIFFs
-    with rasterio.open(idx6_path) as src1, \
-            rasterio.open(shad_idx_path) as src2, \
-            rasterio.open(ndvi_path) as src_ndvi, \
-            rasterio.open(evi_path) as src_evi, \
-            rasterio.open(path_cloud_mask) as src_clouds, \
-            rasterio.open(path_water_mask) as src_water, \
-            rasterio.open(solar_incidence_angle_path) as src_angle:
-        # Read data arrays
-        index1 = src1.read(1).astype(float)
-        index2 = src2.read(1).astype(float)
-        ndvi = src_ndvi.read(1).astype(float)
-        evi = src_evi.read(1).astype(float)
-        cloud_mask = src_clouds.read(1).astype(int)
-        water_mask = src_water.read(1).astype(int)
-        solar_incidence_angle = src_angle.read(1).astype(float)
-
-        # Read metadata for output
-        meta = src1.meta.copy()
 
     # Normalize indices to range [0, 1]
     def normalize(arr):
@@ -756,7 +796,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
         return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
 
     # curr_range = (90, 180)
-    curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 2, water_mask == 1, no_data_mask)))
+    curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 1, water_mask == 1, no_data_mask)))
     
     # curr_range = (min(np.nanmax(solar_incidence_angle[curr_scene_valid])-1, 90), 180)
 
@@ -780,6 +820,8 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     
     
     self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle >= 90)
+    
+    cloud_shadow = cloud_mask == 3
 
     # shadow_score = (
     #     index1_norm *
@@ -803,7 +845,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     spectral_shadow = shadow_score > threshold
     casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
     
-    shadow_mask = np.logical_or(casted_shadow, self_shadow)
+    shadow_mask = np.logical_or.reduce((casted_shadow, self_shadow, cloud_shadow))
 
     # shadow_mask = cv2.medianBlur(shadow_mask.astype(np.uint8)*255, 5)
 
@@ -820,24 +862,13 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     # except:
     #     shadow_mask = np.zeros_like(shadow_score, dtype=bool).astype(np.uint8)
 
-    # Update metadata for output
-    meta.update({
-        "dtype": "uint8",
-        "count": 1,
-        "nodata": 255,  # Use 255 as the nodata value for uint8
-        "compress": "lzw"  # Compression to reduce file size
-    })
-    
-    # Save shadow mask to GeoTIFF
-    # shadow_score_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_score.tif')
-    # with rasterio.open(shadow_score_path, "w", **meta) as dst:
-    #     dst.write(shadow_score, 1)
+
 
     # Save shadow mask to GeoTIFF
     shadow_mask_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_mask.tif')
-    with rasterio.open(shadow_mask_path, "w", **meta) as dst:
-        dst.write(shadow_mask, 1)
 
+    save_tif(shadow_mask, NDSI_path, shadow_mask_path, dtype=rasterio.uint8)
+    
     print(f"Shadow mask saved to {shadow_mask_path}")
 
     return shadow_mask_path
@@ -1051,7 +1082,7 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
     NIR = bands['NIR']
 
     curr_scene_valid = build_valid_scene(no_data_mask,
-                                         cloud_mask == 2,
+                                         cloud_mask == 1,
                                          water_mask == 1,
                                          iterations=0)
 

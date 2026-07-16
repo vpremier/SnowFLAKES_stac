@@ -27,6 +27,9 @@ def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=raster
     Save an array as a GeoTIFF using metadata from a reference raster.
     """
 
+    if dtype is None:
+        dtype = array.dtype
+
     with rasterio.open(reference_raster_path) as src:
         meta = src.meta.copy()
 

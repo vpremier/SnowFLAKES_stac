@@ -159,7 +159,7 @@ def run_workflow(date_start, date_end, config_path):
                     save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
                     
                 elif config["satellite"].startswith("Landsat"):
-                    save_false_color(os.path.join(outdir, scene_id), ["swir16", "nir08", "red"], data)
+                    save_false_color(os.path.join(outdir, scene_id), ["swir16", "nir08", "green"], data)
 
                 
                 time.sleep(2)
@@ -188,8 +188,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2021-07-01")
-    end = pd.Timestamp("2021-09-01")
+    start = pd.Timestamp("2020-06-15")
+    end = pd.Timestamp("2020-06-30")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI

@@ -146,25 +146,30 @@ def run_snowflakes(config, data, scene_id):
     if not Compute_clouds:
         create_default_cloud_mask(data, path_cloud_mask)
         cloud_cover_percentage = 0
-    elif sensor == 'S2':
-        cloud_prob = float(config.get('Cloud_cover_probability', 60))
-        average_over = int(config.get('average_over', 3))
-        dilation_size = int(config.get('dilation_cloud_cover', 3))
-        overwrite_cloud = int(config.get('Overwrite_cloud', 0))
+    
+    else: 
+        
+        path_cloud_mask, cloud_cover_percentage = create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder)
+
+    # elif sensor == 'S2':
+    #     cloud_prob = float(config.get('Cloud_cover_probability', 60))
+    #     average_over = int(config.get('average_over', 3))
+    #     dilation_size = int(config.get('dilation_cloud_cover', 3))
+    #     overwrite_cloud = int(config.get('Overwrite_cloud', 0))
   
     
-        path_cloud_mask, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
-                                                                       curr_aux_folder,
-                                                                       auxiliary_folder_path,
-                                                                       no_data_value, 
-                                                                       cloud_prob, overwrite_cloud=0,
-                                                                       average_over=2, dilation_size=3)      
+    #     path_cloud_mask, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
+    #                                                                    curr_aux_folder,
+    #                                                                    auxiliary_folder_path,
+    #                                                                    no_data_value, 
+    #                                                                    cloud_prob, overwrite_cloud=0,
+    #                                                                    average_over=2, dilation_size=3)      
         
-    elif sensor == 'L7' or sensor == 'L8':
-        # to be changed!!!
-        path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
-                                                                           auxiliary_folder_path, valid_mask, 
-                                                                           Nprocesses=8, dilate_iterations=5)
+    # elif sensor == 'L7' or sensor == 'L8':
+    #     # to be changed!!!
+    #     path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
+    #                                                                        auxiliary_folder_path, valid_mask, 
+    #                                                                        Nprocesses=8, dilate_iterations=5)
     
 
     
@@ -245,7 +250,8 @@ def run_snowflakes(config, data, scene_id):
                                                auxiliary_folder_path,
                                                SVM_folder_name, 
                                                no_data_mask, 
-                                               bands)
+                                               bands,
+                                               sun_altitude)
         except:
             print("Error for training collection")
             return
@@ -314,7 +320,7 @@ def run_snowflakes(config, data, scene_id):
                     model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
 
                     glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-                    mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
+                    # mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
                     
                     
                 return
@@ -331,22 +337,22 @@ def run_snowflakes(config, data, scene_id):
                                        svm_model_filename, Nprocesses=1, overwrite=True)
         
         
-        # repeat the training selection
-        shapefile_path = collect_trainings(scene_id, 
-                                           all_bands_image, 
-                                           curr_aux_folder, 
-                                           auxiliary_folder_path,
-                                           SVM_folder_name, 
-                                           no_data_mask, 
-                                           bands,
-                                           FSC_SVM_map_path=FSC_SVM_map_path)
+        # # repeat the training selection
+        # shapefile_path = collect_trainings(scene_id, 
+        #                                    all_bands_image, 
+        #                                    curr_aux_folder, 
+        #                                    auxiliary_folder_path,
+        #                                    SVM_folder_name, 
+        #                                    no_data_mask, 
+        #                                    bands,
+        #                                    FSC_SVM_map_path=FSC_SVM_map_path)
 
-        svm_model_filename = model_training(scene_id, all_bands_image, data, 
-                                            shapefile_path, curr_aux_folder, gamma=None)
+        # svm_model_filename = model_training(scene_id, all_bands_image, data, 
+        #                                     shapefile_path, curr_aux_folder, gamma=None)
 
         # Run SCF prediction
-        FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
-                                       svm_model_filename, Nprocesses=1, overwrite=True)
+        # FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
+        #                                svm_model_filename, Nprocesses=1, overwrite=True)
         
         remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path)
         

@@ -25,37 +25,6 @@ from SnowFLAKES.training_collection import *
 from SnowFLAKES.utilities import *
 
 
-# for i in range(99,150):
-#     if snow_training.T[0,i] < 0.4:
-#         plt.figure()
-#         plt.plot(snow_training.T[:,i])
-#         plt.title(i)
-#         plt.ylim([0,1])
-    
-    
-
-# import numpy as np
-# import geopandas as gpd
-# from shapely.geometry import Point
-
-# # 28° campione
-# idx = 100
-
-# # Pixel corrispondente
-# rows, cols = np.where(mask_snow)
-# row = rows[idx]
-# col = cols[idx]
-
-# # Coordinate del pixel
-# x, y = data.rio.transform() * (col + 0.5, row + 0.5)
-
-# # Punto geometrico
-# pt = Point(x, y)
-
-# # Trova la feature dello shapefile che contiene il punto
-# matches = shapefile[shapefile.contains(pt)]
-
-# print(matches.index+1)
 
 
 def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
@@ -345,7 +314,7 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     SCF_map[np.logical_and(valid_mask, SCF_map < 10)] = 0
 
     SCF_map[pixels_to_correct] = 0
-    SCF_map[cloud_mask == 2] = 205
+    SCF_map[cloud_mask == 1] = 205
     SCF_map[water_mask == 1] = 210
     SCF_map[water_mask == 255] = 210
     SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
@@ -431,7 +400,7 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_pat
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     valid_mask = np.logical_not(no_data_mask)
     
-    mask = valid_mask & (cloud_mask==1) & (glacier_mask == 1)
+    mask = valid_mask & (cloud_mask==0) & (glacier_mask == 1)
 
 
     # Apply mask: Set FSC values to NoData where glacier_mask is not 255

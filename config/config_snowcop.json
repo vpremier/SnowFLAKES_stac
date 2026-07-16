@@ -1,9 +1,9 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Sentinel2-sia-shad",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/S2-new",
   "satellite": "Sentinel-2",
-  "date_start": "2021-08-30",
-  "date_end": "2021-09-01",
+  "date_start": "2020-06-15",
+  "date_end": "2020-06-30",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
