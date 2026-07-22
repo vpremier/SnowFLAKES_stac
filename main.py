@@ -195,8 +195,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-01-01")
-    end = pd.Timestamp("2020-12-30")
+    start = pd.Timestamp("2017-01-01")
+    end = pd.Timestamp("2017-01-10")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI
@@ -234,4 +234,3 @@ if __name__ == "__main__":
 # guarda land cover
 
 
-    

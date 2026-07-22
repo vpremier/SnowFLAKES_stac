@@ -19,6 +19,31 @@ from SnowFLAKES.utilities import *
 
 
 
+def valid_mask(data, no_data_value=np.nan):
+    """
+    Generate a valid-data mask from a multiband DataArray.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        DataArray with dimensions ('band', 'y', 'x').
+    no_data_value : float or int, optional
+        Value representing no-data. Default is NaN.
+
+    Returns
+    -------
+    xarray.DataArray
+        Boolean mask where True indicates that all bands are valid.
+    """
+    if no_data_value is None or np.isnan(no_data_value):
+        return data.notnull().all(dim="band")
+
+    return (data != no_data_value).all(dim="band")
+
+
+
+
+
 def remove_glaciers(outdir):
     for scf_path in glob.glob(os.path.join(outdir, "*", "SCF")):
         
@@ -84,12 +109,8 @@ def get_processed_dates(config):
 def get_dates_to_skip(config):
     working_folder = config['output_directory']
 
-    # log files
-    skipped_scenes_file, cloud_scenes_file, empty_items_file = create_empty_files(working_folder)
-
-    scenes_to_skip = scenes_skip(working_folder)
-    scenes_to_skip_clouds = cloud_mask_to_skip(working_folder)
-    dates_to_skip_emptyitems = empty_items_to_skip(working_folder)
+    scenes_to_skip_clouds = read_log(working_folder, '00_skip_cloud_masks')
+    dates_to_skip_emptyitems = read_log(working_folder, '00_dates_no_items')
 
     
     # Combine and remove duplicates
@@ -212,8 +233,6 @@ def get_shape_extent(shape_name, epsg=3035, outres=500, merge=True, row=None):
     yMax = round(int(np.ceil(ymax / outres)) * outres, 5)
 
     return xMin, yMin, xMax, yMax
-
-
 
 
 

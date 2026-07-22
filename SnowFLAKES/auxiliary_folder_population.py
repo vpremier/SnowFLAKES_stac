@@ -30,7 +30,6 @@ from rasterio.merge import merge
 from SnowFLAKES.utilities import (
     load_map,
     build_valid_scene,
-    find_path,
     save_tif, 
     open_image,
     get_sensor
@@ -40,31 +39,7 @@ from pysolar.solar import get_altitude, get_azimuth
 
 
 
-def create_auxiliary_folder(working_folder, folder_name='01_TEST_auxiliary_folder'):
-    """
-    Creates an auxiliary folder in the working directory for storing permanent layers (e.g., DEM, masks).
 
-    Parameters
-    ----------
-    working_folder : str
-        The main working directory where the auxiliary folder will be created.
-
-    Returns
-    -------
-    str
-        The path of the auxiliary folder.
-    """
-    # Define path for the ancillary folder
-    auxiliary_folder_path = os.path.join(working_folder, folder_name)
-
-    # Check if the folder exists, create if not
-    if not os.path.exists(auxiliary_folder_path):
-        os.makedirs(auxiliary_folder_path)
-        logging.info(f"Auxiliary folder created at {auxiliary_folder_path}.")
-    else:
-        logging.info(f"Auxiliary folder already exists at {auxiliary_folder_path}.")
-
-    return auxiliary_folder_path
 
 
 
@@ -246,6 +221,8 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
     str
         Path to the generated glacier mask raster file.
     """
+    print("Generating glacier mask...")
+
     # Define output paths
     base_path = os.path.dirname(water_mask_path)
     glacier_shp_path = os.path.join(base_path, 'glacier_mask.shp')
@@ -306,6 +283,7 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
         
         # save tif
         save_tif(empty_glacier_mask, water_mask_path, glacier_mask_path, dtype=rasterio.uint8)
+        print(f"Glacier mask saved at {glacier_mask_path}")
 
     return glacier_mask_path
 
@@ -643,7 +621,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
 
-    NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
+    _, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
 
 
     # Normalize indices to range [0, 1]
@@ -1060,7 +1038,6 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
                        img_info['projection'])
 
     return target_wb_mask_path
-
 
 
 

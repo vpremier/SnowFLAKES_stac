@@ -11,17 +11,29 @@ import shutil
 from datetime import datetime as dt
 import time
 import geopandas as gpd
-from scipy.ndimage import binary_dilation
 import rasterio
 
-from SnowFLAKES.auxiliary_folder_population import *
+from SnowFLAKES.auxiliary_folder_population import (
+    calc_slope_aspect,
+    glacier_mask_cutting,
+    create_omnicloudmask,
+    create_folder,
+)
+
 from SnowFLAKES.utilities import (
-    get_sensor)
+    get_sensor,
+    create_log,
+    define_datetime)
+
 from SnowFLAKES.training_collection import *
 from SnowFLAKES.SCF_functions import *
 from SnowFLAKES.ice import run_snow_ice_classification
 
-from loading.load_stac import load_cdse_collection, convert_sentinel2_bands, setup_cdse_credentials
+from loading.load_stac import (
+    load_cdse_collection,
+    setup_cdse_credentials,
+)
+
 from utils import load_with_retry
 
 
@@ -30,30 +42,35 @@ def run_snowflakes(config, data, scene_id):
     print(f"Running SnowFLAKES for {scene_id}")
     start = time.time()
 
-    # Config info
-    working_folder = config['output_directory']
-    scene_folder = os.path.join(config['output_directory'], scene_id)
-    os.makedirs(scene_folder, exist_ok=True)
-    
-    sensor = get_sensor(scene_id)
-    ow = config['overwrite']
-    
-    try:
-        # Extract date and time from the folder name and sensor type
-        date_time, date = define_datetime(scene_id, config)
-    except Exception:
-        raise ValueError("Non valid scene id")
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
 
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")    
     
-    # print("Creating auxiliary folder for static data...")
-    auxiliary_folder_path = create_auxiliary_folder(working_folder)
-    
-    
-    SVM_folder_name = config['SVM_folder_name']
-    
+    # Snow Cover Fraction folder
+    SCF_folder = create_folder(scene_folder, config['SVM_folder_name'])
     
     # log files: create log files
-    skipped_scenes_file, cloud_scenes_file, _ = create_empty_files(working_folder)
+    skipped_scenes_file = create_log(wd, '00_scenes_to_skip')
+    cloud_scenes_file = create_log(wd, '00_skip_cloud_masks')
+    
+    # overwrite
+    ow = config['overwrite']
+
+    # sensor    
+    sensor = get_sensor(scene_id)
+    
+    # Extract date and time from the folder name
+    date_time, date = define_datetime(scene_id, config)
+
+    
+
+
+    
+    
+
 
     
     # No data value
@@ -69,17 +86,18 @@ def run_snowflakes(config, data, scene_id):
     dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
 
     if not os.path.exists(dem_path):
-        print("Downloading DEM from CDSE...")
-        setup_cdse_credentials()
-        print("Main sees:", os.environ.get("AWS_ACCESS_KEY_ID"))      
 
+        setup_cdse_credentials()
         dem = load_cdse_collection("cop-dem-glo-30-dged-cog",
                                    auxiliary_folder_path,
                                    resolution=config['resampling_params']['resolution'],
                                    extent_target=config['resampling_params']['extent_target'],
                                    epsg_target=config['resampling_params']['epsg_target'])
 
-    slopePath, aspectPath = calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', overwrite=False)
+    slopePath, aspectPath = calc_slope_aspect(dem_path, 
+                                              auxiliary_folder, 
+                                              reproj_type='bilinear', 
+                                              overwrite=ow)
 
 
 
@@ -96,11 +114,9 @@ def run_snowflakes(config, data, scene_id):
     
     
     # Generate glacier mask
-    print("Generating glacier mask...")
     external_glacier_mask_path = config['external_glacier_mask_path']
     classify_glaciers = config['classify_glaciers']
-    glaciers_mask_path = glacier_mask_cutting(external_glacier_mask_path, water_mask_path)
-    print(f"Glacier mask saved at {glaciers_mask_path}")
+    glacier_mask_path = glacier_mask_cutting(external_glacier_mask_path, water_mask_path)
 
 
     if classify_glaciers == 'yes':
@@ -116,17 +132,14 @@ def run_snowflakes(config, data, scene_id):
 
 
 
-    # Snow Cover Fraction
-    SCF_folder = os.path.join(scene_folder, "SCF")
-    os.makedirs(SCF_folder, exist_ok=True)
+
 
     # load bands: bands used for SCF
     all_bands = select_band_names(sensor, 'scf') # curr_band_stack_path
     all_bands_image = np.squeeze(data.sel(band=all_bands).values)
     all_bands_image[all_bands_image == no_data_value] = np.nan
     
-    # bands for cloud classification 
-    cloud_bands = select_band_names(sensor, 'cloud')
+
    
     no_data_mask, valid_mask = generate_no_data_mask(all_bands_image, sensor, no_data_value=np.nan)
     
@@ -134,40 +147,13 @@ def run_snowflakes(config, data, scene_id):
     curr_aux_folder = os.path.join(scene_folder, "auxiliary")
     os.makedirs(curr_aux_folder, exist_ok=True)
 
-    
-    # Cloud mask
-    Compute_clouds = config.get('Compute_clouds', 'no') == 'yes'
-    
+
     
     
     # Generate cloud mask or use default if clouds are not computed
-    if not Compute_clouds:
-        create_default_cloud_mask(data, path_cloud_mask)
-        cloud_cover_percentage = 0
-    
-    else: 
-        
-        path_cloud_mask, cloud_cover_percentage = create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder)
+    path_cloud_mask, cc_perc = create_omnicloudmask(data, 
+                                                    scene_id, auxiliary_folder_path, curr_aux_folder)
 
-    # elif sensor == 'S2':
-    #     cloud_prob = float(config.get('Cloud_cover_probability', 60))
-    #     average_over = int(config.get('average_over', 3))
-    #     dilation_size = int(config.get('dilation_cloud_cover', 3))
-    #     overwrite_cloud = int(config.get('Overwrite_cloud', 0))
-  
-    
-    #     path_cloud_mask, cloud_cover_percentage = S2_clouds_classifier(data, scene_id,
-    #                                                                    curr_aux_folder,
-    #                                                                    auxiliary_folder_path,
-    #                                                                    no_data_value, 
-    #                                                                    cloud_prob, overwrite_cloud=0,
-    #                                                                    average_over=2, dilation_size=3)      
-        
-    # elif sensor == 'L7' or sensor == 'L8':
-    #     # to be changed!!!
-    #     path_cloud_mask, cloud_cover_percentage = landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
-    #                                                                        auxiliary_folder_path, valid_mask, 
-    #                                                                        Nprocesses=8, dilate_iterations=5)
     
 
     
@@ -188,7 +174,7 @@ def run_snowflakes(config, data, scene_id):
     
 
     # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
-    bands = define_bands(data, valid_mask, sensor)
+    bands = define_bands(data, sensor)
     
     spectral_idx_computer(bands['GREEN'], bands['NIR'], 'normDiff', no_data_mask, 
                           curr_aux_folder, sensor, f"{scene_id}_NDWI.tif", data)
@@ -246,7 +232,7 @@ def run_snowflakes(config, data, scene_id):
                                                all_bands_image, 
                                                curr_aux_folder, 
                                                auxiliary_folder_path,
-                                               SVM_folder_name, 
+                                               SCF_folder,
                                                no_data_mask, 
                                                bands,
                                                sun_altitude)
@@ -263,7 +249,7 @@ def run_snowflakes(config, data, scene_id):
         unique_values = set(gdf['value'].unique())
         print(unique_values)
         thematic_map_path = thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
-                                                    no_data_mask, SVM_folder_name, classify_glaciers,
+                                                    no_data_mask, SCF_folder, classify_glaciers,
                                                     date_time)
     
 
@@ -299,8 +285,8 @@ def run_snowflakes(config, data, scene_id):
                 scene_id_closest = os.path.basename(closest).split("_SnowFLAKES.tif")[0]
     
                 
-                _, date_closest =  define_datetime(sensor, scene_id_closest, config)
-                date_closest = datetime.strptime(date_closest, "%Y%m%d").strftime("%Y-%m-%d")
+                _, date_closest = define_datetime(scene_id_closest, config)
+                date_closest = dt.strptime(date_closest, "%Y%m%d").strftime("%Y-%m-%d")
                 
                 # take the model of the closest image
                 svm_model_filename = os.path.join(os.path.dirname(closest), "svm_model.p")
@@ -391,5 +377,3 @@ def run_snowflakes(config, data, scene_id):
 
 if __name__ == "__main__":
     print('Running SnowFLAKES')
-
-

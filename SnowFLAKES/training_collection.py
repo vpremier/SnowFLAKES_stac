@@ -567,14 +567,8 @@ def save_histogram(
     
     
 def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, 
-                      SVM_folder_name, no_data_mask, bands, sun_altitude, FSC_SVM_map_path = None, total_samples=500):
+                      SCF_folder, no_data_mask, bands, sun_altitude, FSC_SVM_map_path = None, total_samples=500):
     
-    # working directory
-    wd = Path(curr_aux_folder).parent
-    
-    # subdirectory SCF
-    scf_folder = wd / SVM_folder_name
-    scf_folder.mkdir(exist_ok=True)
 
 
     # Load masks and other necessary data
@@ -588,7 +582,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     green = bands["GREEN"]
     
     
-    NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
+    _, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
     
     # validity mask: a binary dilation is applied (avoid training collection
     # near water bodies, clouds, etc).. glaciers??
@@ -765,7 +759,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                 
                 save_histogram(
                     green[representative_pixels_mask_snow],
-                    os.path.join(scf_folder, f"hist_snow_selected_{curr_range[0]}-{curr_range[1]}.png"),
+                    os.path.join(SCF_folder, f"hist_snow_selected_{curr_range[0]}-{curr_range[1]}.png"),
                     bins=50,
                     xlabel="Value",
                     ylabel="Count"
@@ -784,7 +778,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                 
                 save_histogram(
                     green[representative_pixels_mask_noSnow==2],
-                    os.path.join(scf_folder, f"hist_sf_selected_{curr_range[0]}-{curr_range[1]}.png"),
+                    os.path.join(SCF_folder, f"hist_sf_selected_{curr_range[0]}-{curr_range[1]}.png"),
                     bins=50,
                     xlabel="Value",
                     ylabel="Count"
@@ -829,10 +823,10 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
 
     #plot_valid_pixels_percentage(ranges, percentage_per_angles_list, scf_folder)
 
-    shapefile_path = os.path.join(scf_folder, 'representative_pixels_for_training_samples.shp')
+    shapefile_path = os.path.join(SCF_folder, 'representative_pixels_for_training_samples.shp')
     gdf.to_file(shapefile_path, driver="ESRI Shapefile")
 
-    plot_trainings(training_stats, pixel_stats, scf_folder)
+    plot_trainings(training_stats, pixel_stats, SCF_folder)
 
     return shapefile_path
 
@@ -989,7 +983,7 @@ def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_
     glacier_mask = open_image(glacier_mask_path)[0]
 
     # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(data, valid_mask, sensor)
+    bands = define_bands(data, sensor)
     
     # Expected band ordering: blue, red, nir, swir
     green = bands['GREEN']
@@ -1083,7 +1077,7 @@ def glacier_classifier2(scene_id, data, no_data_mask, curr_aux_folder, auxiliary
     glacier_mask =  binary_dilation(glacier_mask==1, iterations=5)
 
     # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(data, valid_mask, sensor)
+    bands = define_bands(data, sensor)
     
     # Expected band ordering: blue, red, nir, swir
     green = bands['GREEN']
@@ -1192,7 +1186,7 @@ def glacier_classifier2(scene_id, data, no_data_mask, curr_aux_folder, auxiliary
     
     
 def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
-                            no_data_mask, SVM_folder_name, classify_glaciers,
+                            no_data_mask, SCF_folder, classify_glaciers,
                             date_time):
     """
     Generate a thematic map using precomputed indices and bands.
@@ -1216,20 +1210,12 @@ def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_pa
       dt_end_glaciers_month: datetime, end month for glacier classification
     """
 
-    wd = Path(curr_aux_folder).parent
-
-    # Create folder to store outputs if it doesn't exist
-    thematic_folder = os.path.join(wd, SVM_folder_name)
-    if not os.path.exists(thematic_folder):
-        os.makedirs(thematic_folder)
 
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
-    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
+    NDSI, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
     NDVI = load_map(curr_aux_folder, '*NDVI.tif')
-    
-    NDSI_path = find_path(curr_aux_folder, '*NDSI.tif')
 
     valid_mask = np.logical_not(no_data_mask)
 
@@ -1271,7 +1257,7 @@ def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_pa
     
 
     # Define output path
-    output_path = os.path.join(wd, SVM_folder_name,f'{scene_id}_simple_class.tif')
+    output_path = os.path.join(SCF_folder,f'{scene_id}_simple_class.tif')
 
     # save output tif file
     save_tif(thematic_map, NDSI_path, output_path, dtype=rasterio.uint8)
@@ -1426,8 +1412,6 @@ def plot_valid_pixels_percentage(ranges, percentage_per_angles_list, svm_folder_
     print(f"Plot saved to: {output_path}")
     
     
-
-
 
 
 

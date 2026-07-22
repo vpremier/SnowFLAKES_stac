@@ -55,9 +55,10 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
                             reproj_type=Resampling.bilinear, save=True, 
                             ow=False, shp=None):
     
+    print(f"Loading collection {collection} from CDSE...")
+
     start = time.time()
 
-    
     # out directory
     os.makedirs(outdir, exist_ok=True)
     out_path = os.path.join(outdir, "DEM.tif")

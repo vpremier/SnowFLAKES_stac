@@ -11,7 +11,6 @@ from pathlib import Path
 from scipy.ndimage import binary_dilation
 import netCDF4
 import numpy as np
-import glob
 import rasterio
 from rasterio.warp import transform_bounds
 import re
@@ -22,9 +21,95 @@ from loading.load_stac_usgs import get_scene_center_time
 
 
 
-def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=rasterio.uint8):
+def create_folder(working_folder, folder_name):
+    """Create a folder if it does not already exist.
+
+    Parameters
+    ----------
+    working_folder : str or os.PathLike
+        Parent directory.
+    folder_name : str or os.PathLike
+        Name of the folder to create.
+
+    Returns
+    -------
+    str
+        Path to the created or existing folder.
     """
-    Save an array as a GeoTIFF using metadata from a reference raster.
+    folder_path = os.path.join(working_folder, folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+
+    return folder_path
+
+
+
+def create_log(working_folder, log_name):
+    """Ensure that a log file exists and return its path.
+
+    Parameters
+    ----------
+    working_folder : str or os.PathLike
+        Directory containing the log file.
+    log_name : str
+        Log filename without the ``.log`` extension.
+
+    Returns
+    -------
+    str
+        Path to the log file.
+    """
+    os.makedirs(working_folder, exist_ok=True)
+    path = os.path.join(working_folder, f'{log_name}.log')
+
+    if not os.path.exists(path):
+        with open(path, 'w') as f:
+            pass
+        print(f"Created file: {path}")
+    else:
+        print(f"File already exists: {path}")
+
+    return path
+
+
+
+def read_log(working_folder, log_name):
+    """Return the non-empty entries from a SnowFLAKES log.
+
+    Parameters
+    ----------
+    working_folder : str or os.PathLike
+        Directory containing the log file.
+    log_name : str
+        Log filename without the ``.log`` extension.
+
+    Returns
+    -------
+    list of str
+        Stripped, non-empty log entries in file order.
+    """
+    path = create_log(working_folder, log_name)
+
+    with open(path, 'r') as file:
+        return [line.strip() for line in file if line.strip()]
+
+
+
+def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=rasterio.uint8):
+    """Save a two-dimensional array as a single-band GeoTIFF.
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        Two-dimensional array to write.
+    reference_raster_path : str or os.PathLike
+        Raster whose spatial metadata and profile are copied.
+    output_path : str or os.PathLike
+        Destination GeoTIFF path.
+    nodata : int or float, optional
+        Output no-data value. The default is 255.
+    dtype : str or numpy.dtype, optional
+        Output data type. The default is ``rasterio.uint8``; if ``None``, the
+        input array's data type is used.
     """
 
     if dtype is None:
@@ -46,8 +131,33 @@ def save_tif(array, reference_raster_path, output_path, nodata=255, dtype=raster
     
     
     
-def find_path(folder, pattern):
-    # look for file containing a specific pattern in a given folder
+def load_map(folder, pattern, return_path=False):
+    """Load the first raster in a folder matching a glob pattern.
+
+    Parameters
+    ----------
+    folder : str or os.PathLike
+        Directory containing the raster.
+    pattern : str
+        Glob pattern used to select the raster.
+    return_path : bool, optional
+        If ``True``, also return the matching path. The default is ``False``.
+
+    Returns
+    -------
+    numpy.ndarray or tuple
+        Raster values, or ``(array, path)`` when ``return_path=True``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no raster matches the pattern.
+
+    Notes
+    -----
+    If multiple rasters match, the function prints a warning and uses the first
+    result.
+    """
     matches = list(Path(folder).glob(pattern))
 
     if not matches:
@@ -58,21 +168,33 @@ def find_path(folder, pattern):
     if len(matches) > 1:
         print(f"Warning: multiple matches for {pattern}, using first")
 
-    return matches[0]
-
-
-
-def load_map(folder, pattern):
-    # load the map
-    path = find_path(folder, pattern)
+    path = matches[0]
     image = open_image(path)[0]
+
+    if return_path:
+        return image, path
+
     return image
 
 
 
 def build_valid_scene(no_data_mask, *invalid_masks, iterations=2):
-    """
-    Combine arbitrary boolean masks into a validity mask.
+    """Combine invalid-pixel masks into a scene-validity mask.
+
+    Parameters
+    ----------
+    no_data_mask : numpy.ndarray
+        Boolean mask where ``True`` identifies no-data pixels.
+    *invalid_masks : numpy.ndarray
+        Additional boolean masks where ``True`` identifies invalid pixels.
+    iterations : int, optional
+        Number of binary-dilation iterations applied to the combined invalid
+        mask. Values below 1 disable dilation. The default is 2.
+
+    Returns
+    -------
+    numpy.ndarray
+        Boolean mask where ``True`` identifies valid pixels.
     """
     invalid = np.logical_or.reduce(invalid_masks + (no_data_mask,))
     
@@ -83,6 +205,229 @@ def build_valid_scene(no_data_mask, *invalid_masks, iterations=2):
     else:
         return ~invalid
 
+
+
+def get_sensor(acquisition_name):
+    """Identify the sensor family from a satellite product name.
+
+    Parameters
+    ----------
+    acquisition_name : str or os.PathLike
+        Product identifier or path to a product.
+
+    Returns
+    -------
+    str
+        SnowFLAKES sensor label: ``L4``, ``L5``, ``L7``, ``L8``, or ``S2``.
+        Landsat 9 returns ``L8`` because both missions use the same band mapping.
+
+    Raises
+    ------
+    ValueError
+        If the product name does not have a supported satellite prefix.
+    """
+    product_name = os.path.basename(os.fspath(acquisition_name).rstrip(os.sep)).upper()
+
+    sensor_prefixes = (
+        (("LT04", "LT4"), "L4"),
+        (("LT05", "LT5"), "L5"),
+        (("LE07", "LE7"), "L7"),
+        (("LC08", "LC8", "LC09", "LC9"), "L8"),
+        (("S2A", "S2B", "S2C"), "S2"),
+    )
+
+    for prefixes, sensor in sensor_prefixes:
+        if product_name.startswith(prefixes):
+            return sensor
+
+    raise ValueError(f"Invalid acquisition name: {acquisition_name}")
+
+
+
+def define_bands(data, sensor):
+    """Extract the spectral bands used by SnowFLAKES.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        Scene data containing a ``band`` coordinate.
+    sensor : str
+        SnowFLAKES sensor label returned by :func:`get_sensor`.
+
+    Returns
+    -------
+    dict
+        Arrays keyed by ``GREEN``, ``SWIR``, ``NIR``, ``RED``, and ``BLUE``.
+
+    Raises
+    ------
+    ValueError
+        If the sensor is not supported.
+    """
+    band_mapping = {
+        'L4': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
+        'L5': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
+        'L7': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
+        'L8': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
+        'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B8A', 'RED': 'B04', 'BLUE': 'B02'}
+    }
+
+    if sensor not in band_mapping:
+        raise ValueError(f"Sensor '{sensor}' is not supported.")
+
+    return {
+        name: np.squeeze(data.sel(band=band_name).values)
+        for name, band_name in band_mapping[sensor].items()
+    }
+
+
+
+def select_band_names(sensor, suffix):
+    """Return the band names required for a processing stage.
+
+    Parameters
+    ----------
+    sensor : str
+        SnowFLAKES sensor label returned by :func:`get_sensor`.
+    suffix : {"scf", "cloud"}
+        Processing stage: snow-cover fraction or cloud detection.
+
+    Returns
+    -------
+    list of str
+        Band names in the order expected by the processing stage.
+
+    Raises
+    ------
+    ValueError
+        If the sensor or processing stage is unsupported.
+    """
+    sensor_group = 'L457' if sensor in ('L4', 'L5', 'L7') else sensor
+    band_mapping = {
+        ('L457', 'scf'): ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22'],
+        ('L8', 'scf'): ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22'],
+        ('S2', 'scf'): ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B11', 'B12'],
+        ('L457', 'cloud'): ['blue', 'green', 'red', 'nir08', 'swir16', 'lwir', 'swir22'],
+        ('L8', 'cloud'): ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'lwir11'],
+        ('S2', 'cloud'): ['B01', 'B02', 'B04', 'B05', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12'],
+    }
+
+    try:
+        return band_mapping[(sensor_group, suffix)]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported sensor/suffix combination: {sensor!r}, {suffix!r}"
+        ) from exc
+
+
+
+def define_datetime(scene_id, config):
+    """Return the acquisition date and time encoded by a scene identifier.
+
+    Sentinel-2 timestamps are read directly from their product names.
+    A Landsat identifier contains only the acquisition date, so its scene-centre
+    time is obtained from the USGS STAC item's MTL metadata.
+
+    Parameters
+    ----------
+    scene_id : str or os.PathLike
+        Product identifier or path. Supported names are compact Sentinel-2
+        Level-1C products, legacy Sentinel-2 ``OPER`` products, and Landsat
+        4--9 products.
+    config : dict
+        SnowFLAKES configuration, used to query Landsat metadata.
+
+    Returns
+    -------
+    date_time : datetime.datetime
+        Timezone-naive acquisition datetime.
+    date : str
+        Acquisition date in ``YYYYMMDD`` format.
+    """
+
+    scene_name = os.path.basename(os.fspath(scene_id).rstrip(os.sep))
+    sensor = get_sensor(scene_name)
+    parts = scene_name.split('_')
+
+    try:
+        if sensor == 'S2' and parts[1] == 'MSIL1C':
+            date_time = datetime.strptime(parts[2], '%Y%m%dT%H%M%S')
+            date = date_time.strftime('%Y%m%d')
+
+        elif sensor == 'S2' and parts[1] == 'OPER':
+            match = re.search(r'V?(\d{8}T\d{6})', parts[7])
+            if match is None:
+                raise ValueError("missing legacy Sentinel-2 sensing time")
+            date_time = datetime.strptime(match.group(1), '%Y%m%dT%H%M%S')
+            date = date_time.strftime('%Y%m%d')
+
+        elif sensor in ("L4", "L5", "L7", "L8"):
+            date = parts[3]
+            query_date = datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d')
+            date_time = get_scene_center_time(
+                query_date,
+                extent_target=config["resampling_params"]['extent_target'],
+                resolution=config["resampling_params"]['resolution'],
+                epsg_target=config["resampling_params"]['epsg_target'],
+                max_cc=config['max_cloudcover'],
+                filter_by_geometry=True,
+                shp=config['shapefile'],
+                platform=config["satellite"].upper().replace("-", "_"),
+                idList=[]
+            )
+        else:
+            raise ValueError(f"Unsupported scene identifier: {scene_id!r}")
+    except IndexError as exc:
+        raise ValueError(f"Invalid scene identifier: {scene_id!r}") from exc
+
+    return date_time, date
+
+
+
+def get_hemisphere(raster_path):
+    """Determine the hemisphere covered by a raster.
+
+    Parameters
+    ----------
+    raster_path : str or os.PathLike
+        Path to a georeferenced raster.
+
+    Returns
+    -------
+    {"N", "S", "E"}
+        ``N`` for the Northern Hemisphere, ``S`` for the Southern Hemisphere,
+        or ``E`` if the raster crosses the equator.
+
+    Raises
+    ------
+    ValueError
+        If the raster has no coordinate reference system.
+    """
+    with rasterio.open(raster_path) as raster:
+        if raster.crs is None:
+            raise ValueError(f"Raster has no CRS: {raster_path}")
+
+        _, bottom, _, top = transform_bounds(
+            raster.crs,
+            "EPSG:4326",
+            raster.bounds.left,
+            raster.bounds.bottom,
+            raster.bounds.right,
+            raster.bounds.top
+        )
+
+    if bottom >= 0 and top > 0:
+        return "N"
+    if top <= 0 and bottom < 0:
+        return "S"
+    return "E"
+
+
+
+
+
+
+# To be updated
 
 
 def find_closest_valid_scf(working_folder, date):
@@ -168,194 +513,23 @@ def is_month_in_range(month, start_month, end_month):
 
 
 
-def create_empty_files(working_folder):
-    """
-    Creates two empty text files in the specified folder if they don't already exist:
-    '00_scenes_to_skip.txt' and '00_skip_cloud_masks.txt'.
-
-    Parameters
-    ----------
-    working_folder : str
-        The folder where the files will be created.
-    """
-    # Define file paths
-    scenes_to_skip_path = os.path.join(working_folder, '00_scenes_to_skip.log')
-    skip_cloud_masks_path = os.path.join(working_folder, '00_skip_cloud_masks.log')
-    skip_empty_items_path = os.path.join(working_folder, '00_dates_no_items.log')
-
-
-    # Create the empty text files only if they don't already exist
-    if not os.path.exists(scenes_to_skip_path):
-        with open(scenes_to_skip_path, 'w') as f:
-            pass  # Just create an empty file
-        print(f"Created file: {scenes_to_skip_path}")
-    else:
-        print(f"File already exists: {scenes_to_skip_path}")
-
-    if not os.path.exists(skip_cloud_masks_path):
-        with open(skip_cloud_masks_path, 'w') as f:
-            pass  # Just create an empty file
-        print(f"Created file: {skip_cloud_masks_path}")
-    else:
-        print(f"File already exists: {skip_cloud_masks_path}")
-        
-    if not os.path.exists(skip_empty_items_path):
-        with open(skip_empty_items_path, 'w') as f:
-            pass  # Just create an empty file
-        print(f"Created file: {skip_empty_items_path}")
-    else:
-        print(f"File already exists: {skip_empty_items_path}")
-        
-    return scenes_to_skip_path, skip_cloud_masks_path, skip_empty_items_path
 
 
 
-def scenes_skip(working_folder):
-    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_scenes_to_skip.log'))[0]
-    with open(txt_scenes_to_skip_path, "r") as file:
-        content = file.read().strip()
-        if content:
-            date_list = content.split('\n')
-        else:
-            date_list = []  # Empty file case
-
-    return date_list
 
 
 
-def cloud_mask_to_skip(working_folder):
-    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_skip_cloud_masks.log'))[0]
-    with open(txt_scenes_to_skip_path, "r") as file:
-        content = file.read().strip()
-        if content:
-            date_list = content.split('\n')
-        else:
-            date_list = []  # Empty file case
-
-    return date_list
 
 
 
-def empty_items_to_skip(working_folder):
-    txt_scenes_to_skip_path = glob.glob(os.path.join(working_folder, '00_dates_no_items.log'))[0]
-    with open(txt_scenes_to_skip_path, "r") as file:
-        content = file.read().strip()
-        if content:
-            date_list = content.split('\n')
-        else:
-            date_list = []  # Empty file case
-
-    return date_list
 
 
 
-def get_sensor(acquisition_name):
-    """Determines the satellite mission based on the acquisition name."""
-    acquisition_name = os.path.basename(acquisition_name)
-
-    if 'LT04' in acquisition_name:
-        return 'L4'
-    elif 'LT05' in acquisition_name or acquisition_name[:3] == 'LT5':
-        return 'L5'
-    elif 'LE07' in acquisition_name or acquisition_name[:3] == 'LE7':
-        return 'L7'
-    elif 'LC08' in acquisition_name or acquisition_name[:3] == 'LC8':
-        return 'L8'
-    elif 'LC09' in acquisition_name:
-        return 'L8'
-    elif 'S2' in acquisition_name:
-        return 'S2'
-    elif 'PRS' in acquisition_name:
-        return 'PRISMA'
-    else:
-        raise ValueError(f"Invalid acquisition name: {acquisition_name}")
 
 
 
-def define_bands(data, valid_mask, sensor):
-    """
-    Extracts significant bands and generates stretched versions for a given sensor.
-
-    Parameters
-    ----------
-    L_image : numpy.ndarray
-        3D matrix of shape (bands, height, width) representing the spectral image.
-
-    valid_mask : numpy.ndarray
-        2D boolean matrix indicating valid pixels.
-
-    sensor : str
-        Sensor type ("S2", "L8", "L5", "L7", "L4").
-
-    Returns
-    -------
-    dict
-        Dictionary containing significant bands and stretched bands for GREEN and SWIR.
-    """
-    # Define band indices for different sensors
-    band_mapping = {
-        'L4': {'GREEN': 1, 'SWIR': 4, 'NIR': 3, 'RED': 2, 'BLUE': 0},
-        'L5': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
-        'L7': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
-        'L8': {'GREEN': 'green', 'SWIR': 'swir16', 'NIR': 'nir08', 'RED': 'red', 'BLUE': 'blue'},
-        'S2': {'GREEN': 'B03', 'SWIR': 'B11', 'NIR': 'B8A', 'RED': 'B04', 'BLUE': 'B02'},
-        'PRISMA': {'GREEN': 19, 'SWIR': 122, 'NIR': 46, 'RED': 36, 'BLUE': 9}
-    }
-
-    # Check if the sensor is supported
-    if sensor not in band_mapping:
-        raise ValueError(f"Sensor '{sensor}' is not supported.")
-
-    # Get band indices for the current sensor
-    indices = band_mapping[sensor]
-
-    # Extract bands using the indices
-    bands = {name: np.squeeze(data.sel(band=idx).values) for name, idx in indices.items()}
-
-    return bands
 
 
-
-def select_band_names(sensor, suffix):
-    """
-    Returns the list of band names based on the sensor and suffix.
-    """
-    
-    # SCF
-    if sensor in ['L4', 'L5', 'L7'] and suffix == 'scf':
-        return ['blue', 'green', 'red', 'nir08', 'swir16', 'swir22']
-    
-    elif sensor == 'L8' and suffix == 'scf':
-        return ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22']
-    
-    elif sensor == 'S2' and suffix == 'scf':
-        return ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B11', 'B12']
-    
-    # CLOUDS
-    if sensor in ['L4', 'L5', 'L7'] and suffix == 'cloud':
-        return ['blue', 'green', 'red', 'nir08', 'swir16', 'lwir', 'swir22']
-    
-    elif sensor == 'L8' and suffix == 'cloud':
-        return ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'lwir11']
-    
-    elif sensor == 'S2' and suffix == 'cloud':
-        return ['B01', 'B02', 'B04', 'B05', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12']
-    
-    # all bands: not used anymore
-    elif sensor == 'L7' and suffix == 'scfT':
-        # return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6_VCID_1', 'B7']
-        return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
-
-    elif sensor == 'L8' and suffix == 'scfT':
-        #return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B10', 'B11']
-        return ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
-
-    elif sensor == 'S2' and suffix == 'scfT':
-        return ['B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B8A', 'B09', 'B10', 'B11', 'B12']
-    else:
-        # Graceful fallback with logging instead of exception
-        print(f"Warning: Unsupported sensor or suffix combination: sensor={sensor}, suffix={suffix}")
-        return []
 
 
 
@@ -435,83 +609,9 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-def define_datetime(scene_id, config):
-
-    # get sensor 
-    sensor = get_sensor(scene_id)
-
-    # Sentinel-2
-    if sensor == 'S2' and scene_id.split('_')[1] == 'MSIL1C':
-        
-        date = scene_id.split('_')[2].split('T')[0]
-        date_time_str = os.path.basename(scene_id).split('_')[2].split('T')[0] + \
-                        os.path.basename(scene_id).split('_')[2].split('T')[1]
-        date_time = datetime.strptime(date_time_str, '%Y%m%d%H%M%S')
-
-    elif sensor == 'S2' and scene_id.split('_')[1] == 'OPER':
-
-        date = scene_id.split('_')[7][1:].split('T')[0]
-        
-    elif sensor.sta
-
-
-    else:
-        try:
-            date = os.path.basename(scene_id).split('_')[3]
-        except:
-            date = os.path.basename(glob.glob(scene_id + os.sep + "*B1_toa.tif")[0]).split('_')[3]
-
-        # retrieve the MTL file from the STAC catalogue
-        date_time = get_scene_center_time(datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d'), 
-                                          extent_target=config["resampling_params"]['extent_target'], 
-                                          resolution=config["resampling_params"]['resolution'], 
-                                          epsg_target=config["resampling_params"]['epsg_target'], 
-                                          max_cc = config['max_cloudcover'], 
-                                          filter_by_geometry = True, 
-                                          shp=config['shapefile'], 
-                                          platform = config["satellite"].upper().replace("-", "_"), 
-                                          idList = [])
-
-    return date_time, date
 
 
 
-def get_hemisphere(raster_path):
-    """
-    Determines whether a raster is in the Northern or Southern Hemisphere
-    for any reference coordinate system (CRS).
-
-    Parameters:
-        raster_path (str): Path to the raster file.
-
-    Returns:
-        str: 'Northern Hemisphere', 'Southern Hemisphere', or 'Equator' 
-             if the raster spans the equator.
-    """
-    try:
-        with rasterio.open(raster_path) as raster:
-            # Transform the bounds to WGS84 (EPSG:4326)
-            bounds_wgs84 = transform_bounds(
-                raster.crs,  # Source CRS
-                "EPSG:4326",  # Target CRS
-                raster.bounds.left,
-                raster.bounds.bottom,
-                raster.bounds.right,
-                raster.bounds.top
-            )
-
-            # Extract the geographic bounds in WGS84
-            _, bottom, _, top = bounds_wgs84
-
-            # Determine the hemisphere
-            if top > 0 and bottom > 0:
-                return "N"
-            elif top < 0 and bottom < 0:
-                return "S"
-            else:
-                return "E"
-    except Exception as e:
-        return f"Error processing the raster: {e}"
 
 
 
@@ -581,14 +681,3 @@ def remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path):
     save_tif(scf_data, dem_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 
     
-
-
-
-
-
-
-
-
-
-
-
