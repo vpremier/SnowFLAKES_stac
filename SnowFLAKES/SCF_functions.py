@@ -9,20 +9,19 @@ Created on Tue Nov  5 16:31:29 2024
 import numpy as np
 import os
 import geopandas as gpd
-import glob
 import rasterio
-import pandas as pd
 import pickle
 from joblib import Parallel, delayed
 from rasterio.features import geometry_mask
-import rioxarray
 
 from sklearn import preprocessing
 from sklearn.svm import SVC
 from sklearn.metrics.pairwise import rbf_kernel
 
-from SnowFLAKES.training_collection import *
-from SnowFLAKES.utilities import *
+from SnowFLAKES.utilities import (
+    load_map,
+    save_tif
+)
 
 
 
@@ -51,110 +50,7 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     ))
 
 
-
-
-def compute_snow_sun_shadow_ratio(
-    shapefile_path,
-    data,
-    all_bands_image,
-    curr_aux_folder,
-    band_names=None,
-):
-    """
-    Compute median snow reflectance in sun and shadow training samples
-    and the corresponding sun/shadow ratio for each band.
-
-    Parameters
-    ----------
-    shapefile_path : str
-        Training shapefile path.
-    data : xarray.Dataset
-        Dataset used to derive transform and raster dimensions.
-    all_bands_image : np.ndarray
-        Image cube passed to build_feature_matrix().
-    curr_aux_folder : str
-        Auxiliary folder passed to build_feature_matrix().
-    band_names : list, optional
-        Names of spectral bands. If None, generic names are used.
-
-    Returns
-    -------
-    ratio_df : pandas.DataFrame
-        Columns:
-        - band
-        - median_sun
-        - median_shadow
-        - sun_shadow_ratio
-    """
-
-    # ------------------------------------------------------------------
-    # Read shapefile
-    # ------------------------------------------------------------------
-    shp = gpd.read_file(shapefile_path)
-
-    # ------------------------------------------------------------------
-    # Snow + Sun mask
-    # ------------------------------------------------------------------
-    mask_snow_sun = geometry_mask(
-        shp.loc[
-            (shp["value"] == 1) &
-            (shp["illum"] == 1),
-            "geometry"
-        ],
-        transform=data.rio.transform(),
-        invert=True,
-        out_shape=(data.sizes["y"], data.sizes["x"])
-    )
-
-    # ------------------------------------------------------------------
-    # Snow + Shadow mask
-    # ------------------------------------------------------------------
-    mask_snow_shadow = geometry_mask(
-        shp.loc[
-            (shp["value"] == 1) &
-            (shp["illum"] == 2),
-            "geometry"
-        ],
-        transform=data.rio.transform(),
-        invert=True,
-        out_shape=(data.sizes["y"], data.sizes["x"])
-    )
-
-    # ------------------------------------------------------------------
-    # Extract spectral values
-    # ------------------------------------------------------------------
-    snow_sun_training = build_feature_matrix(
-        all_bands_image,
-        mask_snow_sun,
-        curr_aux_folder
-    )
-
-    snow_shadow_training = build_feature_matrix(
-        all_bands_image,
-        mask_snow_shadow,
-        curr_aux_folder
-    )
-
-    # ------------------------------------------------------------------
-    # Median per band
-    # ------------------------------------------------------------------
-    median_sun = np.nanmedian(snow_sun_training, axis=0)
-    median_shadow = np.nanmedian(snow_shadow_training, axis=0)
-
-    # ------------------------------------------------------------------
-    # Sun / Shadow ratio
-    # ------------------------------------------------------------------
-    ratio = np.divide(
-        median_sun,
-        median_shadow,
-        out=np.full_like(median_sun, np.nan, dtype=float),
-        where=median_shadow > 0
-    )
-
-
-    return ratio
-    
-    
+   
 def model_training(scene_id, all_bands_image, data, shapefile_path, curr_aux_folder, gamma=None):
     gamma_range = np.logspace(-2, 2, 100)
 
@@ -217,7 +113,6 @@ def model_training(scene_id, all_bands_image, data, shapefile_path, curr_aux_fol
               decision_function_shape='ovo', cache_size=8000)
 
     svm.fit(Samples_train_normalized, class_array)
-    pred = svm.predict(Samples_train_normalized)
 
     svm_model = {'svmModel': svm, 'normalizer': normalizer, 'classes': class_array,
                  'trainings': training_array, 'SV': svm.support_vectors_}
@@ -249,15 +144,11 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
-    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
-    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
-    distance_idx = load_map(curr_aux_folder, '*distance.tif')
-    
 
+    
     # Load the SVM model
     svm_model = pickle.load(open(svm_model_filename, 'rb'), encoding='latin1')
 
-    SV = svm_model['SV']
     svm = svm_model['svmModel']
 
     min_score_ns = -1
@@ -308,17 +199,18 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
 
     # scf correction based on diff B NIR and shadow mask
 
-    pixels_to_correct = np.logical_and.reduce(
-        (valid_mask, diff_B_NIR > 0, diff_B_NIR < 0.06, shadow_mask == 1, SCF_map > 0, SCF_map < 50))
+    # pixels_to_correct = np.logical_and.reduce(
+    #     (valid_mask, diff_B_NIR > 0, diff_B_NIR < 0.06, shadow_mask == 1, SCF_map > 0, SCF_map < 50))
 
-    SCF_map[np.logical_and(valid_mask, SCF_map < 10)] = 0
 
-    SCF_map[pixels_to_correct] = 0
+    # SCF_map[pixels_to_correct] = 0
     SCF_map[cloud_mask == 1] = 205
     SCF_map[water_mask == 1] = 210
     SCF_map[water_mask == 255] = 210
-    SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
+    # SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
+    
 
+    
     valid_mask[np.logical_not(valid_mask)] = 255
 
     # save output tif file
@@ -329,64 +221,9 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
 
 
 
-def glaciers_svm(svmModel, svmMatrix):
-    return svmModel.predict(svmMatrix)
 
 
-
-def check_scf_results(scene_id, all_bands_image, FSC_SVM_map_path, shapefile_path, curr_aux_folder, k=5, n_closest=5):
-    # Define paths for NDSI and bands data
-    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-
-
-
-    # Load the SCF map and NDSI map
-    with rasterio.open(FSC_SVM_map_path) as scf_src:
-        scf_data = scf_src.read(1)  # Reading first band
-
-    with rasterio.open(NDSI_path) as ndsi_src:
-        ndsi_data = ndsi_src.read(1)  # Reading first band
-
-    # Identify points where SCF > 0 and NDSI < 0
-    valid_mask = (scf_data > 0) & (scf_data <= 100) & (ndsi_data < 0)
-
-    # Check if there are any valid points; exit if none
-    if np.sum(valid_mask) == 0:
-        print("No valid points found; exiting function.")
-        return shapefile_path  # Optionally return the original shapefile path without modification
-
-    print(np.sum(valid_mask))
-
-
-    # Use the representative pixel selection function to get new training samples
-    representative_pixels_mask = get_representative_pixels(all_bands_image,
-                                                           valid_mask,
-                                                           k=min(k, np.sum(valid_mask.flatten())),
-                                                           n_closest=n_closest).reshape(scf_data.shape)
-
-    # Load the original shapefile
-    shapefile = gpd.read_file(shapefile_path)
-
-    # Convert the representative pixels mask to points in the shapefile's CRS
-    new_samples = []
-    for row, col in np.argwhere(representative_pixels_mask == 1):
-        x, y = scf_src.xy(row, col)  # Get the coordinates
-        new_samples.append({'geometry': gpd.points_from_xy([x], [y])[0], 'value': 2})  # 2 for "no snow" label
-
-    # Add new "no snow" samples to the shapefile's GeoDataFrame
-    new_samples_gdf = gpd.GeoDataFrame(new_samples, crs=shapefile.crs)
-    updated_shapefile = gpd.GeoDataFrame(pd.concat([shapefile, new_samples_gdf], ignore_index=True))
-
-    print(f"Additional rows in updated shapefile: {len(updated_shapefile) - len(shapefile)}")
-
-    # Save the updated shapefile
-    updated_shapefile.to_file(shapefile_path)
-
-    return shapefile_path
-
-
-
-def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask):
+def mask_raster_with_glacier(results_glacier, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask):
     # Define output path
     output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
 
@@ -400,15 +237,19 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_pat
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     valid_mask = np.logical_not(no_data_mask)
     
-    mask = valid_mask & (cloud_mask==0) & (glacier_mask == 1)
+    ice = np.logical_and.reduce((valid_mask, 
+                                 cloud_mask==0, 
+                                 glacier_mask == 1, 
+                                 results_glacier["classification"] == 0,
+                                 fsc_data >0))
 
 
     # Apply mask: Set FSC values to NoData where glacier_mask is not 255
-    # fsc_data[glacier_map == 215] = thematic_map[glacier_map == 215]
+    fsc_data[ice] = 215
     # fsc_data[glacier_map == 100] = thematic_map[glacier_map == 100]
-    glacier_map[glacier_map == 1] = 215 
-    glacier_map[glacier_map == 2] = 100 
-    glacier_map[glacier_map == 3] = 0 
+    # glacier_map[glacier_map == 1] = 215 
+    # glacier_map[glacier_map == 2] = 100 
+    # glacier_map[glacier_map == 3] = 0 
 
     # mask = np.logical_and.reduce([
     #     fsc_data > 0,
@@ -417,7 +258,7 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_pat
     # ])
     
 
-    fsc_data[mask] = glacier_map[mask]
+    # fsc_data[mask] = glacier_map[mask]
 
     # Save the modified raster
     with rasterio.open(output_path, 'w', **meta) as dst:
@@ -425,83 +266,6 @@ def mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_pat
 
     print(f"Modified raster saved at: {output_path}")
     return output_path
-
-
-
-
-
-# to be updated : not used in the current version!!
-
-
-def glaciers_classifier(FSC_SVM_map_path, auxiliary_folder_path, glaciers_model_svm, curr_acquisition, Nprocesses=8,
-                        overwrite=False):
-    glaciers_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier_mask.tif'))[0]
-
-    emisphere = get_hemisphere(FSC_SVM_map_path)
-
-    bands_path = glob.glob(os.path.join(curr_acquisition, '*scf.vrt'))[0]
-
-    with rasterio.open(bands_path) as src:
-        bands = src.read()
-
-    with rasterio.open(glaciers_mask_path) as src:
-        glaciers_mask = src.read(1)  # Read the cloud mask (first band)
-
-    with rasterio.open(FSC_SVM_map_path) as src:
-        SCF_map = src.read(1)  # Read the cloud mask (first band)
-        profile = src.profile
-
-    # Load the SVM model
-    svm_dict = pickle.load(open(glaciers_model_svm, 'rb'), encoding='latin1')
-
-    valid_mask_glaciers = np.logical_and(glaciers_mask == 1, SCF_map <= 100)
-
-    scf_folder = os.path.dirname(FSC_SVM_map_path)
-    FSC_glaciers_SVM_map_path = os.path.join(scf_folder, os.path.basename(bands_path)[:-11] + '_SnowFLAKES_GL.tif')
-
-    # Check if the map file exists and overwrite if specified
-    if os.path.exists(FSC_glaciers_SVM_map_path) and not overwrite:
-        print(f"{FSC_glaciers_SVM_map_path} already exists. Skipping creation.")
-        return FSC_glaciers_SVM_map_path
-
-    print('Image classification...\n')
-
-    Image_array_to_classify = bands[:, valid_mask_glaciers].transpose()
-    normalizer = svm_dict['normalizer']
-    Samples_to_classify = normalizer.transform(Image_array_to_classify)
-
-    # Divide Samples_to_classify into blocks for parallel processing
-    samplesBlocks = np.array_split(Samples_to_classify, Nprocesses, axis=0)
-
-    # Calculate the score
-    glImage_arrayBlocks = Parallel(n_jobs=Nprocesses, verbose=10)(
-        delayed(glaciers_svm)(svm_dict['svmModel'], samplesBlocks[i]) for i in range(len(samplesBlocks))
-    )
-
-    glImage_array = np.concatenate(glImage_arrayBlocks, axis=0)
-
-    glImage_array[glImage_array == 1] = 100
-    glImage_array[glImage_array == 2] = 215
-    glImage_array[glImage_array == 3] = 0
-
-    SCF_map[valid_mask_glaciers] = glImage_array
-    SCF_map[valid_mask_glaciers] = glImage_array
-
-    # Write the SCF map to a file, overwriting if necessary
-    with rasterio.open(FSC_glaciers_SVM_map_path, 'w', **profile) as dst:
-        dst.write(SCF_map, 1)
-
-    print(f"SCF map saved to {FSC_glaciers_SVM_map_path}")
-    return FSC_glaciers_SVM_map_path
-
-
-
-
-
-
-
-
-
 
 
 

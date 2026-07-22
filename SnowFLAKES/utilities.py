@@ -18,7 +18,7 @@ import re
 from datetime import datetime
 import geopandas as gpd
 
-from stac.load_stac_usgs import get_scene_center_time
+from loading.load_stac_usgs import get_scene_center_time
 
 
 
@@ -435,47 +435,31 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-def define_datetime(sensor, acquisition_name, config):
-    from datetime import datetime
-    '''
-    Parameters
-    ----------
-    sensor : str
-        "S2","L8"....
-    acquisition_name : str
-        working folder name .
+def define_datetime(scene_id, config):
 
-    Returns
-    -------
-    date_time : datetime
-        example datetime.datetime(2022, 8, 2, 10, 26, 11).
-    date : str
-        yyyymmdd.
+    # get sensor 
+    sensor = get_sensor(scene_id)
 
-    '''
-    if sensor == 'S2' and os.path.basename(acquisition_name).split('_')[1] == 'MSIL1C':
-
-        date = os.path.basename(acquisition_name).split('_')[2].split('T')[0]
-        date_time_str = os.path.basename(acquisition_name).split('_')[2].split('T')[0] + \
-                        os.path.basename(acquisition_name).split('_')[2].split('T')[1]
+    # Sentinel-2
+    if sensor == 'S2' and scene_id.split('_')[1] == 'MSIL1C':
+        
+        date = scene_id.split('_')[2].split('T')[0]
+        date_time_str = os.path.basename(scene_id).split('_')[2].split('T')[0] + \
+                        os.path.basename(scene_id).split('_')[2].split('T')[1]
         date_time = datetime.strptime(date_time_str, '%Y%m%d%H%M%S')
 
-    elif sensor == 'S2' and os.path.basename(acquisition_name).split('_')[1] == 'OPER':
+    elif sensor == 'S2' and scene_id.split('_')[1] == 'OPER':
 
-        date = os.path.basename(acquisition_name).split('_')[7][1:].split('T')[0]
-
-    elif sensor == 'PRISMA':
-
-        date = os.path.basename(acquisition_name).split('_')[4][:-6]
-        date_time_str = os.path.basename(acquisition_name).split('_')[4]
-        date_time = datetime.strptime(date_time_str, '%Y%m%d%H%M%S')
+        date = scene_id.split('_')[7][1:].split('T')[0]
+        
+    elif sensor.sta
 
 
     else:
         try:
-            date = os.path.basename(acquisition_name).split('_')[3]
+            date = os.path.basename(scene_id).split('_')[3]
         except:
-            date = os.path.basename(glob.glob(acquisition_name + os.sep + "*B1_toa.tif")[0]).split('_')[3]
+            date = os.path.basename(glob.glob(scene_id + os.sep + "*B1_toa.tif")[0]).split('_')[3]
 
         # retrieve the MTL file from the STAC catalogue
         date_time = get_scene_center_time(datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d'), 
@@ -579,6 +563,10 @@ def remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path):
     
     swir = bands["SWIR"]
     green = bands["GREEN"]
+    
+    
+    # remove SCF lower than 10%
+    scf_data[scf_data < 10] = 0
 
     condition1 = np.logical_and.reduce((swir > 0.4,
                                 scf_data < 50,

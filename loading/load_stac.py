@@ -25,7 +25,7 @@ from affine import Affine
 import boto3
 import stackstac
 
-from stac.utils_stac import *
+from loading.utils_stac import *
 # from utils_stac import *
 
 

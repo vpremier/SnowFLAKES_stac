@@ -23,7 +23,7 @@ from datetime import datetime
 import rasterio as rio
 from osgeo import gdal
 
-from stac.utils_stac import *
+from loading.utils_stac import *
 # from utils_stac import *
 
 

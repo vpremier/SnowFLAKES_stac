@@ -6,20 +6,27 @@ Created on Fri Feb  6 12:02:12 2026
 @author: vpremier
 """
 
-import subprocess
 import json
 import os
 import pandas as pd
 import time
-import shutil
-import glob
 
-from stac import load_stac
-from stac import load_stac_usgs
-
-from utils import *
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
 from data_download.main import run_query_download
+
+from loading import (
+    load_stac, 
+    load_stac_usgs, 
+    load_sh
+)
+
+from utils import (
+    remove_glaciers,
+    get_dates_to_process,
+    load_with_retry,
+    save_false_color
+)
+
 
 
 
@@ -102,14 +109,14 @@ def run_workflow(date_start, date_end, config_path):
                     # Sentinel-2: STAC API from CDSE
                     load_stac.setup_cdse_credentials()
 
-                    data, scene_id = load_stac.convert_sentinel2_bands(outdir, 
-                                                                       date, 
-                                                                       resolution=resolution, 
-                                                                       extent_target=extent_target, 
-                                                                       epsg_target=epsg_target,
-                                                                       save = False,
-                                                                       shp=config['shapefile'],
-                                                                       exclude_tiles=config['exclude_tiles'])
+                    data, scene_id = load_sh.convert_sentinel2_bands(outdir, 
+                                                                    date, 
+                                                                    resolution=resolution, 
+                                                                    extent_target=extent_target, 
+                                                                    epsg_target=epsg_target,
+                                                                    save = False,
+                                                                    shp=config['shapefile'],
+                                                                    exclude_tiles=config['exclude_tiles'])
                     
                 elif config["satellite"].startswith("Landsat"):
                     # Landsat: USGS STAC
@@ -188,8 +195,8 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2020-06-15")
-    end = pd.Timestamp("2020-06-30")
+    start = pd.Timestamp("2020-01-01")
+    end = pd.Timestamp("2020-12-30")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI
@@ -222,18 +229,9 @@ if __name__ == "__main__":
             
 
 
-# remove auxiliary?
     
 # add layer uncertainty
 # guarda land cover
-
-
-    
-
-
-
-
-
 
 
     

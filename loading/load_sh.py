@@ -6,23 +6,28 @@ Created on Mon Jul  6 10:36:25 2026
 @author: vpremier
 """
 import os
+import numpy as np
 import logging
-import pickle
+from rasterio.enums import Resampling
+import rasterio as rio
+import re
 import boto3
+import time
+import geopandas as gpd
 from datetime import datetime, timedelta
+from shapely.geometry import box
+from pyproj import CRS
+
 from sentinelhub import (
-    CRS,
     BBox,
     DataCollection,
-    MimeType,
-    SentinelHubDownloadClient,
-    SentinelHubRequest,
     SHConfig,
 )
 import pystac_client
-import matplotlib.pyplot as plt
-from sh_datacube import load
+from loading.sh_datacube import load
+from shapely.geometry import mapping
 
+from loading.utils_stac import (open_image, get_bbox_wgs84)
 
 
 def convert_sentinel2_bands(outdir,
@@ -59,8 +64,10 @@ def convert_sentinel2_bands(outdir,
 
 
     # credentials: set up the configuration
-    session = boto3.Session(profile_name="cdse")
+    session = boto3.Session(profile_name="sentinelhub")
     creds = session.get_credentials().get_frozen_credentials()
+    
+    # create credentials here https://shapps.dataspace.copernicus.eu/dashboard/#/account/settings
     
     config = SHConfig()
     config.sh_client_id = creds.access_key
@@ -75,43 +82,6 @@ def convert_sentinel2_bands(outdir,
     cat.add_conforms_to("ITEM_SEARCH")
 
 
-
-
-    # # date
-    date = "2015-08-18"
-    start = datetime.strptime(date, "%Y-%m-%d")
-    end = start + timedelta(days=1)
-    
-    
-    # # bounding box
-    resolution = 50
-    epsg_target = 32719
-    extent_target = [366000, 6205000, 428500, 6342500]
-    
-    bbox = BBox(extent_target, epsg_target)
-    
-    bbox_4326 = bbox.transform(CRS.WGS84)
-    
-
-
-
-
-
-
-cube = load(
-    DataCollection.SENTINEL2_L1C,
-    bands=["B08", "B11", "B03"],
-    bbox=bbox,  # BBox in EPSG:3035 from the params above
-    time=(start, end),
-    resolution=50,
-    filter="eo:cloud_cover < 90",
-    config=config,
-).to_dataset(dim="band")
-# lazy: nothing downloaded yet, one request per timestamp
-
-computed = cube.compute(scheduler="threads", num_workers=16)
-
-
     # define target information (extent, resolution etc)
     if img4ext:
         print('Reading extent, resolution and epsg from an image..')
@@ -123,8 +93,8 @@ computed = cube.compute(scheduler="threads", num_workers=16)
     else:
         assert extent_target and resolution and epsg_target, \
             "Please specify the target extent, resolution and EPSG or enter the path to a target image"
-            
-
+              
+    
     # determine AOI bbox in wgs84
     if filter_by_geometry:
         print('Filtering STAC by geometry')
@@ -164,48 +134,28 @@ computed = cube.compute(scheduler="threads", num_workers=16)
                 }
             }
         
-        
-    elif idList:
-        print('Filtering STAC by input ID list')
-        # Looking for Sentinel-2 L1C
-        params = {
-            "collections": ["sentinel-2-l1c"],
-            "datetime": f"{date}",
-            "ids":idList,     
-        }
-
-    start = time.time()
-
+            
+    # date format
+    date_start = datetime.strptime(date, "%Y-%m-%d")
+    date_end = date_start + timedelta(days=1)
+    
+    # bounding box
+    bbox = BBox(extent_target, epsg_target) 
+    
     items = list(cat.search(**params).items_as_dicts())
-    print(f"Number of STAC items returned: {len(items)}")
     
-    
-    if exclude_tiles:
-        exclude_tiles = [f"MGRS-{t}" for t in exclude_tiles]
-        
-        filtered_items = [
-            item for item in items
-            if item['properties'].get('grid:code') not in exclude_tiles
-        ]
-        
-        items = filtered_items
-        print(f"Number of items after exclusion: {len(items)}")
-
-
     if len(items) == 0:
-
         return None, None
-    
-    # for Sentinel-2: needs to be changed in case of other sensors
-    bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
-             "B10", "B11", "B12", "B8A"]
-    
 
     # id of the scene 
     image_id = items[0]['id']
     
     print(f"Loading {image_id}")
-
+    
+    # for Sentinel-2: needs to be changed in case of other sensors
+    bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
+             "B10", "B11", "B12", "B8A"]
+    
     # Split by underscore
     parts = image_id.split("_")
     
@@ -221,40 +171,33 @@ computed = cube.compute(scheduler="threads", num_workers=16)
     logging.info(f"Processing {image_id}")                
     print("Processing %s " %image_id)
     
-        
+    
+    start = time.time()
+
     # create folder
     if save:
         os.makedirs(outdir, exist_ok=True)
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
-
+        
     try:
+        cube = load(
+            DataCollection.SENTINEL2_L1C,
+            bands=bands,
+            bbox=bbox,  # BBox in EPSG:3035 from the params above
+            time=(date_start, date_end),
+            resolution=50,
+            filter=f"eo:cloud_cover < {max_cc}",
+            config=config,
+        )
+        # lazy: nothing downloaded yet, one request per timestamp
     
-        data = stackstac.stack(
-            items=items,
-            bounds=extent_target,
-            epsg=epsg_target,
-            resolution=resolution,
-            assets=bands,
-            resampling=reproj_type,
-            xy_coords="center",
-            gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-                 {
-                     "GDAL_NUM_THREADS": -1,
-                     "GDAL_HTTP_UNSAFESSL": "YES",
-                     "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                     "AWS_VIRTUAL_HOSTING": "FALSE",
-                     "AWS_HTTPS": "YES"
-                 }
-                 ),
-             )
-    
+        data = cube.compute(scheduler="threads", num_workers=16)
+
         # Replace 0 with NaN
         data = data.where(data != 0, np.nan)
         
         # Group by day and compute mean
         data = data.groupby("time.day").max(dim="time", skipna=True)
-        
-
 
     except Exception as e:
         msg = f"Failed to load data for {merged_image_id}: {str(e)}"
@@ -262,8 +205,10 @@ computed = cube.compute(scheduler="threads", num_workers=16)
         print(msg)
         return    
     
+
+    
     #=== Extract info_src from xarray ===
-    transform = data.attrs['transform']
+    transform = data.rio.transform()
   
     width = len(data.x)    
     height = len(data.y) 
@@ -272,11 +217,13 @@ computed = cube.compute(scheduler="threads", num_workers=16)
     
     
     if calibration:
-        offset = -1000
-        if baseline >= 400:
-            data = (data + offset) * 0.0001
-        else:
-            raise ValueError("Old Sentinel-2 processing baseline (<0400) not supported")
+        data = data * 0.0001
+        # offset = -1000
+        # if baseline >= 400:
+        #     data = (data + offset) * 0.0001
+          
+        # else:
+        #     raise ValueError("Old Sentinel-2 processing baseline (<0400) not supported")
             
     data = data.where(data > 0)        
             

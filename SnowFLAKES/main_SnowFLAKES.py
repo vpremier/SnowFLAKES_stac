@@ -7,9 +7,7 @@ Created on Mon Sep 16 14:59:20 2024
 """
 import os
 import numpy as np
-import subprocess
 import shutil
-import glob
 from datetime import datetime as dt
 import time
 import geopandas as gpd
@@ -17,12 +15,13 @@ from scipy.ndimage import binary_dilation
 import rasterio
 
 from SnowFLAKES.auxiliary_folder_population import *
-from SnowFLAKES.utilities import *
+from SnowFLAKES.utilities import (
+    get_sensor)
 from SnowFLAKES.training_collection import *
 from SnowFLAKES.SCF_functions import *
+from SnowFLAKES.ice import run_snow_ice_classification
 
-
-from stac.load_stac import load_cdse_collection, convert_sentinel2_bands, setup_cdse_credentials
+from loading.load_stac import load_cdse_collection, convert_sentinel2_bands, setup_cdse_credentials
 from utils import load_with_retry
 
 
@@ -36,13 +35,12 @@ def run_snowflakes(config, data, scene_id):
     scene_folder = os.path.join(config['output_directory'], scene_id)
     os.makedirs(scene_folder, exist_ok=True)
     
-    satellite = config['satellite']
     sensor = get_sensor(scene_id)
     ow = config['overwrite']
     
     try:
         # Extract date and time from the folder name and sensor type
-        date_time, date = define_datetime(sensor, scene_id, config)
+        date_time, date = define_datetime(scene_id, config)
     except Exception:
         raise ValueError("Non valid scene id")
 
@@ -314,13 +312,25 @@ def run_snowflakes(config, data, scene_id):
                                                svm_model_filename, Nprocesses=1, overwrite=True)
                 
                 # check if there is snow around the glacier
-                if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
+                if classify_glaciers == 'yes': # and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
                     
-                    # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-                    model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
+                    
+                    snow_mask, ice_mask = get_pixels_ice(bands, curr_aux_folder, auxiliary_folder_path, FSC_SVM_map_path, no_data_mask)
+                    
+                    results_glacier = run_snow_ice_classification(
+                        data=data,
+                        snow_mask=snow_mask,
+                        ice_mask=ice_mask,
+                        output_folder=None,
+                        max_samples_per_class=10000,
+                        prediction_mask=None,
+                    )
 
-                    glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-                    # mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
+                    # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+                    # model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
+
+                    # glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+                    mask_raster_with_glacier(results_glacier, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
                     
                     
                 return
@@ -337,33 +347,29 @@ def run_snowflakes(config, data, scene_id):
                                        svm_model_filename, Nprocesses=1, overwrite=True)
         
         
-        # # repeat the training selection
-        # shapefile_path = collect_trainings(scene_id, 
-        #                                    all_bands_image, 
-        #                                    curr_aux_folder, 
-        #                                    auxiliary_folder_path,
-        #                                    SVM_folder_name, 
-        #                                    no_data_mask, 
-        #                                    bands,
-        #                                    FSC_SVM_map_path=FSC_SVM_map_path)
 
-        # svm_model_filename = model_training(scene_id, all_bands_image, data, 
-        #                                     shapefile_path, curr_aux_folder, gamma=None)
-
-        # Run SCF prediction
-        # FSC_SVM_map_path = SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask,
-        #                                svm_model_filename, Nprocesses=1, overwrite=True)
         
         remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path)
         
 
-        if classify_glaciers == 'yes' and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
+        if classify_glaciers == 'yes': # and snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
+            
+            snow_mask, ice_mask = get_pixels_ice(bands, curr_aux_folder, auxiliary_folder_path, FSC_SVM_map_path, no_data_mask)
+            
+            results_glacier = run_snow_ice_classification(
+                data=data,
+                snow_mask=snow_mask,
+                ice_mask=ice_mask,
+                output_folder=None,
+                max_samples_per_class=10000,
+                prediction_mask=None,
+            )
 
-            # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-            model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
+            # # glacier_map = glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+            # model_path = r'/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/training_checked/model_ice.p'
 
-            glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
-            mask_raster_with_glacier(glacier_map, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
+            # glacier_map = glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder, auxiliary_folder_path)
+            mask_raster_with_glacier(results_glacier, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask)
 
 
         print("Process completed. Condition met, and no points found where SCF > 0 and NDSI < 0.")

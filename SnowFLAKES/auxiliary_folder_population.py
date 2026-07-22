@@ -18,22 +18,25 @@ import glob
 from scipy.ndimage import distance_transform_edt
 from pyproj import Transformer
 from datetime import timezone
-from pathlib import Path
-import rioxarray
 from rasterio.crs import CRS
-from skimage.filters import threshold_otsu
 from omnicloudmask import predict_from_array
 from scipy.ndimage import binary_dilation
 
 
-from rasterio.transform import from_origin
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject, Resampling
 from rasterio.merge import merge
 
-from SnowFLAKES.utilities import *
+from SnowFLAKES.utilities import (
+    load_map,
+    build_valid_scene,
+    find_path,
+    save_tif, 
+    open_image,
+    get_sensor
+)
 
-from pysolar.solar import *
+from pysolar.solar import get_altitude, get_azimuth
 
 
 
@@ -96,7 +99,11 @@ def water_identifier(data, auxiliary_folder_path):
         return target_wb_mask_path
         
     # ---- get CRS and bounds from xarray ----
-    epsg_code = data.epsg.item()
+    try:
+        epsg_code = data.epsg.item()
+    except:
+        epsg_code = data.rio.crs.to_epsg()
+
     
     resolution = float(abs(data.x[1] - data.x[0]))
 
@@ -355,9 +362,6 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
 
 
 
-
-
-
 def create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder,
                          dilation_iterations=3):
 
@@ -407,162 +411,6 @@ def create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder,
     save_tif(mask, dem_path, path_cloud_mask, dtype=rasterio.uint8)
 
     return path_cloud_mask, cloud_cover_percentage
-
-
-         
-        
-def create_default_cloud_mask(data, path_cloud_mask):
-    """
-    Create a default cloud mask (all ones) matching the grid of an xarray dataset.
-
-    Parameters
-    ----------
-    data : xarray.DataArray or xarray.Dataset
-        Reference dataset with rioxarray metadata.
-    path_cloud_mask : str or Path
-        Output cloud mask path.
-    """
-
-    path_cloud_mask = Path(path_cloud_mask)
-
-    # Raster dimensions
-    height = data.sizes["y"]
-    width = data.sizes["x"]
-
-    # Create default mask (1 = clear)
-    cloud_mask = np.ones((height, width), dtype=np.uint8)
-
-    # Save raster using metadata from xarray
-    with rasterio.open(
-        path_cloud_mask,
-        "w",
-        driver="GTiff",
-        height=height,
-        width=width,
-        count=1,
-        dtype="uint8",
-        crs=CRS.from_epsg(data.epsg.item()),
-        transform=data.rio.transform(),
-    ) as dst:
-        dst.write(cloud_mask, 1)
-        
-        
-
-def S2_clouds_classifier(data, scene_id, curr_aux_folder, auxiliary_folder_path,
-                         no_data_value, cloud_prob, overwrite_cloud=0, 
-                         average_over=2, dilation_size=3):
-    from s2cloudless import S2PixelCloudDetector
-    """
-    Classifies clouds in a Sentinel-2 image.
-
-    Args:
-        stack_clouds_path: Path to the stack of cloud bands.
-        ref_img_path: Path to the stack of SCF bands.
-        cloud_prob: Cloud probability threshold.
-        overwrite_cloud: Whether to overwrite the existing cloud mask.
-        average_over: Size of the averaging window.
-        dilation_size: Size of the dilation operation.
-
-    Returns:
-        path_cloud_mask: Path to the generated cloud mask.
-        cloud_cover_percentage: Cloud cover percentage.
-    """
-    # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-
-    # output path
-    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
-    
-    # bands for cloud classification 
-    sensor = get_sensor(scene_id)
-    cloud_bands = select_band_names(sensor, 'cloud')
-
-
-    # load the bands
-    available_bands = list(data.coords["band"].values) 
-    
-    if "B10" not in available_bands:
-    
-        bands_data = []
-    
-        for b in cloud_bands:
-            if b in available_bands:
-                bands_data.append(np.squeeze(data.sel(band=b).values))
-            else:
-                # Fill missing band (e.g. B10) with zeros
-                shape = data.sel(band=available_bands[0]).shape
-                bands_data.append(np.squeeze(np.zeros(shape)))
-        
-        cloud_bands_image = np.stack(bands_data, axis=0)
-        cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
-
-    
-    else:
-            
-        cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
-        cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
-        
- 
-    
-    
-    temporary_cloud_mask_path = path_cloud_mask.replace('.tif', '60m.tif')
-
-    if not os.path.exists(temporary_cloud_mask_path):
-        
-        n_bands, width, height = cloud_bands_image.shape
-        
-        # Convert to (H, W, C)
-        cloud_bands_image = np.transpose(cloud_bands_image, (1, 2, 0))
-        
-        # Create stack (batch, W, H, bands)
-        Stack_to_classify = np.zeros((1, width, height, n_bands))
-        
-        Stack_to_classify[0] = cloud_bands_image
-        Stack_to_classify[0, :, :, :][cloud_bands_image[:, :, 0] == 255] = 0
-        
-        print("Bands for cloud classification ready...")
-
-        try:
-            cloud_detector = S2PixelCloudDetector(threshold=cloud_prob, average_over=average_over,
-                                                  dilation_size=dilation_size)
-            cloud_mask = cloud_detector.get_cloud_masks(np.array(Stack_to_classify)) + 1
-
-            cloud_cover_percentage = np.sum(cloud_mask[0, :, :] == 2) / \
-                                     (np.shape(cloud_mask[0, :, :])[0] * np.shape(cloud_mask[0, :, :])[1])
-
-            save_tif(cloud_mask[0, :, :], dem_path, temporary_cloud_mask_path, dtype=rasterio.uint8)
-  
-        except Exception as e:
-            print(f"Error during cloud classification: {e}")
-            # Handle the error appropriately, e.g., log it or raise an exception
-
-    if not os.path.exists(path_cloud_mask) or overwrite_cloud == 1:
-        
-        resolution = (data.x[1]-data.x[0]).item()
-
-        E_min = float(data.x.min() - resolution/2)
-        E_max = float(data.x.max() + resolution/2)
-        N_min = float(data.y.min() - resolution/2)
-        N_max = float(data.y.max() + resolution/2)
-
-
-        cmd = 'gdalwarp -te ' + ' '.join((str(E_min), str(N_min), str(E_max), str(N_max))) + \
-              ' -r nearest -tr ' + ' '.join((str(resolution), '-' + str(resolution))) + ' ' + ' '.join(
-            (temporary_cloud_mask_path, path_cloud_mask))
-        os.system(cmd)
-        clud_tot = open_image(path_cloud_mask)[0]
-
-        cloud_cover_percentage = np.sum(clud_tot[:, :] == 2) / \
-                                 (np.shape(clud_tot[:, :])[0] * np.shape(clud_tot[:, :])[1])
-
-        os.remove(temporary_cloud_mask_path)
-    else:
-        cloud_mask = open_image(path_cloud_mask)[0]
-
-        cloud_cover_percentage = np.sum(cloud_mask == 2) / \
-                                 (np.shape(cloud_mask)[0] * np.shape(cloud_mask)[1])
-
-    return path_cloud_mask, cloud_cover_percentage;
 
 
 
@@ -662,6 +510,11 @@ def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder,
     height = data.sizes["y"]
     width = data.sizes["x"]
     
+    try:
+        crs = CRS.from_epsg(data.epsg.item())
+    except:
+        crs = data.rio.crs
+        
     # Save raster using metadata from xarray
     with rasterio.open(
         output_path,
@@ -671,7 +524,7 @@ def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder,
         width=width,
         count=1,
         dtype="float32",
-        crs=CRS.from_epsg(data.epsg.item()),
+        crs=crs,
         transform=data.rio.transform(),
     ) as dst:
         dst.write(idx_out, 1)
@@ -715,8 +568,11 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
     N_min = float(data.y.min() - resolution)
     N_max = float(data.y.max())
     
-    epsg_code = data.epsg.item()
-
+    try:
+        epsg_code = data.epsg.item()
+    except:
+        epsg_code = data.rio.crs.to_epsg()
+        
     # Transform the coordinates to WGS84
     transformer = Transformer.from_crs(f"epsg:{epsg_code}", "epsg:4326", always_xy=True)
     central_E = E_min + (E_max - E_min) / 2
@@ -1067,9 +923,7 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
 
         /path/to/scene/auxiliary/S2A_MSIL2A_20240315T104031_index_of_distance.tif
     """
-    
-    sensor = get_sensor(scene_id)
-    
+        
     # Load DEM
     dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
     dem = open_image(dem_path)[0]
@@ -1206,127 +1060,6 @@ def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
                        img_info['projection'])
 
     return target_wb_mask_path
-
-
-
-def landsat_cloud_classifier(data, scene_id, no_data_value, curr_aux_folder,
-                             auxiliary_folder_path, valid_mask, Nprocesses=8,
-                             dilate_iterations=5):
-    from xgboost import XGBClassifier
-    import pickle
-    import numpy as np
-    import rasterio
-    from rasterio.transform import from_bounds
-    from rasterio.features import shapes
-    from skimage.morphology import binary_erosion, binary_dilation, disk
-    from joblib import Parallel, delayed
-    import glob
-    import os
-    
-
-    # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-
-    # output path
-    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
-    
-    # bands for cloud classification 
-    sensor = get_sensor(scene_id)
-    cloud_bands = select_band_names(sensor, 'cloud')
-
-    cloud_bands_image = np.squeeze(data.sel(band=cloud_bands).values)
-    cloud_bands_image[cloud_bands_image == no_data_value] = np.nan
-
-    # Select model based on sensor
-    # Get the directory of the current script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if sensor == 'L7':
-        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-7_cloud_model_xgboost.p')
-    elif sensor == 'L8':
-        model_filepath = os.path.join(script_dir, 'Aux_files', 'Landsat-8_9_cloud_model_xgboost8.p')
-
-    
-    # Load the XGBoost model and associated data
-    with open(model_filepath, 'rb') as model_file:
-        svm_dict = pickle.load(model_file)
-    xgboost_model = svm_dict['xgboostModel']
-    normalizer = svm_dict['normalizer']
-    
-    if sensor == 'L7':
-        new_names = ['blue', 'green', 'red', 'nir08', 'swir16', 'lwir', 'swir22']
-    elif sensor == 'L8':
-        new_names = ['coastal', 'blue', 'green', 'red', 'nir08', 'swir16', 'swir22', 'lwir11']
-    
-    svm_dict['feature_names'] = new_names
-    feature_names = svm_dict['feature_names']
-
-    # Create mapping from feature name -> band index
-    band_map = {name: i for i, name in enumerate(cloud_bands)}
-    
-    # Get indices for requested feature names
-    band_indices = [band_map[name] for name in feature_names]
-    
-    # Extract features
-    features = np.column_stack([
-        cloud_bands_image[i][valid_mask]
-        for i in band_indices
-    ])
-
-    # Normalize features
-    features = np.nan_to_num(features)
-    features = normalizer.transform(features)
-
-    # Split features for parallel processing
-    feature_blocks = np.array_split(features, Nprocesses)
-
-    # Classify in parallel using XGBoost
-    def classify_block(block):
-        return xgboost_model.predict(block)
-
-    predictions_blocks = Parallel(n_jobs=Nprocesses, verbose=10)(
-        delayed(classify_block)(block) for block in feature_blocks
-    )
-    predictions = np.concatenate(predictions_blocks) + 1  # Adjust class indices
-
-    # Create the output raster
-    class_map = np.zeros((data.sizes['y'], data.sizes['x']), dtype='uint8')
-    class_map[valid_mask] = predictions
-
-    # Invert class_map values (1 ↔ 2)
-    class_map[class_map == 1] = 3  # Temporary placeholder
-    class_map[class_map == 2] = 1
-    class_map[class_map == 3] = 2
-
-    # Apply erosion and dilation
-    # Apply erosion
-    print("Applying morphological operations...")
-    struct_element = disk(2)  # Structuring element for erosion and dilation
-    eroded_map = binary_erosion(class_map == 2, footprint=struct_element).astype(np.uint8)
-
-    # Apply dilation iteratively
-    dilated_map = eroded_map
-    for _ in range(dilate_iterations):
-        dilated_map = binary_dilation(dilated_map, footprint=struct_element).astype(np.uint8)
-
-    # Update class_map with morphological operations
-    class_map[class_map > 0] = dilated_map[class_map > 0] * 2
-    class_map = np.nan_to_num(class_map, nan=0).astype(np.uint8)
-    class_map[class_map == 0] = 1
-    
-    save_tif(class_map, dem_path, path_cloud_mask, dtype=rasterio.uint8)
-    
-
-
-    clud_tot = open_image(path_cloud_mask)[0]
-
-    cloud_cover_percentage = np.sum(clud_tot[:, :] == 2) / \
-                             (np.shape(clud_tot[:, :])[0] * np.shape(clud_tot[:, :])[1])
-
-    return path_cloud_mask, cloud_cover_percentage
-
-
-
-
 
 
 

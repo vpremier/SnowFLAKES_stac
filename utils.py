@@ -162,13 +162,18 @@ def save_false_color(wd, bands, ds):
     # Get raster metadata from dataset
     height, width = ds.sizes['y'], ds.sizes['x']
 
+    try: 
+        crs = ds.rio.crs
+    except:
+        crs = CRS.from_epsg(ds.epsg.item())
+        
     meta = {
         "driver": "GTiff",
         "height": height,
         "width": width,
         "count": 3,
         "dtype": rgb.dtype,
-        "crs": CRS.from_epsg(ds.epsg.item()),
+        "crs": crs,
         "transform": ds.rio.transform()
     }
 

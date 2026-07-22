@@ -45,6 +45,7 @@ from sentinelhub import (
     SHConfig,
 )
 from sentinelhub.data_collections_bands import Band
+from sentinelhub.constants import ResamplingType
 
 # Mapping from a numpy-ish "rank" to the Sentinel Hub output ``sampleType`` and
 # the numpy dtype the decoded array will have. Ordered from smallest to largest;
@@ -216,6 +217,8 @@ def load(
     filter_lang: str = "cql2-text",
     config: SHConfig | None = None,
     catalog: SentinelHubCatalog | None = None,
+    upsampling=ResamplingType.BILINEAR,
+    downsampling=ResamplingType.BILINEAR,
 ) -> xr.DataArray:
     """Build a lazy, dask-backed datacube from the Sentinel Hub Process API.
 
@@ -279,6 +282,8 @@ def load(
                 SentinelHubRequest.input_data(
                     data_collection=data_collection,
                     time_interval=(day_str, day_str),
+                    upsampling=upsampling,
+                    downsampling=downsampling,
                 )
             ],
             responses=[SentinelHubRequest.output_response("default", MimeType.TIFF)],
