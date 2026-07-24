@@ -208,11 +208,11 @@ def run_workflow(date_start, date_end, config_path):
                             shutil.rmtree(scene_aux_folder)
                 
             except Exception as e:
-                print(f"Error processing {scene_id} on date {date}: {e}")
+                print(f"Error processing date {date}: {e}")
                 failed_dates.append(date)
                 
                 with open(log_file, "a") as f:
-                    f.write(f"{date},{scene_id},{str(e)}\n")
+                    f.write(f"{date},{str(e)}\n")
                     
                     
           
@@ -229,7 +229,7 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2015-01-01")
+    start = pd.Timestamp("2015-08-01")
     end = pd.Timestamp("2017-01-10")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
