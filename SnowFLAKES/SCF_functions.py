@@ -20,7 +20,12 @@ from sklearn.metrics.pairwise import rbf_kernel
 
 from SnowFLAKES.utilities import (
     load_map,
-    save_tif
+    save_tif,
+    get_sensor,
+    select_band_names,
+    valid_mask,
+    create_folder,
+    define_bands
 )
 
 
@@ -51,7 +56,20 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
 
 
    
-def model_training(scene_id, all_bands_image, data, shapefile_path, curr_aux_folder, gamma=None):
+def model_training(data, scene_id, shapefile_path, curr_aux_folder,
+                   no_data_value, gamma=None):
+    
+
+    # load bands used for SCF retrieval
+    sensor = get_sensor(scene_id)
+    all_bands = select_band_names(sensor, 'scf') 
+    selected_data = data.sel(band=all_bands)
+    
+    validMask = valid_mask(data, no_data_value=no_data_value)
+
+    all_bands_image = np.squeeze(selected_data.where(validMask, no_data_value).values)
+
+
     gamma_range = np.logspace(-2, 2, 100)
 
     # Load the shapefile
@@ -130,20 +148,44 @@ def hyp_disatance(svmModel, svmMatrix):
 
 
 
-def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, no_data_mask, svm_model_filename,
-                Nprocesses=8, overwrite=False):
+def SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=8, overwrite=False):
+    
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
+
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # No data value
+    no_data_value = config['no_data_value']
+    if no_data_value is None or 'nan' in str(no_data_value).lower():
+        no_data_value = np.nan
+    else:
+        no_data_value = float(no_data_value)
+        
+        
+    # load bands used for SCF retrieval
+    sensor = get_sensor(scene_id)
+    all_bands = select_band_names(sensor, 'scf') 
+    selected_data = data.sel(band=all_bands)
+    
+    validMask = valid_mask(data, no_data_value=no_data_value)
+
+    all_bands_image = np.squeeze(selected_data.where(validMask, no_data_value).values)
     
     
-    # subdirectory SCF
-    scf_folder = curr_aux_folder.replace('auxiliary', 'SCF')
     
     # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+    dem_path = os.path.join(auxiliary_folder, "DEM.tif")
 
     
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
 
     
     # Load the SVM model
@@ -154,8 +196,7 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     min_score_ns = -1
     max_score_s = 1
 
-    valid_mask = np.logical_not(no_data_mask)
-    FSC_SVM_map_path = os.path.join(scf_folder, f'{scene_id}_SnowFLAKES.tif')
+    FSC_SVM_map_path = os.path.join(scene_folder, f'{scene_id}_SnowFLAKES.tif')
 
     # Check if the map file exists and overwrite if specified
     if os.path.exists(FSC_SVM_map_path) and not overwrite:
@@ -167,7 +208,7 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     print('Image classification...\n')
     Image_array_to_classify = build_feature_matrix(
         all_bands_image,
-        valid_mask,
+        validMask,
         curr_aux_folder
     )
     
@@ -185,8 +226,8 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     )
 
     scoreImage_array = np.concatenate(scoreImage_arrayBlocks, axis=0)
-    Score_map = 255 * np.ones(np.shape(valid_mask)).astype(float)
-    Score_map[valid_mask] = scoreImage_array.flatten()
+    Score_map = 255 * np.ones(np.shape(validMask)).astype(float)
+    Score_map[validMask] = scoreImage_array.flatten()
 
     scoreImage_array[scoreImage_array < min_score_ns] = min_score_ns
     scoreImage_array[scoreImage_array > max_score_s] = max_score_s
@@ -194,24 +235,16 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
     SCF_Image_array = (scoreImage_array * 50 + 50).astype('uint8')
 
     # Create the SCF map
-    SCF_map = 255 * np.ones(np.shape(valid_mask))
-    SCF_map[valid_mask] = SCF_Image_array.flatten()
-
-    # scf correction based on diff B NIR and shadow mask
-
-    # pixels_to_correct = np.logical_and.reduce(
-    #     (valid_mask, diff_B_NIR > 0, diff_B_NIR < 0.06, shadow_mask == 1, SCF_map > 0, SCF_map < 50))
+    SCF_map = 255 * np.ones(np.shape(validMask))
+    SCF_map[validMask] = SCF_Image_array.flatten()
 
 
-    # SCF_map[pixels_to_correct] = 0
     SCF_map[cloud_mask == 1] = 205
+    SCF_map[cloud_mask == 2] = 205
     SCF_map[water_mask == 1] = 210
     SCF_map[water_mask == 255] = 210
-    # SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
-    
 
-    
-    valid_mask[np.logical_not(valid_mask)] = 255
+    SCF_map[np.logical_not(validMask)] = 255
 
     # save output tif file
     save_tif(SCF_map, dem_path, FSC_SVM_map_path, dtype=rasterio.uint8)
@@ -223,7 +256,34 @@ def SCF_dist_SV(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_pat
 
 
 
-def mask_raster_with_glacier(results_glacier, FSC_SVM_map_path, auxiliary_folder_path, curr_aux_folder, no_data_mask):
+def mask_raster_with_glacier(scene_id, data, config, results_glacier):
+    
+
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
+
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # No data value
+    no_data_value = config['no_data_value']
+    if no_data_value is None or 'nan' in str(no_data_value).lower():
+        no_data_value = np.nan
+    else:
+        no_data_value = float(no_data_value)
+    
+    validMask = valid_mask(data, no_data_value=no_data_value)
+
+
+    # Load masks and maps
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    fsc_data, FSC_SVM_map_path = load_map(scene_folder, '*SnowFLAKES.tif', return_path=True)
+        
     # Define output path
     output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
 
@@ -232,12 +292,8 @@ def mask_raster_with_glacier(results_glacier, FSC_SVM_map_path, auxiliary_folder
         meta = src.meta.copy()
         fsc_data = src.read(1)  # Read first band
 
-        
-    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    valid_mask = np.logical_not(no_data_mask)
     
-    ice = np.logical_and.reduce((valid_mask, 
+    ice = np.logical_and.reduce((validMask, 
                                  cloud_mask==0, 
                                  glacier_mask == 1, 
                                  results_glacier["classification"] == 0,

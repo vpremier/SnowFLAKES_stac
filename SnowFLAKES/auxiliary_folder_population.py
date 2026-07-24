@@ -7,7 +7,7 @@ Created on Mon Sep 16 17:39:26 2024
 """
 
 import os
-import logging
+import shutil
 from osgeo import gdal, osr
 import geopandas as gpd
 import numpy as np
@@ -22,6 +22,7 @@ from rasterio.crs import CRS
 from omnicloudmask import predict_from_array
 from scipy.ndimage import binary_dilation
 
+from pysolar.solar import get_altitude, get_azimuth
 
 from rasterio.transform import from_bounds
 from rasterio.warp import reproject, Resampling
@@ -32,36 +33,140 @@ from SnowFLAKES.utilities import (
     build_valid_scene,
     save_tif, 
     open_image,
-    get_sensor
+    get_sensor,
+    valid_mask,
+    create_folder,
+    define_bands,
+    define_datetime,
+    create_log
 )
 
-from pysolar.solar import get_altitude, get_azimuth
+
+from loading.load_stac import (
+    load_cdse_collection,
+    setup_cdse_credentials,
+)
 
 
 
 
+def create_omnicloudmask(data, scene_id, auxiliary_folder, curr_aux_folder,
+                         no_data_value = np.nan, dilation_iterations=3):
+    """Generate and save an OmniCloudMask cloud-classification raster."""
+    if dilation_iterations < 0:
+        raise ValueError("dilation_iterations must be non-negative")
+
+    sensor = get_sensor(scene_id)
+    dem_path = os.path.join(auxiliary_folder, "DEM.tif")
+    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
+    os.makedirs(curr_aux_folder, exist_ok=True)
+
+    if sensor == 'S2':
+        input_array = np.squeeze(
+            data.sel(band=["B04", "B03", "B8A"]).values
+        ).astype(np.float32)
+
+    elif sensor in ['L5', 'L7', 'L8']:
+        input_array = np.squeeze(
+            data.sel(band=["red", "green", "nir08"]).values
+        ).astype(np.float32)
+    else:
+        raise ValueError(f"Cloud masking is not supported for sensor '{sensor}'")
+
+    mask = predict_from_array(input_array, no_data_value=no_data_value)
+    mask = np.squeeze(mask)
+
+    # -------------------------
+    # Dilate only thick clouds
+    # -------------------------
+    thick_cloud = (mask == 1)
+
+    if dilation_iterations == 0:
+        dilated = thick_cloud
+    else:
+        dilated = binary_dilation(
+            thick_cloud,
+            iterations=dilation_iterations
+        )
+
+    # Assign only newly dilated pixels to class 1
+    mask[dilated] = 1
+
+    # cloud cover given by thick and thin clouds
+    cloud_cover_percentage = (np.sum(mask == 1) + np.sum(mask == 2))/ mask.size
+
+    save_tif(mask, dem_path, path_cloud_mask, dtype=rasterio.uint8)
+
+    return path_cloud_mask, cloud_cover_percentage
+
+
+
+def spectral_idx_computer(data, B1, B2, idx_name, curr_aux_folder,
+                          output_filename, no_data_value=np.nan, B3=None, B4=None):
+    """Compute, save, and return a spectral index raster."""
+    validMask = valid_mask(data, no_data_value=no_data_value)
+
+    calculations = {
+        'normDiff': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2),
+        'shad_idx': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2) / B1,
+        'band_diff': lambda B1, B2, B3, B4: B1 - B2,
+        'EVI': lambda B1, B2, B3, B4: 2.5 * (B1 - B2) / (B1 + 2.4 * B2 + 1),
+        'NDSIplus': lambda B1, B2, B3, B4: 2 * (B1 + B2 - B3 - B4) / (B1 + B2 + B3 + B4),
+        'idx6': lambda B1, B2, B3, B4: 2 * (2 * B1 - B2 - B3) / (2 * B1 + B2 + B3),
+        'bandRatioGlaciers': lambda B1, B2, B3, B4: B1 / B2
+
+    }
+
+    if idx_name not in calculations:
+        raise ValueError(f"Index '{idx_name}' is not supported.")
+    if idx_name == 'idx6' and B3 is None:
+        raise ValueError("Index 'idx6' requires B3.")
+    if idx_name == 'NDSIplus' and (B3 is None or B4 is None):
+        raise ValueError("Index 'NDSIplus' requires B3 and B4.")
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        idx_out = np.asarray(calculations[idx_name](B1, B2, B3, B4), dtype=np.float32)
+
+    if idx_out.shape != validMask.shape:
+        raise ValueError(
+            f"Index shape {idx_out.shape} does not match valid-mask shape {validMask.shape}."
+        )
+
+    idx_out[~validMask | ~np.isfinite(idx_out)] = no_data_value
+
+    os.makedirs(curr_aux_folder, exist_ok=True)
+    output_path = os.path.join(curr_aux_folder, output_filename)
+    height = data.sizes["y"]
+    width = data.sizes["x"]
+
+    try:
+        crs = CRS.from_epsg(int(data.epsg.item()))
+    except (AttributeError, TypeError, ValueError):
+        crs = data.rio.crs
+
+    with rasterio.open(
+        output_path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=1,
+        dtype="float32",
+        nodata=no_data_value,
+        crs=crs,
+        transform=data.rio.transform(),
+    ) as dst:
+        dst.write(idx_out, 1)
+
+    print(f"Spectral index {idx_name} saved at {output_path}")
+    return idx_out
 
 
 
 def water_identifier(data, auxiliary_folder_path):
-    '''
-    This function cut the water mask from the copernicus on the extent given by a ref image
-    https://global-surface-water.appspot.com/download
+    """Generate and save a water mask aligned with the input scene."""
+    print("Generating water mask...")
 
-
-    Parameters
-    ----------
-    ref_img_path : str
-        path from a refernce image to cut water mask on .
-    ancillary : bool, optional
-        Presnce of ancillry folder, to store or not there the water mask. The default is False.
-
-    Returns
-    -------
-    target_wb_mask_path : str
-        water mask path.
-
-    '''
     # Load DEM
     dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
     
@@ -200,27 +305,14 @@ def water_identifier(data, auxiliary_folder_path):
     
     # Save result
     save_tif(dst, dem_path, target_wb_mask_path, dtype=rasterio.uint8)
+    print(f"Water mask saved at {target_wb_mask_path}")
 
     return target_wb_mask_path
 
 
 
 def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
-    """
-    Generates a glacier mask raster file from a shapefile and water mask.
-
-    Parameters
-    ----------
-    external_glacier_mask_path : str
-        Path to the shapefile containing glacier outlines.
-    water_mask_path : str
-        Path to the water mask raster.
-
-    Returns
-    -------
-    str
-        Path to the generated glacier mask raster file.
-    """
+    """Generate a glacier mask clipped to the water-mask extent."""
     print("Generating glacier mask...")
 
     # Define output paths
@@ -289,31 +381,8 @@ def glacier_mask_cutting(external_glacier_mask_path, water_mask_path):
 
 
 
-def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', overwrite=False):
-    '''
-    Calculate slope and aspect from an input DEM.
-
-    Parameters
-    ----------
-    dem_path : str
-        Path to the existing DEM file.
-    outdir : str
-        Output directory where the slope and aspect files will be saved.
-    resolution : float
-        Output resolution.
-    reproj_type : str, optional
-        GDAL resampling method for reprojection (e.g., 'bilinear', 'cubic'). The default is 'cubic'.
-    overwrite : bool, optional
-        If True, overwrite existing slope and aspect files. The default is False.
-
-
-    Returns
-    -------
-    slopePath : str
-        Path to the saved slope file.
-    aspectPath : str
-        Path to the saved aspect file.
-    '''
+def calc_slope_aspect(dem_path, auxiliary_folder_path, overwrite=False):
+    """Generate slope and aspect rasters from a DEM."""
 
     slopePath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('DEM.tif', 'slope.tif'))
     aspectPath = os.path.join(auxiliary_folder_path, os.path.basename(dem_path).replace('DEM.tif', 'aspect.tif'))
@@ -340,204 +409,8 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, reproj_type='bilinear', o
 
 
 
-def create_omnicloudmask(data, scene_id, auxiliary_folder_path, curr_aux_folder,
-                         dilation_iterations=3):
-
-    # get sensor
-    sensor = get_sensor(scene_id)
-
-    # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-
-    # output path
-    path_cloud_mask = os.path.join(curr_aux_folder, f'{scene_id}_cloud_Mask.tif')
-
-    # Input: (3, height, width) array with Red, Green, NIR bands
-    if sensor == 'S2':
-        input_array = np.squeeze(
-            data.sel(band=["B04", "B03", "B8A"]).values
-        ).astype(np.float32)
-
-    elif sensor in ['L5', 'L7', 'L8']:
-        input_array = np.squeeze(
-            data.sel(band=["red", "green", "nir08"]).values
-        ).astype(np.float32)
-
-    # Output:
-    # 0 = Clear
-    # 1 = Thick Cloud
-    # 2 = Thin Cloud
-    # 3 = Cloud Shadow
-    mask = predict_from_array(input_array, no_data_value=np.nan)
-    mask = np.squeeze(mask)
-
-    # -------------------------
-    # Dilate only thick clouds
-    # -------------------------
-    thick_cloud = (mask == 1)
-
-    dilated = binary_dilation(
-        thick_cloud,
-        iterations=dilation_iterations
-    )
-
-    # Assign only newly dilated pixels to class 1
-    mask[dilated] = 1
-
-    cloud_cover_percentage = np.sum(mask == 1) / mask.size
-
-    save_tif(mask, dem_path, path_cloud_mask, dtype=rasterio.uint8)
-
-    return path_cloud_mask, cloud_cover_percentage
-
-
-
-def generate_no_data_mask(L_image, sensor, no_data_value=np.nan):
-    """
-    Generates a no-data mask for a given image based on the sensor.
-
-    Args:
-        L_image: The input image as a NumPy array.
-        sensor: The sensor type (e.g., "L5", "L7").
-        no_data_value: The value representing no data in the image.
-
-    Returns:
-        The generated no-data mask as a NumPy boolean array.
-    """
-
-    if np.isnan(no_data_value):
-        if sensor == "L5":
-            no_data_mask = (np.isnan(L_image[5, :, :]) | np.isnan(L_image[0, :, :])).astype(bool)  #
-            no_data_mask = np.any(np.isnan(L_image), axis=0)
-        elif sensor == "L7":
-            # no_data_mask = (np.isnan(L_image[0, :, :]) | np.isnan(L_image[np.max(np.shape(L_image)[0] - 1), :, :]) | np.isnan(L_image[6, :, :])).astype(bool)
-            no_data_mask = np.any(np.isnan(L_image), axis=0)
-        else:
-            # no_data_mask = (np.isnan(L_image[0, :, :]) | np.isnan(L_image[np.max(np.shape(L_image)[0] - 1), :, :])).astype(bool)
-            no_data_mask = np.any(np.isnan(L_image), axis=0)
-    else:
-        # Handle other no-data values if needed
-        raise NotImplementedError("Handling of non-NaN no-data values is not implemented yet.")
-
-    valid_mask = np.logical_not(no_data_mask)
-
-    return no_data_mask, valid_mask
-
-
-
-def spectral_idx_computer(B1, B2, idx_name, no_data_mask, curr_aux_folder, 
-                          sensor, output_filename, data, B3=None, B4=None):
-    """
-    Computes a spectral index and saves the result in the specified folder.
-
-    Parameters
-    ----------
-    B1, B2 : numpy.ndarray
-        Input bands used to calculate the spectral index.
-
-    idx_name : str
-        Name of the spectral index (e.g., 'NDSI', 'NDVI', 'shad_idx').
-
-    no_data_mask : numpy.ndarray
-        Mask indicating no-data values.
-
-    curr_aux_folder : str
-        Path to the folder where the output will be saved.
-
-    sensor : str
-        Type of sensor.
-
-    output_filename : str
-        Name of the output file.
-
-    ref_img_path : str
-        Path to the reference image to obtain metadata.
-
-    Returns
-    -------
-    numpy.ndarray
-        Computed spectral index.
-    """
-
-    # Define the calculations for each index
-    calculations = {
-        'normDiff': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2),
-        'shad_idx': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2) / B1,
-        'band_diff': lambda B1, B2, B3, B4: B1 - B2,
-        'EVI': lambda B1, B2, B3, B4: 2.5 * (B1 - B2) / (B1 + 2.4 * B2 + 1),
-        'NDSIplus': lambda B1, B2, B3, B4: 2 * (B1 + B2 - B3 - B4) / (B1 + B2 + B3 + B4),
-        'idx6': lambda B1, B2, B3, B4: 2 * (2 * B1 - B2 - B3) / (2 * B1 + B2 + B3),
-        'bandRatioGlaciers': lambda B1, B2, B3, B4: B1 / B2
-
-    }
-
-    # Check if the index name is in the dictionary
-    if idx_name not in calculations:
-        raise ValueError(f"Index '{idx_name}' is not supported.")
-
-    # Perform the calculation
-    idx_out = calculations[idx_name](B1, B2, B3, B4)
-
-    # Set the pixels corresponding to no_data_mask to invalid (e.g., np.nan)
-    idx_out[no_data_mask] = np.nan
-
-    # Save the computed band to a file in curr_aux_folder
-    output_path = os.path.join(curr_aux_folder, output_filename)
+def get_altitude_azimuth(data, date_time):
     
-    # Raster dimensions
-    height = data.sizes["y"]
-    width = data.sizes["x"]
-    
-    try:
-        crs = CRS.from_epsg(data.epsg.item())
-    except:
-        crs = data.rio.crs
-        
-    # Save raster using metadata from xarray
-    with rasterio.open(
-        output_path,
-        "w",
-        driver="GTiff",
-        height=height,
-        width=width,
-        count=1,
-        dtype="float32",
-        crs=crs,
-        transform=data.rio.transform(),
-    ) as dst:
-        dst.write(idx_out, 1)
-        
-    print(f"Spectral index {idx_name} saved at {output_path}")
-    return
-    
-    
-
-def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspectPath, curr_aux_folder, date):
-    """
-    Calculates the solar incidence angle based on slope, aspect, sun altitude, and azimuth.
-
-    Parameters
-    ----------
-    img_info : dict
-        Dictionary containing image metadata such as extent, geotransform, and EPSG code.
-
-    date_time : datetime
-        Date and time for which the solar position is calculated.
-
-    slope_path : str
-        Path to the slope GeoTIFF.
-
-    aspect_path : str
-        Path to the aspect GeoTIFF.
-
-    curr_aux_folder : str
-        Path to the folder where the solar incidence angle result will be saved.
-
-    Returns
-    -------
-    numpy.ndarray
-        Array representing the solar incidence angle.
-    """
     # Extract image metadata
     resolution = float(abs(data.x[1] - data.x[0]))
 
@@ -563,7 +436,16 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
     # Get sun altitude and azimuth
     sun_altitude = get_altitude(Central_WGS84[1], Central_WGS84[0], datetime_object)
     sun_azimuth = get_azimuth(Central_WGS84[1], Central_WGS84[0], datetime_object)
+    
+    return sun_altitude, sun_azimuth
+    
 
+    
+def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspectPath, curr_aux_folder, date):
+    """Compute and save solar-incidence angles from terrain and acquisition time."""
+
+    sun_altitude, sun_azimuth = get_altitude_azimuth(data, date_time)
+    
     # Convert angles from degrees to radians
     sun_zenith_rad = np.radians(90 - sun_altitude)
     sun_azimuth_rad = np.radians(sun_azimuth)
@@ -600,26 +482,21 @@ def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspec
         dst.write(solar_incidence_angle.astype(np.float32), 1)
 
     print(f"Solar incidence angle saved at {output_path}")
-    return solar_incidence_angle, sun_altitude, sun_azimuth
+    return solar_incidence_angle
 
 
 
-def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, NIR):
-    """
-    Generate a shadow mask dynamically without setting thresholds and save as GeoTIFF.
-
-    Parameters:
-    - curr_aux_folder: Path to the auxiliary folder containing GeoTIFF files for indices.
-    """
+def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_mask, NIR):
+    """Generate and save a composite terrain and cloud-shadow mask."""
     
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     ndvi = load_map(curr_aux_folder, '*NDVI.tif')
-    index1 = load_map(curr_aux_folder, '*idx6.tif')
-    index2 = load_map(curr_aux_folder, '*shad_idx.tif')
+    idx6 = load_map(curr_aux_folder, '*idx6.tif')
+    shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
     evi = load_map(curr_aux_folder, '*EVI.tif')
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
 
     _, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
 
@@ -629,73 +506,46 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
         arr_min, arr_max = np.nanmin(arr), np.nanmax(arr)
         return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
 
-    # curr_range = (90, 180)
-    curr_scene_valid = np.logical_not(np.logical_or.reduce((cloud_mask == 1, water_mask == 1, no_data_mask)))
     
-    # curr_range = (min(np.nanmax(solar_incidence_angle[curr_scene_valid])-1, 90), 180)
+    # validity mask
+    curr_scene_valid = build_valid_scene(no_data_mask,
+                                         cloud_mask == 1,
+                                         cloud_mask == 2,
+                                         water_mask == 1,
+                                         iterations = 0)
+    
+    # SIA between 70 and 180
+    curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
+                                              solar_incidence_angle >= 70,
+                                              solar_incidence_angle < 180))
+    
 
-    # curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
-    #                                                                    solar_incidence_angle < curr_range[1]))
 
-    index1_norm = normalize(index1)
-    index2_norm = normalize(index2)
+    idx6_norm = normalize(idx6)
+    shad_idx_norm = normalize(shad_idx)
     ndvi_norm = normalize(ndvi)
     evi_norm = normalize(evi)
     nir_norm = normalize(NIR)
 
 
     # Combine indices to create a composite shadow score
-    # Shadow pixels maximize index1 and index2, minimize ndvi and evi
-    # shadow_score = (index1_norm + index2_norm) - (ndvi_norm + evi_norm + normalize(NIR))
-    
-    curr_range = (70, 180)
-    curr_angle_valid = np.logical_and(curr_scene_valid, np.logical_and(solar_incidence_angle >= curr_range[0],
-                                                                       solar_incidence_angle < curr_range[1]))
-    
-    
-    self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle >= 90)
-    
-    cloud_shadow = cloud_mask == 3
-
-    # shadow_score = (
-    #     index1_norm *
-    #     index2_norm *
-    #     (1 - ndvi_norm) *
-    #     (1 - evi_norm) *
-    #     (1 - nir_norm)
-    # )
-    
     shadow_score = (
-        (index1_norm + index2_norm) /
+        (idx6_norm + shad_idx_norm) /
         (ndvi_norm + evi_norm + nir_norm + 1e-6)
     )
     
     shadow_score[~curr_scene_valid] = np.nan
     
     threshold = np.nanpercentile(shadow_score[curr_scene_valid], 85)
-    # threshold = threshold_otsu(shadow_score[curr_scene_valid])
-
     
+    # DIFFERENT SHADOWS
+    self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle >= 90)
+    cloud_shadow = cloud_mask == 3
+
     spectral_shadow = shadow_score > threshold
     casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
     
     shadow_mask = np.logical_or.reduce((casted_shadow, self_shadow, cloud_shadow))
-
-    # shadow_mask = cv2.medianBlur(shadow_mask.astype(np.uint8)*255, 5)
-
-
-    # plt.hist(valid.flatten(), bins=500)
-
-
-    
-    # try:
-    #     threshold = np.percentile(shadow_score[curr_angle_valid], [10, 95])[0]
-    #     # plt.hist(shadow_score[curr_angle_valid].flatten(), bins=100)
-    #     # Create shadow mask: positive values indicate shadow
-    #     shadow_mask = (shadow_score > threshold).astype(np.uint8)
-    # except:
-    #     shadow_mask = np.zeros_like(shadow_score, dtype=bool).astype(np.uint8)
-
 
 
     # Save shadow mask to GeoTIFF
@@ -709,245 +559,84 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder_path, no_da
 
 
 
-def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_mask, bands):
-    """
-    Generate a snow-proximity / altitude-constrained distance index.
+def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder,
+                            validMask):
+    """Classify and save a threshold-based thematic snow map."""
 
-    This function creates an auxiliary raster that describes how far each valid pixel is from
-    high-confidence snow pixels, while also masking out areas that are considered too low in
-    elevation to be relevant for snow training or snow classification.
-
-    The output raster is later used as an additional validity/proximity constraint during
-    training pixel selection. In the current SnowFLAKES workflow, pixels with value 255 are
-    treated as invalid or excluded.
-
-    The output file is saved as:
-
-        <scene_id>_index_of_distance.tif
-
-    inside `curr_aux_folder`.
-
-    Parameters
-    ----------
-    scene_id : str
-        Scene identifier. Used to infer the sensor type and to name the output file.
-
-    curr_aux_folder : str
-        Path to the current scene auxiliary folder.
-        This folder must contain:
-            *cloud_Mask.tif
-            *NDSI.tif
-
-    auxiliary_folder_path : str
-        Path to the general auxiliary folder.
-        This folder must contain:
-            *Water_Mask.tif
-            *DEM.tif
-
-    no_data_mask : numpy.ndarray
-        Boolean mask where True indicates no-data / invalid pixels.
-
-    bands : dict
-        Dictionary of spectral bands, usually returned by `define_bands(...)`.
-        This function requires:
-            bands['NIR']
-
-    Returns
-    -------
-    None
-        The function does not return an object.
-        It writes a GeoTIFF distance index to disk.
-
-    Output
-    ------
-    GeoTIFF
-        Path:
-            curr_aux_folder/<scene_id>_index_of_distance.tif
-
-        Data type:
-            uint8
-
-        Values:
-            0-254 : normalized distance/proximity index
-            255   : no-data / excluded pixel
-
-    Processing Steps
-    ----------------
-    1. Load auxiliary data:
-        - cloud mask
-        - water mask
-        - NDSI raster
-        - DEM raster
-        - NIR band from the input band dictionary
-
-    2. Build a valid-scene mask:
-        A pixel is valid only if it is:
-            - not cloud
-            - not water
-            - not no-data
-
-        Current assumptions:
-            cloud_mask == 2 means cloud
-            water_mask == 1 means water
-            no_data_mask == True means invalid
-
-    3. Identify high-confidence snow and snow-free pixels:
-        Snow-free pixels:
-            NDSI < 0
-
-        Snow pixels:
-            NDSI > 0.6
-            NIR > 0.45
-
-        These are stored in an internal `snow_map`:
-            0 = unclassified
-            1 = sure no-snow
-            2 = sure snow
-
-    4. Compute distance from sure-snow pixels:
-        The Euclidean distance transform is computed from pixels where:
-
-            snow_map == 2
-
-        The distance is then normalized to the range 0-1.
-
-    5. Estimate an elevation threshold:
-        The DEM values of sure-snow pixels are extracted.
-        If sure-snow pixels exist, the minimum snow-relevant elevation is estimated as:
-
-            altitude_min_threshold = 1st percentile of snow elevation - 500 m
-
-        Pixels below this threshold are excluded.
-
-    6. Combine distance and altitude:
-        The normalized distance index is kept only where:
-            - the pixel is valid
-            - the pixel is above the altitude threshold
-
-        Pixels outside this area are assigned 255.
-
-    7. Save the result as a GeoTIFF.
-
-    Notes
-    -----
-    The output is called an "index_of_distance", but larger values actually indicate
-    pixels farther away from high-confidence snow pixels after normalization.
-
-    This raster is used later in training selection with a rule such as:
-
-        curr_distance_idx != 255
-
-    meaning that pixels with value 255 are excluded.
-
-    Important Assumptions
-    ---------------------
-    - The DEM, NDSI, cloud mask, water mask, and spectral bands are already aligned
-      on the same grid.
-    - NIR reflectance is scaled such that a threshold of 0.45 is meaningful.
-    - NDSI is in the expected range, usually approximately -1 to 1.
-    - DEM units are meters.
-    - The CRS and geotransform are copied from the cloud mask metadata.
-
-    Potential Issues
-    ----------------
-    1. The function name has a typo:
-           adiacency_indexes
-       should probably be:
-           adjacency_indexes
-
-    2. `sensor = get_sensor(scene_id)` is currently unused.
-
-    3. `valid_mask = np.logical_not(no_data_mask)` is computed but not used.
-
-    4. The altitude mask is assigned twice:
-
-           altitude_mask = ...
-           altitude_mask = (dem >= altitude_min_threshold)
-
-       The second assignment can be problematic if `altitude_min_threshold` is NaN.
-
-    5. If no sure-snow pixels exist, `altitude_min_threshold` becomes NaN.
-       Because of the second altitude-mask assignment, the result may exclude all pixels.
-
-    6. If all distance values are equal, this normalization can divide by zero:
-
-           distance_from_snow_normalized =
-               (distance - min) / (max - min)
-
-    7. `np.nanmax(distance_from_snow)` can fail if all values are NaN.
-
-    8. The output name is:
-
-           <scene_id>_index_of_distance.tif
-
-       but other parts of the code search for:
-
-           *distance.tif
-
-       This works because the filename contains "distance", but the naming should be
-       kept consistent.
-
-    Example
-    -------
-    >>> adiacency_indexes(
-    ...     scene_id="S2A_MSIL2A_20240315T104031",
-    ...     curr_aux_folder="/path/to/scene/auxiliary",
-    ...     auxiliary_folder_path="/path/to/auxiliary",
-    ...     no_data_mask=no_data_mask,
-    ...     bands=bands
-    ... )
-
-    This creates:
-
-        /path/to/scene/auxiliary/S2A_MSIL2A_20240315T104031_index_of_distance.tif
-    """
-        
-    # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-    dem = open_image(dem_path)[0]
 
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
-    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
-    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
-    NIR = bands['NIR']
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
+    NDSI, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
+    NDVI = load_map(curr_aux_folder, '*NDVI.tif')
+    
+    # Set a fixed NDSI threshold (candidate pixels) and a NDVI threshold to avoid vegetation
+    ndsi_threshold = 0.4
+    ndvi_threshold = 0.5
+    
 
+    # Mark invalid pixels as 255 (no-data, clouds, or water)
+    thematic_map = np.zeros_like(NDSI, dtype=np.uint8)
+
+    
+    # Build candidate mask: valid pixels with sufficient NDSI and low NDVI.
+    snow_mask = validMask & (NDSI > ndsi_threshold) & (NDVI < ndvi_threshold)
+    thematic_map[snow_mask] = 100
+
+    # non-valid pixels
+    thematic_map[np.logical_not(validMask)] = 255
+    
+    # Optionally mark cloud and water areas with distinct codes:
+    thematic_map[cloud_mask == 1] = 205  # thick clouds
+    thematic_map[cloud_mask == 2] = 205  # thin clouds
+    thematic_map[water_mask == 1] = 210
+    
+
+    # Define output path
+    output_path = os.path.join(curr_aux_folder, f'{scene_id}_simple_class.tif')
+
+    # save output tif file
+    save_tif(thematic_map, NDSI_path, output_path, dtype=rasterio.uint8)
+
+    return output_path
+
+
+    
+def adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, no_data_mask):
+    """Compute and save an altitude-constrained distance-from-snow index."""
+
+    # Load masks and other necessary data
+    snow_map = load_map(curr_aux_folder, '*simple_class.tif')
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
+    dem, dem_path = load_map(auxiliary_folder, '*DEM.tif', return_path=True)
+
+    # valid mask
     curr_scene_valid = build_valid_scene(no_data_mask,
                                          cloud_mask == 1,
+                                         cloud_mask == 2,
                                          water_mask == 1,
                                          iterations=0)
-
-
-
-    # Create the snow map
-    snow_map = np.zeros_like(NDSI, dtype=np.uint8)
-    no_snow_sure = (NDSI < 0) & curr_scene_valid
-    snow_sure = (NDSI > 0.6) & (NIR > 0.45) & curr_scene_valid
-    snow_map[no_snow_sure] = 1
-    snow_map[snow_sure] = 2
-
+    
     # Calculate distance from snow_sure
     distance_from_snow = np.full_like(snow_map, np.nan, dtype=np.float32)
-    snow_sure_pixels = (snow_map == 2)
+    snow_sure_pixels = (snow_map == 100)
     distance_from_snow[curr_scene_valid] = distance_transform_edt(~snow_sure_pixels)[curr_scene_valid]
     distance_from_snow = np.nan_to_num(distance_from_snow, nan=np.nanmax(distance_from_snow))
     distance_from_snow_normalized = (distance_from_snow - np.nanmin(distance_from_snow)) / (
             np.nanmax(distance_from_snow) - np.nanmin(distance_from_snow)
     )
+    
+    
+    # Set altitude threshold, kind of snowline altitude
+    valid_dem = dem[np.logical_and(curr_scene_valid, snow_map == 100)]
 
-    # Set altitude threshold
-    valid_dem = dem[np.logical_and(curr_scene_valid, snow_map == 2)]
-
-    if valid_dem.size > 0:
-        altitude_min_threshold = np.percentile(valid_dem, 1) - 500
+    if valid_dem.size == 0:
+        altitude_mask = np.zeros_like(dem, dtype=bool)
     else:
-        altitude_min_threshold = np.nan  # Oppure scegli un valore predefinito sensato
-
-    altitude_mask = (dem >= altitude_min_threshold) if not np.isnan(altitude_min_threshold) else np.zeros_like(dem,
-                                                                                                               dtype=bool)
-
-    altitude_mask = (dem >= altitude_min_threshold)
+        altitude_min_threshold = np.percentile(valid_dem, 1) - 500
+        altitude_mask = dem >= altitude_min_threshold
+    
 
     # Combine distance and altitude into index_of_distance
     index_of_distance = np.zeros_like(snow_map, dtype=np.float32)
@@ -967,81 +656,144 @@ def adiacency_indexes(scene_id, curr_aux_folder, auxiliary_folder_path, no_data_
 
     save_tif(index_of_distance_uint8, dem_path, output_path, 
              nodata=no_data_value, dtype=rasterio.uint8)
+    
+    return output_path
+    
+    
 
+def create_auxiliary_information(scene_id, data, config):
+    """Generate the auxiliary rasters required for scene classification."""
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
+    
+    sensor = get_sensor(scene_id)
+    
+    # Extract date and time from the folder name
+    date_time, date = define_datetime(scene_id, config)
 
-
-
-# to be updated
-
-
-
-
-
-def water_mask_cutting(water_mask_path, ref_img_path, auxiliary_folder_path):
-    '''
-    Parameters
-    ----------
-    water_mask_path : str
-        path of water mask to cut .
-    ref_img_path : str
-        path of a reference image.
-    Ancillary_folder : bool
-
-
-    Returns
-    -------
-    target_wb_mask_path : str
-        water mask path.
-
-
-    '''
-    if auxiliary_folder_path != None:
-        target_wb_mask_path = auxiliary_folder_path + os.sep + os.path.basename(
-            os.path.dirname(os.path.dirname(ref_img_path))) + "_Water_Mask.tif"
+    # No data value
+    no_data_value = config['no_data_value']
+    if no_data_value is None or 'nan' in str(no_data_value).lower():
+        no_data_value = np.nan
     else:
-        target_wb_mask_path = ref_img_path[:-8] + "_Water_Mask.tif"
+        no_data_value = float(no_data_value)
 
-    if not os.path.exists(target_wb_mask_path):
-        # clip the wbm with FSC extent
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
 
-        img_info = open_image(ref_img_path)[1]
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # valid mask
+    validMask = valid_mask(data, no_data_value=no_data_value)
+    no_data_perc = np.sum(~validMask) / (data.sizes["y"] * data.sizes["x"])
+    
+    
+    
+    # Load DEM, and compute slope and aspect ----------------------------------
+    dem_path = os.path.join(auxiliary_folder, "DEM.tif")
 
-        d = gdal.Open(ref_img_path)
-        with rasterio.open(ref_img_path, 'r+') as rds:
-            epsg_code_ref = str(rds.crs).split(':')[1]
+    if not os.path.exists(dem_path):
 
-        E_min = (img_info['extent'][0])
-        N_min = (img_info['extent'][1])
-        E_max = (img_info['extent'][2])
-        N_max = (img_info['extent'][3])
-        img_res = str(img_info['geotransform'][1])
+        setup_cdse_credentials()
+        dem = load_cdse_collection("cop-dem-glo-30-dged-cog",
+                                   auxiliary_folder,
+                                   resolution=config['resampling_params']['resolution'],
+                                   extent_target=config['resampling_params']['extent_target'],
+                                   epsg_target=config['resampling_params']['epsg_target'])
 
-        extent_string = ' '.join([str(E_min), str(N_min), str(E_max), str(N_max)])
-        cmd = 'gdalwarp -t_srs EPSG:' + epsg_code_ref + ' -te ' + extent_string + ' -tr ' + ' '.join(
-            [img_res, img_res]) + \
-              ' -of GTiff ' + ' '.join([water_mask_path, target_wb_mask_path])
-
-        os.system(cmd)
-
-        water_mask = open_image(target_wb_mask_path)[0]
-
-        # dialte the nan value (255) of the water mask into the 1 value of water mask
-        if np.sum(water_mask == 255) > 0:
-            K = np.ones((30, 30)).astype(np.uint8)
-            Water_dilated = cv2.dilate((water_mask == 255).astype(np.uint8), K, iterations=1)
-            # create a single water mask with 0-1
-            water_mask[Water_dilated == 1] = 255
-            water_mask[water_mask == 210] = 1
-            water_mask[water_mask == 255] = 1
-            os.remove(target_wb_mask_path)
-            save_image(water_mask.astype('uint8'), target_wb_mask_path, 'GTiff', 1, img_info['geotransform'],
-                       img_info['projection'])
-
-    return target_wb_mask_path
+    slopePath, aspectPath = calc_slope_aspect(dem_path, 
+                                              auxiliary_folder,
+                                              overwrite=config['overwrite'])
+    
+    
+    # Generate water mask ----> to be replaced!!
+    water_mask_path = water_identifier(data, auxiliary_folder)
 
 
+    # Generate glacier mask
+    external_glacier_mask_path = config['external_glacier_mask_path']
+    glacier_mask_path = glacier_mask_cutting(external_glacier_mask_path, water_mask_path)
+    
+    
+    # Generate cloud mask -----------------------------------------------------
+    cloud_scenes_file = create_log(wd, '00_skip_cloud_masks')
 
+    path_cloud_mask, cc_perc = create_omnicloudmask(data,
+                                                    scene_id,
+                                                    auxiliary_folder,
+                                                    curr_aux_folder,
+                                                    no_data_value = no_data_value)
 
+    cloud_perc_corr = cc_perc / (1 - no_data_perc)
+
+    if no_data_perc > 0.8 or cloud_perc_corr > 0.6:
+        print(f'TOO MANY INVALID PIXELS for image {scene_id}')
+
+        # Save the scene in the log file
+        with open(cloud_scenes_file, "a") as f:
+            f.write(f"{scene_id}\n")
+
+        # delete folder
+        shutil.rmtree(scene_folder)
+        return
+    
+    
+    
+    # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
+    bands = define_bands(data, sensor)
+    
+    spectral_idx_computer(data, bands['GREEN'], bands['NIR'], 'normDiff',
+                          curr_aux_folder, f"{scene_id}_NDWI.tif", no_data_value)
+    spectral_idx_computer(data, bands['NIR'], bands['RED'], 'normDiff',
+                          curr_aux_folder, f"{scene_id}_NDVI.tif", no_data_value)
+    spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'normDiff',
+                          curr_aux_folder, f"{scene_id}_NDSI.tif", no_data_value)
+    spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'band_diff',
+                          curr_aux_folder, f"{scene_id}_diffBNIR.tif", no_data_value)
+    spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'shad_idx',
+                          curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value)
+    # spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'normDiff',
+    #                       curr_aux_folder, f"{scene_id}_NormDiffBNIR.tif", no_data_value)
+    # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'normDiff',
+    #                       curr_aux_folder, f"{scene_id}_NormDiffGreenRed.tif", no_data_value)
+    spectral_idx_computer(data, bands['NIR'], bands['RED'], 'EVI',
+                          curr_aux_folder, f"{scene_id}_EVI.tif", no_data_value)
+    spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'idx6',
+                          curr_aux_folder, f"{scene_id}_idx6.tif", no_data_value,
+                          B3=bands['NIR'])
+    # spectral_idx_computer(data, bands['RED'], bands['SWIR'], 'bandRatioGlaciers',
+    #                       curr_aux_folder, f"{scene_id}_bandRatioGlaciers.tif", no_data_value)
+    
+    
+    
+    # Calculate solar incidence angle
+    solar_incidence_angle = solar_incidence_angle_calculator(data,
+                                                             scene_id,
+                                                             date_time,
+                                                             slopePath,
+                                                             aspectPath,
+                                                             curr_aux_folder,
+                                                             date
+                                                         )
+    
+    
+    # shadow mask
+    shadow_mask_path = generate_shadow_mask(scene_id, 
+                                            curr_aux_folder, 
+                                            auxiliary_folder, 
+                                            ~validMask, 
+                                            bands['NIR'])
+    
+    # SCF with threshold methods
+    SCF_thematic_path = thematic_map_classifier(scene_id, data, curr_aux_folder, 
+                                                auxiliary_folder, validMask)
+
+    
+
+    # adiecency map
+    adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
 
 

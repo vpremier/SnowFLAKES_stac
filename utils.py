@@ -19,26 +19,6 @@ from SnowFLAKES.utilities import *
 
 
 
-def valid_mask(data, no_data_value=np.nan):
-    """
-    Generate a valid-data mask from a multiband DataArray.
-
-    Parameters
-    ----------
-    data : xarray.DataArray
-        DataArray with dimensions ('band', 'y', 'x').
-    no_data_value : float or int, optional
-        Value representing no-data. Default is NaN.
-
-    Returns
-    -------
-    xarray.DataArray
-        Boolean mask where True indicates that all bands are valid.
-    """
-    if no_data_value is None or np.isnan(no_data_value):
-        return data.notnull().all(dim="band")
-
-    return (data != no_data_value).all(dim="band")
 
 
 
@@ -233,6 +213,5 @@ def get_shape_extent(shape_name, epsg=3035, outres=500, merge=True, row=None):
     yMax = round(int(np.ceil(ymax / outres)) * outres, 5)
 
     return xMin, yMin, xMax, yMax
-
 
 

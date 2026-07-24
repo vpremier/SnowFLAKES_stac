@@ -25,7 +25,7 @@ def fit_distribution_and_median(
     feature,
     feature_name,
     mask,
-    curr_aux_folder,
+    outfolder,
     distribution="auto",
     bins=50,
     plot=True,
@@ -89,10 +89,6 @@ def fit_distribution_and_median(
             "reason": reason,
         }
 
-    # Output directory
-    wd = Path(curr_aux_folder).parent
-    scf_folder = wd / "SCF"
-    scf_folder.mkdir(parents=True, exist_ok=True)
 
     feature = np.asarray(feature)
     mask = np.asarray(mask, dtype=bool)
@@ -337,8 +333,8 @@ def fit_distribution_and_median(
 
             safe_feature_name = str(feature_name).replace(os.sep, "_")
 
-            output_path = (
-                scf_folder /
+            output_path = os.path.join(
+                outfolder,
                 f"{safe_feature_name}_histogram.png"
             )
 

@@ -178,6 +178,29 @@ def load_map(folder, pattern, return_path=False):
 
 
 
+def valid_mask(data, no_data_value=np.nan):
+    """
+    Generate a valid-data mask from a multiband DataArray.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        DataArray with dimensions ('band', 'y', 'x').
+    no_data_value : float or int, optional
+        Value representing no-data. Default is NaN.
+
+    Returns
+    -------
+    xarray.DataArray
+        Boolean mask where True indicates that all bands are valid.
+    """
+    if no_data_value is None or np.isnan(no_data_value):
+        return np.squeeze(data.notnull().all(dim="band").values)
+
+    return np.squeeze((data != no_data_value).all(dim="band").values)
+
+
+
 def build_valid_scene(no_data_mask, *invalid_masks, iterations=2):
     """Combine invalid-pixel masks into a scene-validity mask.
 
@@ -615,13 +638,16 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-def snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path):
+def snow_around_glacier(wd, scene_id):
 
-    # subdirectory SCF
-    scf_folder = curr_aux_folder.replace('auxiliary', 'SCF')
+    scene_folder = create_folder(wd, scene_id)   
+
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
     
-    scf_map = load_map(scf_folder, '*SnowFLAKES.tif')
-    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
+    
+    scf_map = load_map(scene_folder, '*SnowFLAKES.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
     
     
     # check snow presence around the glacier (buffer of 100 pixels)
@@ -651,24 +677,35 @@ def snow_around_glacier(FSC_SVM_map_path, curr_aux_folder, auxiliary_folder_path
 
 
 
-def remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path):
+def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
+    
+    # load information for current scene
+    sensor = get_sensor(scene_id)
+    bands = define_bands(data, sensor)
     
     # Load the SCF map 
     with rasterio.open(FSC_SVM_map_path) as scf_src:
         scf_data = scf_src.read(1)  # Reading first band
      
-    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    shadow_mask, shadow_path = load_map(curr_aux_folder, '*shadow_mask.tif', return_path=True)
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
 
     
     swir = bands["SWIR"]
     green = bands["GREEN"]
     
+    # scf correction based on diff B NIR and shadow mask
+
+    # pixels_to_correct = np.logical_and.reduce(
+    #     (valid_mask, diff_B_NIR > 0, diff_B_NIR < 0.06, shadow_mask == 1, SCF_map > 0, SCF_map < 50))
+    # set to 0 in the original Ricardo's code
+    # SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
+
     
     # remove SCF lower than 10%
     scf_data[scf_data < 10] = 0
 
-    condition1 = np.logical_and.reduce((swir > 0.4,
+    condition1 = np.logical_and.reduce((swir > 0.2,
                                 scf_data < 50,
                                 shadow_mask == 0))
     
@@ -678,6 +715,6 @@ def remove_low_scf(FSC_SVM_map_path, bands, curr_aux_folder, dem_path):
     
     scf_data[condition1 | condition2] = 0
     
-    save_tif(scf_data, dem_path, FSC_SVM_map_path, dtype=rasterio.uint8)
+    save_tif(scf_data, shadow_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 
     

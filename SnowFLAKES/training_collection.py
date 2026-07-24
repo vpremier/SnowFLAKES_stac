@@ -10,7 +10,6 @@ import os
 import pickle
 import glob
 import pandas as pd
-from pathlib import Path
 from sklearn.cluster import KMeans
 from scipy.spatial import distance
 import rasterio
@@ -20,18 +19,179 @@ from shapely.geometry import Point
 from sklearn.metrics import silhouette_score
 from skimage.filters import threshold_otsu
 from sklearn.preprocessing import StandardScaler
-from scipy.ndimage import binary_dilation, binary_erosion
+from scipy.ndimage import binary_erosion
 from sklearn.mixture import GaussianMixture
 from joblib import Parallel, delayed
 
 from SnowFLAKES.utilities import (
     load_map,
     open_image,
-    build_valid_scene
+    build_valid_scene,
+    get_sensor,
+    define_bands,
+    valid_mask,    
+    create_folder,
+    define_datetime
 )
+
+from SnowFLAKES.auxiliary_folder_population import get_altitude_azimuth
+
 from SnowFLAKES.fit_distribution import fit_distribution_and_median
 
 
+
+def plot_trainings(training_stats, pixel_stats, outfolder):
+    
+
+    df_train = pd.DataFrame(training_stats)
+    df_pixels = pd.DataFrame(pixel_stats)
+
+
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_labels = []
+    
+    for _, row in df_train.iterrows():
+        x_labels.append(
+            f"{row['angle_range']}\n{row['illumination']}"
+        )
+    
+    x = np.arange(len(df_train))
+    width = 0.4
+    
+    ax.bar(
+        x - width/2,
+        df_train["snow_train"],
+        width,
+        label="Snow"
+    )
+    
+    ax.bar(
+        x + width/2,
+        df_train["nosnow_train"],
+        width,
+        label="Snow-free"
+    )
+    
+    ax.set_xticks(x)
+    ax.set_xticklabels(x_labels, rotation=45)
+    ax.set_ylabel("Training samples")
+    ax.set_title("Selected training samples per angle range")
+    ax.legend()
+    
+    # Save the plot
+    output_path = os.path.join(outfolder, 'valid_trainings_per_angle.png')
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()  # Close the plot to avoid display issues in non-interactive environments
+    print(f"Plot saved to: {output_path}")
+
+    ############################################
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_labels = []
+    
+    for _, row in df_pixels.iterrows():
+        x_labels.append(
+            f"{row['angle_range']}\n{row['illumination']}"
+        )
+    
+    x = np.arange(len(df_pixels))
+    width = 0.4
+    
+    ax.bar(
+        x - width/2,
+        df_pixels["pixels"],
+        width
+    )
+    
+    
+    ax.set_xticks(x)
+    ax.set_xticklabels(x_labels, rotation=45)
+    ax.set_ylabel("Pixels")
+    ax.set_title("Available pixels per angle range")
+    ax.legend()
+    
+    
+    # Save the plot
+    output_path = os.path.join(outfolder, 'valid_pixels_per_angle.png')
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()  # Close the plot to avoid display issues in non-interactive environments
+    print(f"Plot saved to: {output_path}")
+
+
+
+def save_histogram(
+    data,
+    output_path,
+    bins=50,
+    xlabel="Value",
+    ylabel="Count",
+    title=None,
+    density=False,
+    alpha=0.6
+):
+    """
+    Save one or more histograms.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary {label: values}. For example:
+        {
+            "Snow": green[snow_mask],
+            "No snow": green[nosnow_mask]
+        }
+
+    output_path : str
+        Output image path.
+
+    bins : int
+        Number of histogram bins.
+
+    xlabel : str
+        X-axis label.
+
+    ylabel : str
+        Y-axis label.
+
+    title : str or None
+        Figure title.
+
+    density : bool
+        Plot probability density instead of counts.
+
+    alpha : float
+        Histogram transparency.
+    """
+
+
+    plt.figure()
+    plt.hist(
+        data,
+        bins=bins,
+        alpha=alpha
+    )
+
+    plt.xlabel(xlabel)
+    plt.ylabel("Density" if density else ylabel)
+
+    if title is not None:
+        plt.title(title)
+
+    if len(data) > 1:
+        plt.legend()
+
+    plt.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    
+    
+    
 def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
     """
     Calculate the number of training samples for each angle range proportional to the pixel distribution.
@@ -69,53 +229,10 @@ def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
 
 
 
-def apply_topographic_correction(band, band_name, SIA, sun_altitude, correction="weak", g=0.22):
-    
-    sun_zenith = 90 - sun_altitude
-    
-    if band_name in ['GREEN', 'BLUE', 'RED']:
-        b = 0.75
-    elif band_name in ['NIR', 'SWIR']:
-        if correction == "weak":
-            b = 0.33
-        elif correction == "strong":
-            b = 1
-            
-    # cos of the SIA
-    cos_beta = np.cos(np.deg2rad(SIA))
-    
-    # CALCULATE SEN2COR THRESHOLD:
-    if sun_zenith < 45:
-        beta_threshold = sun_zenith + 20
-    elif sun_zenith <= 55:
-        beta_threshold = sun_zenith + 15
-    else:
-        beta_threshold = sun_zenith + 10
-        
-    
-    # Prevent a zero or negative denominator.
-    beta_threshold_deg = min(beta_threshold, 89.0)
-    cos_beta_threshold = np.cos(np.deg2rad(beta_threshold_deg))
-    
-    # valid application range between betaT and 90
-    valid = cos_beta > 0
-    faint_illumination = valid & (SIA > beta_threshold_deg)
-
-    
-    # geometric function G Eq. 0.32 
-    G = np.clip((cos_beta/cos_beta_threshold)**b, g, 1.0)
-
-    band_corr = band.copy()
-    band_corr[faint_illumination] = band[faint_illumination]*G[faint_illumination]
-    
-    return band_corr 
-
-
-
 def define_threshold(feature,
                      mask,
                      feature_name,
-                     curr_aux_folder,
+                     outfolder,
                      threshold=(0.08, 0.12),
                      tolerance=0.5):
     """
@@ -129,13 +246,7 @@ def define_threshold(feature,
         Relative difference allowed before replacing defaults.
         0.15 = 15%
     """
-    # working directory
-    wd = Path(curr_aux_folder).parent
-    
-    # subdirectory SCF
-    scf_folder = wd / "SCF"
-    scf_folder.mkdir(exist_ok=True)
-    
+
     
     values = feature[mask].reshape(-1, 1)
 
@@ -146,7 +257,7 @@ def define_threshold(feature,
     })
     
     values_df.to_csv(
-        scf_folder / f"{feature_name}_values.csv",
+        outfolder / f"{feature_name}_values.csv",
         index=False
     )
 
@@ -225,7 +336,7 @@ def define_threshold(feature,
     plt.legend()
 
     plt.savefig(
-        os.path.join(scf_folder, feature_name + "_histogram.png"),
+        os.path.join(outfolder, feature_name + "_histogram.png"),
         dpi=300,
         bbox_inches="tight"
     )
@@ -242,11 +353,10 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
     green = bands["GREEN"]
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
-    distance_idx = load_map(curr_aux_folder, '*distance.tif')
     
     mask = np.logical_and.reduce((shadow_mask==1, 
-                                       green <0.25, 
-                                       curr_scene_valid))
+                                    green <0.25, 
+                                    curr_scene_valid))
     
     green_thresholds = define_threshold(green, mask, "green_shadow", curr_aux_folder, threshold=(0.075, 0.1))
     BNIR_thresholds = define_threshold(diff_B_NIR, mask, "diffBNIR_shadow", curr_aux_folder, threshold=(0.08, 0.12))
@@ -301,7 +411,6 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     
     
 def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
-    
     
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
     NDWI = load_map(curr_aux_folder, '*NDWI.tif')
@@ -366,29 +475,52 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
                                       green < green_threshold_sf,
                                       swir > swir_threshold_sf))
 
-        
-    
     return snow, snowfree
 
 
 
-
-def get_pixels_ice(bands, curr_aux_folder, auxiliary_folder_path, FSC_SVM_map_path, no_data_mask):
+def get_pixels_ice(scene_id, data, config):
     
+    # load information for current scene
+    sensor = get_sensor(scene_id)
+    bands = define_bands(data, sensor)
+    
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
 
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # No data value
+    no_data_value = config['no_data_value']
+    if no_data_value is None or 'nan' in str(no_data_value).lower():
+        no_data_value = np.nan
+    else:
+        no_data_value = float(no_data_value)
+        
+        
     # Load masks and other necessary data
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
-    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
+    SCF = load_map(scene_folder, '*SnowFLAKES.tif')
     swir = bands["SWIR"]
+        
+    # validity mask: a binary dilation is applied by default (avoid training 
+    # collection near water bodies, clouds, etc)
+    validMask = valid_mask(data, no_data_value=no_data_value)
 
-    SCF, _ = open_image(FSC_SVM_map_path)
-    
-    curr_scene_valid = build_valid_scene(no_data_mask,
+    curr_scene_valid = build_valid_scene(~validMask,
                                          cloud_mask == 1,
+                                         cloud_mask == 2,
                                          water_mask == 1)
-    
+
+
     # fixed conditions for being an ice pixel
     mask_ice = np.logical_and.reduce((glacier_mask==1, 
                                       SCF > 0,
@@ -415,7 +547,7 @@ def get_pixels_ice(bands, curr_aux_folder, auxiliary_folder_path, FSC_SVM_map_pa
     
     swir_threshold_snow = fit_swir_snow['fitted_median'] #- 2*fit_green_snow['parameters']['std']
     
-    swir_threshold_ice = fit_swir_ice['fitted_median'] #+ 2*fit_green_snow['parameters']['std']
+    swir_threshold_ice = min(0.05, fit_swir_ice['fitted_median']) #+ 2*fit_green_snow['parameters']['std']
     
 
     # conditions of val
@@ -497,101 +629,56 @@ def sample_histogram_equal(mask, values, n_samples, n_bins=20, seed=None):
 
 
 
-def save_histogram(
-    data,
-    output_path,
-    bins=50,
-    xlabel="Value",
-    ylabel="Count",
-    title=None,
-    density=False,
-    alpha=0.6
-):
-    """
-    Save one or more histograms.
-
-    Parameters
-    ----------
-    data : dict
-        Dictionary {label: values}. For example:
-        {
-            "Snow": green[snow_mask],
-            "No snow": green[nosnow_mask]
-        }
-
-    output_path : str
-        Output image path.
-
-    bins : int
-        Number of histogram bins.
-
-    xlabel : str
-        X-axis label.
-
-    ylabel : str
-        Y-axis label.
-
-    title : str or None
-        Figure title.
-
-    density : bool
-        Plot probability density instead of counts.
-
-    alpha : float
-        Histogram transparency.
-    """
-
-
-    plt.figure()
-    plt.hist(
-        data,
-        bins=bins,
-        alpha=alpha
-    )
-
-    plt.xlabel(xlabel)
-    plt.ylabel("Density" if density else ylabel)
-
-    if title is not None:
-        plt.title(title)
-
-    if len(data) > 1:
-        plt.legend()
-
-    plt.grid(alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close()
     
     
     
-def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_folder_path, 
-                      SCF_folder, no_data_mask, bands, sun_altitude, FSC_SVM_map_path = None, total_samples=500):
+def collect_trainings(data, scene_id, config, total_samples=500):
     
+    # load information for current scene
+    sensor = get_sensor(scene_id)
+    bands = define_bands(data, sensor)
+    
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
 
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # Extract date and time from the folder name
+    date_time, date = define_datetime(scene_id, config)
+    
+    # No data value
+    no_data_value = config['no_data_value']
+    if no_data_value is None or 'nan' in str(no_data_value).lower():
+        no_data_value = np.nan
+    else:
+        no_data_value = float(no_data_value)
+        
+       
+    # get sun altitude
+    sun_altitude, _ = get_altitude_azimuth(data, date_time)
 
     # Load masks and other necessary data
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
+    cloud_mask, cloud_path = load_map(curr_aux_folder, '*cloud_Mask.tif', return_path=True)
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
-    glacier_mask = load_map(auxiliary_folder_path, '*glacier*.tif')
     shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
-    shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
-    distance_idx = load_map(curr_aux_folder, '*distance.tif')
     green = bands["GREEN"]
     
-    
-    _, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
-    
-    # validity mask: a binary dilation is applied (avoid training collection
-    # near water bodies, clouds, etc).. glaciers??
-    curr_scene_valid = build_valid_scene(no_data_mask,
+    # validity mask: a binary dilation is applied by default (avoid training 
+    # collection near water bodies, clouds, etc)
+    validMask = valid_mask(data, no_data_value=no_data_value)
+
+    curr_scene_valid = build_valid_scene(~validMask,
                                          cloud_mask == 1,
+                                         cloud_mask == 2,
                                          water_mask == 1)
     
-
-
     # enlarge shadow - sun masks to create a buffer where training collection
     # is avoided
     shadow_mask_eroded = binary_erosion(
@@ -625,7 +712,6 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     
     training_stats = []
     pixel_stats = []
-    percentage_per_angles_list = []
     
     # collect training for each SIA range 
     for curr_range, sample_count in range_samples.items():
@@ -635,9 +721,8 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                                                   solar_incidence_angle >= curr_range[0],
                                                   solar_incidence_angle < curr_range[1]))
         
-        percentage_of_scene_valid = np.sum(curr_angle_valid) / np.sum(curr_scene_valid)
+    
         print(f"SIA range: {curr_range}")
-        percentage_per_angles_list.append(percentage_of_scene_valid)
 
         # SHADOW --------------------------------------------------------------
 
@@ -646,42 +731,23 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                                              shadow_mask_eroded,
                                              glacier_mask==0)) # no dilation applied for glacier here
           
-                  
+        pixel_perc_shadow = int(np.sum(mask_shadow) *100/ np.sum(curr_scene_valid))
+
         pixel_stats.append({
                             "angle_range": f"{curr_range[0]}-{curr_range[1]}",
                             "illumination": "Shadow",
-                            "pixels": int(np.sum(mask_shadow) *100/ np.sum(curr_scene_valid))
+                            "pixels": pixel_perc_shadow
                             })
             
-        if np.sum(mask_shadow) > 10:
+        if pixel_perc_shadow > 1:
             
             # initialize empty masks
             representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
             representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
             
             print('Collecting trainings in shadow')
-            
-            # snow_shad, snowfree_shad = get_pixels_shadow(diff_B_NIR, 
-            #                                              shad_idx, 
-            #                                              NDSI, 
-            #                                              distance_idx,
-            #                                              mask_shadow)
-            
             snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
 
-            # erosion
-            # Shrink mask by 3 pixels
-            # snow_shad_eroded = binary_erosion(
-            #     snow_shad,
-            #     iterations=3
-            # )
-            
-            
-            # # Shrink mask by 3 pixels
-            # snowfree_shad_eroded = binary_erosion(
-            #     snowfree_shad,
-            #     iterations=3
-            # )
             
             if np.sum(snow_shad) > 10:
                 representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
@@ -701,6 +767,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                 #                                                               sample_count=int(sample_count / 2), 
                 #                                                               k=3,
                 #                                                               n_closest='auto') * 2
+            
             # merge the two masks
             representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
             empty[mask_shadow] = representative_pixels_mask[mask_shadow]
@@ -721,19 +788,18 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
             })
 
 
-            
-            
-            
-        
+
         # # SUN --------------------------------------------------------------
 
         # mask angles and sun
         mask_sun = curr_angle_valid & sun_mask_eroded
         
+        pixel_perc_sun = int(np.sum(mask_sun) *100/ np.sum(curr_scene_valid))
+
         pixel_stats.append({
                             "angle_range": f"{curr_range[0]}-{curr_range[1]}",
                             "illumination": "Sun",
-                            "pixels": int(np.sum(mask_sun)*100/ np.sum(curr_scene_valid))
+                            "pixels": pixel_perc_sun
                         })
 
 
@@ -759,7 +825,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                 
                 save_histogram(
                     green[representative_pixels_mask_snow],
-                    os.path.join(SCF_folder, f"hist_snow_selected_{curr_range[0]}-{curr_range[1]}.png"),
+                    os.path.join(curr_aux_folder, f"hist_snow_selected_{curr_range[0]}-{curr_range[1]}.png"),
                     bins=50,
                     xlabel="Value",
                     ylabel="Count"
@@ -778,7 +844,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                 
                 save_histogram(
                     green[representative_pixels_mask_noSnow==2],
-                    os.path.join(SCF_folder, f"hist_sf_selected_{curr_range[0]}-{curr_range[1]}.png"),
+                    os.path.join(curr_aux_folder, f"hist_sf_selected_{curr_range[0]}-{curr_range[1]}.png"),
                     bins=50,
                     xlabel="Value",
                     ylabel="Count"
@@ -810,7 +876,7 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
     points = []
     values = []
     illum_values = []
-    with rasterio.open(NDSI_path) as src:
+    with rasterio.open(cloud_path) as src:
         for row, col in zip(*np.where((empty == 1) | (empty == 2))):
             x, y = src.xy(row, col)
             points.append(Point(x, y))
@@ -821,96 +887,15 @@ def collect_trainings(scene_id, all_bands_image, curr_aux_folder, auxiliary_fold
                             "illum": illum_values}, 
                            geometry=points, crs=src.crs)
 
-    #plot_valid_pixels_percentage(ranges, percentage_per_angles_list, scf_folder)
 
-    shapefile_path = os.path.join(SCF_folder, 'representative_pixels_for_training_samples.shp')
+    shapefile_path = os.path.join(curr_aux_folder, 'representative_pixels_for_training_samples.shp')
     gdf.to_file(shapefile_path, driver="ESRI Shapefile")
 
-    plot_trainings(training_stats, pixel_stats, SCF_folder)
+    plot_trainings(training_stats, pixel_stats, curr_aux_folder)
 
     return shapefile_path
 
 
-def plot_trainings(training_stats, pixel_stats, scf_folder):
-    
-
-    df_train = pd.DataFrame(training_stats)
-    df_pixels = pd.DataFrame(pixel_stats)
-
-
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    x_labels = []
-    
-    for _, row in df_train.iterrows():
-        x_labels.append(
-            f"{row['angle_range']}\n{row['illumination']}"
-        )
-    
-    x = np.arange(len(df_train))
-    width = 0.4
-    
-    ax.bar(
-        x - width/2,
-        df_train["snow_train"],
-        width,
-        label="Snow"
-    )
-    
-    ax.bar(
-        x + width/2,
-        df_train["nosnow_train"],
-        width,
-        label="Snow-free"
-    )
-    
-    ax.set_xticks(x)
-    ax.set_xticklabels(x_labels, rotation=45)
-    ax.set_ylabel("Training samples")
-    ax.set_title("Selected training samples per angle range")
-    ax.legend()
-    
-    # Save the plot
-    output_path = os.path.join(scf_folder, 'valid_trainings_per_angle.png')
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()  # Close the plot to avoid display issues in non-interactive environments
-    print(f"Plot saved to: {output_path}")
-
-    ############################################
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    x_labels = []
-    
-    for _, row in df_pixels.iterrows():
-        x_labels.append(
-            f"{row['angle_range']}\n{row['illumination']}"
-        )
-    
-    x = np.arange(len(df_pixels))
-    width = 0.4
-    
-    ax.bar(
-        x - width/2,
-        df_pixels["pixels"],
-        width
-    )
-    
-    
-    ax.set_xticks(x)
-    ax.set_xticklabels(x_labels, rotation=45)
-    ax.set_ylabel("Pixels")
-    ax.set_title("Available pixels per angle range")
-    ax.legend()
-    
-    
-    # Save the plot
-    output_path = os.path.join(scf_folder, 'valid_pixels_per_angle.png')
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()  # Close the plot to avoid display issues in non-interactive environments
-    print(f"Plot saved to: {output_path}")
     
     
     
@@ -967,304 +952,14 @@ def glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder,
         
     
     
-def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path):
-    
-    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-    NDVI_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
-
-    
-    sensor = get_sensor(scene_id)
-
-    # Create valid mask from no_data_mask (True means valid)
-    valid_mask = np.logical_not(no_data_mask)
-    cloud_mask = open_image(path_cloud_mask)[0]
-    glacier_mask = open_image(glacier_mask_path)[0]
-
-    # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(data, sensor)
-    
-    # Expected band ordering: blue, red, nir, swir
-    green = bands['GREEN']
-
-
-    nir = bands['NIR']
-    swir = bands['SWIR']
-    
-    # Load indices
-    ndsi = open_image(NDSI_path)[0]
-    ndvi = open_image(NDVI_path)[0]
-    
-
-    # NSIR
-    nsir = nir * nir/swir
-    
-    # NDWI
-    ndwi = (green - nir)/(green + nir)
-    
-    # Select NDSI > 0.7
-    ndwi[(ndsi>=0.7) & (cloud_mask==1)] # cambiare
-
-    
-    nsir_vals = nsir[((ndsi >= 0.7) & (cloud_mask == 1) & (glacier_mask == 1))] # cambiare
-
-    glacier_map = np.zeros_like(nir, dtype=np.uint8)
-
-    try:
-        nsir_threshold = threshold_otsu(nsir_vals)
-        
-        snow = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) & # cambiare
-            (glacier_mask == 1) &
-            (nsir >= nsir_threshold) &
-            (ndwi <= 0.1)
-        )
-        
-        ice = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) & #cambiare
-            (glacier_mask == 1) &
-            ((nsir < nsir_threshold) |
-            (ndwi > 0.1))
-        )
-        
-
-        
-    except:
-        candidate_mask = valid_mask & (ndsi > 0.4) & (ndvi < 0.5)
-        
-        if np.any(candidate_mask):
-            red = bands['RED']
-            red_swir = red / (swir + 1e-10)
-    
-            red_swir_dynamic_threshold = threshold_otsu(red_swir[candidate_mask])
-        else:
-            red_swir_dynamic_threshold = 0.9  # fallback if candidate_mask is empty
-            
-        ice = np.logical_and.reduce((candidate_mask, red_swir <= red_swir_dynamic_threshold, glacier_mask == 1))
-        snow = np.logical_and.reduce((candidate_mask, red_swir > red_swir_dynamic_threshold, glacier_mask == 1))
-
-    glacier_map[snow] = 100
-    glacier_map[ice] = 215
-    
-    return glacier_map
     
 
 
-def glacier_classifier2(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path):
-    # working directory
-    wd = Path(curr_aux_folder).parent
-    
-    
-    # subdirectory SCF
-    scf_folder = wd / SVM_folder_name
-    scf_folder.mkdir(exist_ok=True)
-    
-    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-    NDVI_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
-
-    
-    sensor = get_sensor(scene_id)
-
-    # Create valid mask from no_data_mask (True means valid)
-    valid_mask = np.logical_not(no_data_mask)
-    cloud_mask = open_image(path_cloud_mask)[0]
-    glacier_mask = open_image(glacier_mask_path)[0]
-    glacier_mask =  binary_dilation(glacier_mask==1, iterations=5)
-
-    # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(data, sensor)
-    
-    # Expected band ordering: blue, red, nir, swir
-    green = bands['GREEN']
-
-
-    nir = bands['NIR']
-    swir = bands['SWIR']
-    
-    # Load indices
-    ndsi = open_image(NDSI_path)[0]
-    ndvi = open_image(NDVI_path)[0]
-    
-
-    # NSIR
-    nsir = nir * nir/swir
-    
-    # NDWI
-    ndwi = (green - nir)/(green + nir)
-    
-    # Select NDSI > 0.7
-    nsir_vals = nsir[((ndsi >= 0.7) & (cloud_mask == 1) & (glacier_mask == 1))]
-
-    glacier_map = np.zeros_like(nir, dtype=np.uint8)
-    
-    sample_count=50
-    
-    empty = np.zeros(ndsi.shape, dtype='uint8')
-
-    try:
-        nsir_threshold = threshold_otsu(nsir_vals)
-        
-        snow = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) &
-            (glacier_mask == 1) &
-            (nsir >= nsir_threshold) &
-            (ndwi <= 0.1)
-        )
-        
-
-        
-        ice = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) &
-            (glacier_mask == 1) &
-            ((nsir < nsir_threshold) |
-            (ndwi > 0.1))
-        )
-        
-        
-    except:
-        candidate_mask = valid_mask & (ndsi > 0.4) & (ndvi < 0.5)
-        
-        if np.any(candidate_mask):
-            red = bands['RED']
-            red_swir = red / (swir + 1e-10)
-    
-            red_swir_dynamic_threshold = threshold_otsu(red_swir[candidate_mask])
-        else:
-            red_swir_dynamic_threshold = 0.9  # fallback if candidate_mask is empty
-            
-        ice = np.logical_and.reduce((candidate_mask, red_swir <= red_swir_dynamic_threshold, glacier_mask == 1))
-        snow = np.logical_and.reduce((candidate_mask, red_swir > red_swir_dynamic_threshold, glacier_mask == 1))
-
-
-    representative_pixels_snow = get_representative_pixels(all_bands_image, 
-                                                                snow,
-                                                                sample_count=int(sample_count / 2), 
-                                                                k=3,
-                                                                n_closest='auto')
-    
-    
-    representative_pixels_ice = get_representative_pixels(all_bands_image, 
-                                                                ice,
-                                                                sample_count=int(sample_count / 2), 
-                                                                k=3,
-                                                                n_closest='auto') * 2
-    
-    representative_pixels_mask = representative_pixels_snow + representative_pixels_ice
-
-    
-    # Convert points where result == 1 or 2 to a shapefile
-    points = []
-    values = []
-    with rasterio.open(NDSI_path) as src:
-        for row, col in zip(*np.where((representative_pixels_mask == 1) | (representative_pixels_mask == 2))):
-            x, y = src.xy(row, col)
-            points.append(Point(x, y))
-            values.append(representative_pixels_mask[row, col])
-
-    gdf = gpd.GeoDataFrame({"value": values}, geometry=points, crs=src.crs)
-    
-    
-    shapefile_path = os.path.join(scf_folder, 'representative_pixels_for_glaciers.shp')
-    gdf.to_file(shapefile_path, driver="ESRI Shapefile")
-    
-
-    
-    glacier_map[snow] = 100
-    glacier_map[ice] = 215
-    
-    return glacier_map
 
 
 
     
-    
-def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder_path,
-                            no_data_mask, SCF_folder, classify_glaciers,
-                            date_time):
-    """
-    Generate a thematic map using precomputed indices and bands.
-    The output thematic map uses:
-      100 = snow
-      215 = ice
-        0 = snow free
-      205 = clouds (optional)
-      210 = water (optional)
-      255 = invalid/no-data
-
-    Parameters:
-      curr_acquisition: str, directory containing the current acquisition
-      curr_aux_folder: str, directory with auxiliary files (e.g., cloud mask, indices)
-      auxiliary_folder_path: str, directory for additional auxiliary files (e.g., water mask, glacier mask)
-      no_data_mask: numpy array, boolean mask where True indicates no-data pixels
-      SVM_folder_name: str, name of the folder to store intermediate outputs if needed
-      classify_glaciers: str, if 'yes', then glacier classification will be applied
-      date_time: datetime, acquisition date and time
-      dt_start_glaciers_month: datetime, start month for glacier classification
-      dt_end_glaciers_month: datetime, end month for glacier classification
-    """
-
-
-    # Load masks and other necessary data
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder_path, '*Water_Mask.tif')
-    NDSI, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
-    NDVI = load_map(curr_aux_folder, '*NDVI.tif')
-
-    valid_mask = np.logical_not(no_data_mask)
-
-    
-    # Set a fixed NDSI threshold (candidate pixels) and a NDVI threshold to avoid vegetation
-    ndsi_threshold = 0.4
-    ndvi_threshold = 0.5
-    
-
-    
-    # Mark invalid pixels as 255 (no-data, clouds, or water)
-    thematic_map = np.zeros_like(NDSI, dtype=np.uint8)
-
-    
-
-    # Build candidate mask: valid pixels with sufficient NDSI and low NDVI.
-    snow_mask = valid_mask & (NDSI > ndsi_threshold) & (NDVI < ndvi_threshold)
-    thematic_map[snow_mask] = 100
-
-    
-    # Glacier reclassification: only if classify_glaciers == 'yes' and date within glacier season.
-    # if (classify_glaciers.lower() == 'yes' and
-    #     dt_start_glaciers_month is not None and dt_end_glaciers_month is not None and
-    #     is_month_in_range(date_time.month, dt_start_glaciers_month.month, dt_end_glaciers_month.month)):
-        
-    #     glacier_map = glacier_classifier(scene_id, data, no_data_mask, 
-    #                                      curr_aux_folder, 
-    #                                      auxiliary_folder_path)
-        
-    #     thematic_map[glacier_map == 100] = 100
-    #     thematic_map[glacier_map == 215] = 215
-
-
-    thematic_map[np.logical_not(valid_mask)] = 255
-    
-    # Optionally mark cloud and water areas with distinct codes:
-    thematic_map[cloud_mask == 1] = 205  # cambiare
-    thematic_map[water_mask == 1] = 210
-    
-
-    # Define output path
-    output_path = os.path.join(SCF_folder,f'{scene_id}_simple_class.tif')
-
-    # save output tif file
-    save_tif(thematic_map, NDSI_path, output_path, dtype=rasterio.uint8)
-
-    return output_path
-
-
+# not used anymore
 
 def get_representative_pixels(bands_data, valid_mask, sample_count=50, k='auto', n_closest='auto'):
     """
@@ -1374,49 +1069,135 @@ def find_optimal_k(data, max_k=10, method="elbow", random_state=42):
 
     return optimal_k
 
-
-
-
-
-def plot_valid_pixels_percentage(ranges, percentage_per_angles_list, svm_folder_path):
-    """
-    Plots the percentage of valid pixels per angle range and saves the plot as a PNG file.
-
-    Parameters:
-    - ranges (tuple of tuples): Angle ranges for the x-axis.
-    - percentage_per_angles_list (list): Percentage values corresponding to the ranges.
-    - svm_folder_path (str): Directory to save the plot.
-    """
-    # Ensure ranges and percentage lists match
-    if len(ranges) != len(percentage_per_angles_list):
-        raise ValueError("Length of ranges and percentage_per_angles_list must match.")
-
-    # Create the bar plot
-    x_labels = [f"{r[0]}-{r[1]}" for r in ranges]
-    plt.figure(figsize=(10, 6))
-    plt.bar(x_labels, percentage_per_angles_list, color='skyblue')
-
-    # Add title and labels
-    plt.title("Percentage of Valid Pixels per Solar Incidence Angle Range", fontsize=14)
-    plt.xlabel("Angle Ranges (degrees)", fontsize=12)
-    plt.ylabel("Percentage (%)", fontsize=12)
-    plt.xticks(fontsize=10)
-    plt.yticks(fontsize=10)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-    # Save the plot
-    output_path = os.path.join(svm_folder_path, 'valid_pixels_per_angle.png')
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()  # Close the plot to avoid display issues in non-interactive environments
-    print(f"Plot saved to: {output_path}")
-    
     
 
+def apply_topographic_correction(band, band_name, SIA, sun_altitude, correction="weak", g=0.22):
+    
+    sun_zenith = 90 - sun_altitude
+    
+    if band_name in ['GREEN', 'BLUE', 'RED']:
+        b = 0.75
+    elif band_name in ['NIR', 'SWIR']:
+        if correction == "weak":
+            b = 0.33
+        elif correction == "strong":
+            b = 1
+            
+    # cos of the SIA
+    cos_beta = np.cos(np.deg2rad(SIA))
+    
+    # CALCULATE SEN2COR THRESHOLD:
+    if sun_zenith < 45:
+        beta_threshold = sun_zenith + 20
+    elif sun_zenith <= 55:
+        beta_threshold = sun_zenith + 15
+    else:
+        beta_threshold = sun_zenith + 10
+        
+    
+    # Prevent a zero or negative denominator.
+    beta_threshold_deg = min(beta_threshold, 89.0)
+    cos_beta_threshold = np.cos(np.deg2rad(beta_threshold_deg))
+    
+    # valid application range between betaT and 90
+    valid = cos_beta > 0
+    faint_illumination = valid & (SIA > beta_threshold_deg)
+
+    
+    # geometric function G Eq. 0.32 
+    G = np.clip((cos_beta/cos_beta_threshold)**b, g, 1.0)
+
+    band_corr = band.copy()
+    band_corr[faint_illumination] = band[faint_illumination]*G[faint_illumination]
+    
+    return band_corr     
 
 
 
 
+def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path):
+    
+    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
+    NDVI_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
+    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
+    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
+
+    
+    sensor = get_sensor(scene_id)
+
+    # Create valid mask from no_data_mask (True means valid)
+    valid_mask = np.logical_not(no_data_mask)
+    cloud_mask = open_image(path_cloud_mask)[0]
+    glacier_mask = open_image(glacier_mask_path)[0]
+
+    # Load the image bands using your open_image and define_bands functions.
+    bands = define_bands(data, sensor)
+    
+    # Expected band ordering: blue, red, nir, swir
+    green = bands['GREEN']
+
+
+    nir = bands['NIR']
+    swir = bands['SWIR']
+    
+    # Load indices
+    ndsi = open_image(NDSI_path)[0]
+    ndvi = open_image(NDVI_path)[0]
+    
+
+    # NSIR
+    nsir = nir * nir/swir
+    
+    # NDWI
+    ndwi = (green - nir)/(green + nir)
+    
+    # Select NDSI > 0.7
+    ndwi[(ndsi>=0.7) & (cloud_mask==1)] # cambiare
+
+    
+    nsir_vals = nsir[((ndsi >= 0.7) & (cloud_mask == 1) & (glacier_mask == 1))] # cambiare
+
+    glacier_map = np.zeros_like(nir, dtype=np.uint8)
+
+    try:
+        nsir_threshold = threshold_otsu(nsir_vals)
+        
+        snow = (
+            (ndsi >= 0.7) &
+            (cloud_mask == 1) & # cambiare
+            (glacier_mask == 1) &
+            (nsir >= nsir_threshold) &
+            (ndwi <= 0.1)
+        )
+        
+        ice = (
+            (ndsi >= 0.7) &
+            (cloud_mask == 1) & #cambiare
+            (glacier_mask == 1) &
+            ((nsir < nsir_threshold) |
+            (ndwi > 0.1))
+        )
+        
+
+        
+    except:
+        candidate_mask = valid_mask & (ndsi > 0.4) & (ndvi < 0.5)
+        
+        if np.any(candidate_mask):
+            red = bands['RED']
+            red_swir = red / (swir + 1e-10)
+    
+            red_swir_dynamic_threshold = threshold_otsu(red_swir[candidate_mask])
+        else:
+            red_swir_dynamic_threshold = 0.9  # fallback if candidate_mask is empty
+            
+        ice = np.logical_and.reduce((candidate_mask, red_swir <= red_swir_dynamic_threshold, glacier_mask == 1))
+        snow = np.logical_and.reduce((candidate_mask, red_swir > red_swir_dynamic_threshold, glacier_mask == 1))
+
+    glacier_map[snow] = 100
+    glacier_map[ice] = 215
+    
+    return glacier_map
 
 
 
