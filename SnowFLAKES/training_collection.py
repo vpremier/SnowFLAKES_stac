@@ -739,53 +739,52 @@ def collect_trainings(data, scene_id, config, total_samples=500):
                             "pixels": pixel_perc_shadow
                             })
             
-        if pixel_perc_shadow > 1:
-            
-            # initialize empty masks
-            representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
-            representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
-            
-            print('Collecting trainings in shadow')
-            snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
+        
+        # initialize empty masks
+        representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
+        representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
+        
+        print('Collecting trainings in shadow')
+        snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
 
-            
-            if np.sum(snow_shad) > 10:
-                representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
+        
+        if np.sum(snow_shad) > 10:
+            representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
 
 
-                # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
-                #                                                             snow_shad,
-                #                                                             sample_count=int(sample_count / 2), 
-                #                                                             k=3,
-                #                                                             n_closest='auto')
-                
-            if np.sum(snowfree_shad) > 10:
-                representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_shad, green, int(sample_count / 2), n_bins=20, seed=None) * 2
+            # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
+            #                                                             snow_shad,
+            #                                                             sample_count=int(sample_count / 2), 
+            #                                                             k=3,
+            #                                                             n_closest='auto')
+            
+        if np.sum(snowfree_shad) > 10:
+            representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_shad, green, int(sample_count / 2), n_bins=20, seed=None) * 2
 
-                # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
-                #                                                               snowfree_shad,
-                #                                                               sample_count=int(sample_count / 2), 
-                #                                                               k=3,
-                #                                                               n_closest='auto') * 2
-            
-            # merge the two masks
-            representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
-            empty[mask_shadow] = representative_pixels_mask[mask_shadow]
-            
-            # mark selected training pixels as shadow
-            illumination[representative_pixels_mask > 0] = 2
-            
-            print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
-            print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
-            
+            # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
+            #                                                               snowfree_shad,
+            #                                                               sample_count=int(sample_count / 2), 
+            #                                                               k=3,
+            #                                                               n_closest='auto') * 2
+        
+        # merge the two masks
+        representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
+        empty[mask_shadow] = representative_pixels_mask[mask_shadow]
+        
+        # mark selected training pixels as shadow
+        illumination[representative_pixels_mask > 0] = 2
+        
+        print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
+        print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
+        
 
-                            
-            training_stats.append({
-                "angle_range": f"{curr_range[0]}-{curr_range[1]}",
-                "illumination": "Shadow",
-                "snow_train": int(np.sum(representative_pixels_mask_snow)),
-                "nosnow_train": int(np.sum(representative_pixels_mask_noSnow) / 2)
-            })
+                        
+        training_stats.append({
+            "angle_range": f"{curr_range[0]}-{curr_range[1]}",
+            "illumination": "Shadow",
+            "snow_train": int(np.sum(representative_pixels_mask_snow)),
+            "nosnow_train": int(np.sum(representative_pixels_mask_noSnow) / 2)
+        })
 
 
 
