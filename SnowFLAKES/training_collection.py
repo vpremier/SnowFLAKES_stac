@@ -36,6 +36,7 @@ from SnowFLAKES.utilities import (
 
 from SnowFLAKES.auxiliary_folder_population import get_altitude_azimuth
 
+
 from SnowFLAKES.fit_distribution import fit_distribution_and_median
 
 
@@ -256,8 +257,7 @@ def define_threshold(feature,
         feature_name: values.flatten()
     })
     
-    values_df.to_csv(
-        outfolder / f"{feature_name}_values.csv",
+    values_df.to_csv(os.path.join(outfolder, f"{feature_name}_values.csv"),
         index=False
     )
 
@@ -738,35 +738,38 @@ def collect_trainings(data, scene_id, config, total_samples=500):
                             "illumination": "Shadow",
                             "pixels": pixel_perc_shadow
                             })
-            
         
         # initialize empty masks
         representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
-        representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8')
+        representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8') 
         
-        print('Collecting trainings in shadow')
-        snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
-
-        
-        if np.sum(snow_shad) > 10:
-            representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
-
-
-            # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
-            #                                                             snow_shad,
-            #                                                             sample_count=int(sample_count / 2), 
-            #                                                             k=3,
-            #                                                             n_closest='auto')
+        if pixel_perc_shadow > 0:
             
-        if np.sum(snowfree_shad) > 10:
-            representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_shad, green, int(sample_count / 2), n_bins=20, seed=None) * 2
+   
+            
+            print('Collecting trainings in shadow')
+            snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
 
-            # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
-            #                                                               snowfree_shad,
-            #                                                               sample_count=int(sample_count / 2), 
-            #                                                               k=3,
-            #                                                               n_closest='auto') * 2
-        
+            
+            if np.sum(snow_shad) > 10:
+                representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
+
+
+                # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
+                #                                                             snow_shad,
+                #                                                             sample_count=int(sample_count / 2), 
+                #                                                             k=3,
+                #                                                             n_closest='auto')
+                
+            if np.sum(snowfree_shad) > 10:
+                representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_shad, green, int(sample_count / 2), n_bins=20, seed=None) * 2
+
+                # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
+                #                                                               snowfree_shad,
+                #                                                               sample_count=int(sample_count / 2), 
+                #                                                               k=3,
+                #                                                               n_closest='auto') * 2
+            
         # merge the two masks
         representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
         empty[mask_shadow] = representative_pixels_mask[mask_shadow]
