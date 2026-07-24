@@ -688,17 +688,20 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
         scf_data = scf_src.read(1)  # Reading first band
      
     shadow_mask, shadow_path = load_map(curr_aux_folder, '*shadow_mask.tif', return_path=True)
-    distance_idx = load_map(curr_aux_folder, '*distance.tif')
+    # distance_idx = load_map(curr_aux_folder, '*distance.tif')
+    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
 
     
     swir = bands["SWIR"]
     green = bands["GREEN"]
     
     # scf correction based on diff B NIR and shadow mask
+    pixels_to_correct = np.logical_and.reduce((diff_B_NIR > 0, 
+                                               diff_B_NIR < 0.06, 
+                                               shadow_mask == 1, 
+                                               scf_data > 0, 
+                                               scf_data < 50))
 
-    # pixels_to_correct = np.logical_and.reduce(
-    #     (valid_mask, diff_B_NIR > 0, diff_B_NIR < 0.06, shadow_mask == 1, SCF_map > 0, SCF_map < 50))
-    # set to 0 in the original Ricardo's code
     # SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
 
     
@@ -713,6 +716,7 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
                                 scf_data < 50,
                                 shadow_mask == 0))
     
+    scf_data[pixels_to_correct] = 0
     scf_data[condition1 | condition2] = 0
     
     save_tif(scf_data, shadow_path, FSC_SVM_map_path, dtype=rasterio.uint8)
