@@ -9,10 +9,12 @@ Created on Tue Nov  5 16:31:29 2024
 import numpy as np
 import os
 import geopandas as gpd
+import pandas as pd
 import rasterio
 import pickle
 from joblib import Parallel, delayed
 from rasterio.features import geometry_mask
+from rasterio.transform import rowcol
 
 from sklearn import preprocessing
 from sklearn.svm import SVC
@@ -52,6 +54,65 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
         shadow_feat,
         diff_B_NIR_feat
     ))
+
+
+def _save_training_samples_csv(shapefile, shapefile_path, data,
+                               all_bands_image, all_bands, curr_aux_folder):
+    """Save the sampled training features and labels beside the shapefile."""
+    # Training points are written by ``training_collection`` in the same CRS
+    # and grid as the image.  Reproject here as a safeguard for externally
+    # supplied training shapefiles.
+    image_crs = getattr(data.rio, "crs", None)
+    if image_crs is not None and shapefile.crs is not None and shapefile.crs != image_crs:
+        shapefile = shapefile.to_crs(image_crs)
+
+    rows, cols = rowcol(
+        data.rio.transform(),
+        shapefile.geometry.x.to_numpy(),
+        shapefile.geometry.y.to_numpy(),
+    )
+    rows = np.asarray(rows)
+    cols = np.asarray(cols)
+    in_bounds = (
+        (rows >= 0) & (rows < all_bands_image.shape[-2]) &
+        (cols >= 0) & (cols < all_bands_image.shape[-1])
+    )
+
+    rows = rows[in_bounds]
+    cols = cols[in_bounds]
+    samples = shapefile.iloc[np.flatnonzero(in_bounds)].copy()
+
+    solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
+    hillshade = np.cos(np.deg2rad(solar_incidence_angle))
+    shadow = load_map(curr_aux_folder, '*shad_idx.tif')
+    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
+
+    feature_array = np.hstack((
+        all_bands_image[:, rows, cols].T,
+        hillshade[rows, cols, None],
+        shadow[rows, cols, None],
+        diff_B_NIR[rows, cols, None],
+    ))
+    feature_names = [str(name) for name in all_bands]
+    feature_names.extend(["hillshade", "shad_idx", "diffBNIR"])
+    training_df = pd.DataFrame(feature_array, columns=feature_names)
+
+    training_df["class"] = samples["value"].map({1: "snow", 2: "snow_free"}).to_numpy()
+    illumination_column = next(
+        (column for column in ("illum", "illumination") if column in samples.columns),
+        None,
+    )
+    if illumination_column is None:
+        training_df["illumination"] = "unknown"
+    else:
+        training_df["illumination"] = samples[illumination_column].map(
+            {1: "sun", 2: "shadow"}
+        ).fillna(samples[illumination_column].astype(str)).to_numpy()
+
+    csv_path = os.path.splitext(shapefile_path)[0] + ".csv"
+    training_df.to_csv(csv_path, index=False)
+    print(f"Training samples saved to {csv_path}")
+    return csv_path
 
 
    
@@ -106,6 +167,15 @@ def model_training(data, scene_id, shapefile_path, curr_aux_folder,
 
     training_array = np.concatenate((snow_training, no_snow_training), axis=0)
     class_array = np.concatenate((np.ones(snow_training.shape[0]), np.zeros(no_snow_training.shape[0])), axis=0)
+
+    _save_training_samples_csv(
+        shapefile,
+        shapefile_path,
+        data,
+        all_bands_image,
+        all_bands,
+        curr_aux_folder,
+    )
 
     # Rescale: standardization between 0 and 1
     normalizer = preprocessing.StandardScaler().fit(training_array)
@@ -321,7 +391,6 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
 
     print(f"Modified raster saved at: {output_path}")
     return output_path
-
 
 
 

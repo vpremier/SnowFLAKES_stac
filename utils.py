@@ -68,7 +68,7 @@ def load_with_retry(data, max_retries=5, wait_seconds=30):
 def get_processed_dates(config):
     working_folder = config['output_directory']
 
-    files = glob.glob(os.path.join(working_folder, "*/*/*SnowFLAKES*.tif"))
+    files = glob.glob(os.path.join(working_folder, "*/*SnowFLAKES*.tif"))
     
 
     dates = sorted({
