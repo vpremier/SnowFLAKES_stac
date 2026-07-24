@@ -9,6 +9,7 @@ Created on Fri Feb  6 12:02:12 2026
 import json
 import os
 import pandas as pd
+import shutil
 import time
 
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
@@ -106,17 +107,39 @@ def run_workflow(date_start, date_end, config_path):
             try:
                 
                 if config["satellite"] == "Sentinel-2":
-                    # Sentinel-2: STAC API from CDSE
-                    load_stac.setup_cdse_credentials()
+                    # Select the Sentinel-2 backend from the configuration.  Keep
+                    # the CDSE STAC API as the fallback for older configurations
+                    # that do not yet define ``download_mode``.
+                    download_mode = (str(config.get("download_mode", "cdse stac api"))
+                                     .strip().lower().replace("_", " "))
+                    sentinel2_kwargs = {
+                        "outdir": outdir,
+                        "date": date,
+                        "resolution": resolution,
+                        "extent_target": extent_target,
+                        "epsg_target": epsg_target,
+                        "save": False,
+                        "shp": config["shapefile"],
+                        "exclude_tiles": config["exclude_tiles"],
+                    }
 
-                    data, scene_id = load_sh.convert_sentinel2_bands(outdir, 
-                                                                    date, 
-                                                                    resolution=resolution, 
-                                                                    extent_target=extent_target, 
-                                                                    epsg_target=epsg_target,
-                                                                    save = False,
-                                                                    shp=config['shapefile'],
-                                                                    exclude_tiles=config['exclude_tiles'])
+                    if download_mode == "sentinelhub":
+                        # Sentinel Hub backend (loading/load_sh.py).
+                        data, scene_id = load_sh.convert_sentinel2_bands(
+                            **sentinel2_kwargs
+                        )
+                    elif download_mode == "cdse stac api":
+                        # Copernicus Data Space STAC backend (loading/load_stac.py).
+                        load_stac.setup_cdse_credentials()
+                        data, scene_id = load_stac.convert_sentinel2_bands(
+                            **sentinel2_kwargs
+                        )
+                    else:
+                        raise ValueError(
+                            "Unsupported Sentinel-2 download_mode "
+                            f"{config.get('download_mode')!r}. Expected "
+                            "'sentinelhub' or 'cdse stac api'."
+                        )
                     
                 elif config["satellite"].startswith("Landsat"):
                     # Landsat: USGS STAC
@@ -171,7 +194,18 @@ def run_workflow(date_start, date_end, config_path):
                 
                 time.sleep(2)
                 
-                run_snowflakes(config, data, scene_id)
+                try:
+                    run_snowflakes(config, data, scene_id)
+                finally:
+                    # Auxiliary rasters are intermediate products.  Remove only
+                    # the scene-specific auxiliary directory when requested;
+                    # the scene folder and its final products are preserved.
+                    if config.get("remove_auxiliary", False):
+                        scene_aux_folder = os.path.join(
+                            outdir, scene_id, "auxiliary"
+                        )
+                        if os.path.isdir(scene_aux_folder):
+                            shutil.rmtree(scene_aux_folder)
                 
             except Exception as e:
                 print(f"Error processing {scene_id} on date {date}: {e}")
@@ -195,7 +229,7 @@ def run_workflow(date_start, date_end, config_path):
 if __name__ == "__main__":
     
     
-    start = pd.Timestamp("2017-01-01")
+    start = pd.Timestamp("2015-01-01")
     end = pd.Timestamp("2017-01-10")
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
@@ -223,8 +257,6 @@ if __name__ == "__main__":
         current = next_date
 
     for date_start, date_end in date_pairs:
-        
-        ss
         run_workflow(date_start, date_end, config_path)
 
         
@@ -234,5 +266,3 @@ if __name__ == "__main__":
     
 # add layer uncertainty
 # guarda land cover
-
-

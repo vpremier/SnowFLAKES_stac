@@ -8,7 +8,6 @@ Created on Mon Sep 16 14:59:20 2024
 import os
 import numpy as np
 from datetime import datetime as dt
-import time
 import geopandas as gpd
 
 from SnowFLAKES.auxiliary_folder_population import create_auxiliary_information
@@ -25,10 +24,14 @@ from SnowFLAKES.utilities import (
 from SnowFLAKES.training_collection import (
     collect_trainings,
     get_pixels_ice,
-    mask_raster_with_glacier
 )
 
-from SnowFLAKES.SCF_functions import model_training, SCF_dist_SV
+from SnowFLAKES.SCF_functions import (
+    model_training, 
+    SCF_dist_SV,
+    mask_raster_with_glacier,
+)
+
 from SnowFLAKES.ice import run_snow_ice_classification
 
 

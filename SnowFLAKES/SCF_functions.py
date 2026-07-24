@@ -24,8 +24,7 @@ from SnowFLAKES.utilities import (
     get_sensor,
     select_band_names,
     valid_mask,
-    create_folder,
-    define_bands
+    create_folder
 )
 
 
@@ -285,7 +284,7 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
     fsc_data, FSC_SVM_map_path = load_map(scene_folder, '*SnowFLAKES.tif', return_path=True)
         
     # Define output path
-    output_path = FSC_SVM_map_path.replace('.tif', '_GLACIERS.tif')
+    output_path = os.path.join(scene_folder, f"{scene_id}_SnowFLAKES_GLACIERS.tif")
 
     # Open the raster
     with rasterio.open(FSC_SVM_map_path) as src:
