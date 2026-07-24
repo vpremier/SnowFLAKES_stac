@@ -72,8 +72,11 @@ def run_snowflakes(config, data, scene_id):
         no_data_value = float(no_data_value)
 
     # Create all auxiliary information
-    create_auxiliary_information(scene_id, data, config)
+    valid_scene = create_auxiliary_information(scene_id, data, config)
 
+    if not valid_scene:
+        print("Ending process. No valid data for this image.")
+        return
 
     # Collect training data and train the SVM model if no pretrained model exists
 

@@ -737,7 +737,8 @@ def create_auxiliary_information(scene_id, data, config):
 
         # delete folder
         shutil.rmtree(scene_folder)
-        return
+        
+        return False
     
     
     
@@ -795,7 +796,7 @@ def create_auxiliary_information(scene_id, data, config):
     # adiecency map
     adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
-
+    return True
 
 
 
