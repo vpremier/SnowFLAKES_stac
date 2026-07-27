@@ -19,6 +19,7 @@ import pystac_client
 from shapely.geometry import box
 from shapely.geometry import mapping
 from rasterio.enums import Resampling
+from rasterio.session import AWSSession
 from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
 from affine import Affine   
@@ -44,12 +45,26 @@ def setup_cdse_credentials():
     session = boto3.Session(profile_name="cdse")
     creds = session.get_credentials().get_frozen_credentials()
 
+    # Remove settings belonging to USGS/Amazon S3.
+    os.environ.pop("AWS_REQUEST_PAYER", None)
+
     os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
     os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
-    os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
+
+    if creds.token:
+        os.environ["AWS_SESSION_TOKEN"] = creds.token
+    else:
+        os.environ.pop("AWS_SESSION_TOKEN", None)
+
+    os.environ["AWS_REGION"] = "default"
+    os.environ["AWS_DEFAULT_REGION"] = "default"
+    os.environ["AWS_S3_ENDPOINT"] = "eodata.dataspace.copernicus.eu"
+    os.environ["AWS_HTTPS"] = "YES"
+    os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
+
+    return creds
 
 
-    
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
                             reproj_type=Resampling.bilinear, save=True, 
@@ -58,6 +73,11 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     print(f"Loading collection {collection} from CDSE...")
 
     start = time.time()
+
+    # Reset the process to the CDSE profile immediately before constructing the
+    # lazy DEM read. Rasterio obtains AWS credentials through boto3/environment
+    # handling, so credential values must not be passed as GDAL options.
+    setup_cdse_credentials()
 
     # out directory
     os.makedirs(outdir, exist_ok=True)
@@ -133,25 +153,41 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     print(f"Number of STAC items returned: {len(items)}")
 
 
-    data = stackstac.stack(
-        items=items,
-        bounds=extent_target,
-        epsg=epsg_target,
-        resolution=resolution,
-        resampling=reproj_type,
-        gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
-             {
-                 "GDAL_NUM_THREADS": -1,
-                 "GDAL_HTTP_UNSAFESSL": "YES",
-                 "GDAL_HTTP_TCP_KEEPALIVE": "YES",
-                 "AWS_VIRTUAL_HOSTING": "FALSE",
-                 "AWS_HTTPS": "YES"
-             }
-             ),
-         )
-    
-    
-    data = data.mean(dim="time", skipna=True)
+    cdse_session = AWSSession(
+        profile_name="cdse",
+        region_name="default",
+        endpoint_url=S3_ENDPOINT,
+        requester_pays=False,
+    )
+
+    # Keep creation and computation in the same thread and explicit Rasterio
+    # session so GDAL cannot reuse credentials from a preceding USGS read.
+    with rio.Env(
+        session=cdse_session,
+        AWS_VIRTUAL_HOSTING="FALSE",
+        AWS_HTTPS="YES",
+        GDAL_HTTP_UNSAFESSL="YES",
+        GDAL_HTTP_TCP_KEEPALIVE="YES",
+    ):
+        data = stackstac.stack(
+            items=items,
+            bounds=extent_target,
+            epsg=epsg_target,
+            resolution=resolution,
+            resampling=reproj_type,
+            gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
+                always={
+                    "GDAL_NUM_THREADS": -1,
+                    "GDAL_HTTP_UNSAFESSL": "YES",
+                    "GDAL_HTTP_TCP_KEEPALIVE": "YES",
+                    "AWS_VIRTUAL_HOSTING": "FALSE",
+                    "AWS_HTTPS": "YES",
+                }
+            ),
+        )
+
+        data = data.mean(dim="time", skipna=True)
+        data = data.compute(scheduler="single-threaded")
             
     #  === Extract info_src from xarray ===
     transform = Affine(
@@ -565,8 +601,5 @@ if __name__ == "__main__":
 
 # processare ghiacciai?
 # check openeo
-
-
-
 
 

@@ -27,19 +27,34 @@ from loading.utils_stac import *
 # from utils_stac import *
 
 
-    
 def setup_usgs_credentials():
-
     session = boto3.Session(profile_name="default")
     creds = session.get_credentials().get_frozen_credentials()
-    
+
+    # Remove settings belonging to CDSE.
+    for name in (
+            "AWS_S3_ENDPOINT",
+            "AWS_ENDPOINT_URL",
+            "AWS_ENDPOINT_URL_S3",
+            "AWS_VIRTUAL_HOSTING",
+    ):
+        os.environ.pop(name, None)
+
+    # Keep the access key and secret from the same AWS profile.
     os.environ["AWS_ACCESS_KEY_ID"] = creds.access_key
     os.environ["AWS_SECRET_ACCESS_KEY"] = creds.secret_key
-    os.environ["AWS_SESSION_TOKEN"] = creds.token or ""
+
+    if creds.token:
+        os.environ["AWS_SESSION_TOKEN"] = creds.token
+    else:
+        os.environ.pop("AWS_SESSION_TOKEN", None)
+
+    # USGS Landsat is stored in AWS Oregon.
+    os.environ["AWS_REGION"] = "us-west-2"
+    os.environ["AWS_DEFAULT_REGION"] = "us-west-2"
     os.environ["AWS_REQUEST_PAYER"] = "requester"
-    
- 
-    
+
+
 def fetch_stac_server(params):
     """ 
     Queries the STAC server (STAC) backend.

@@ -118,7 +118,6 @@ def choose_sentinelhub_request_epsg(
 
     longitude_span = max_lon - min_lon
 
-    # A single UTM zone is 6 degrees wide. For broad AOIs, WGS84 is safer.
     if longitude_span > 6:
         return 3857
 
