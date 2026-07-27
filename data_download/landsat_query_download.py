@@ -151,8 +151,8 @@ def downloadfiles(download):
 
 
 
-def query_landsat(date_start, date_end, username, token, shp = None,
-                         max_cc = 90, sat = ['LT05','LE07','LC08','LC09']):
+def query_landsat(date_start, date_end, username, token, shp=None,
+                  max_cc=90, sat=None):
     
     """Returns list of matching Landsat scenes for a selected period and
         for a specific area (defined from a shapefile). The username and
@@ -231,15 +231,25 @@ def query_landsat(date_start, date_end, username, token, shp = None,
     else:
         raise ValueError(f"Unsupported input type for 'shp': {type(shp)}")
     
-    if sat == []:
-        sat = ['LT05','LE07','LC08','LC09']
+    valid_satellites = set(satellite)
+    if sat is None or len(sat) == 0:
+        requested_satellites = valid_satellites
+    else:
+        requested_satellites = {str(code).upper() for code in sat}
+
+    invalid_satellites = requested_satellites - valid_satellites
+    if invalid_satellites:
+        raise ValueError(
+            f"Invalid Landsat satellite code(s): {sorted(invalid_satellites)}. "
+            f"Allowed values are: {sorted(valid_satellites)}."
+        )
         
     # Request
     results = []
-    for key in satellite:
-        
-        if key not in sat:
-            continue
+    # LC08 and LC09 share ``landsat_ot_c2_l1``. Query each distinct dataset
+    # once, then filter the returned scene IDs by their satellite prefix.
+    datasets_to_query = {satellite[code] for code in requested_satellites}
+    for dataset_name in datasets_to_query:
         
         # filter by date
         acquisitionFilter = {'start' : date_start, 'end' : date_end}
@@ -252,7 +262,7 @@ def query_landsat(date_start, date_end, username, token, shp = None,
                                           'longitude' : lon_max}}
             
             
-        scene_search  = {'datasetName': satellite[key],
+        scene_search  = {'datasetName': dataset_name,
                          'maxResults':10000, # default is 100
                             'sceneFilter' : {
                                 'spatialFilter': spatialFilter,
@@ -265,10 +275,16 @@ def query_landsat(date_start, date_end, username, token, shp = None,
         
 
         for result in scenes['results']:
-            # Add this scene to the list I would like to download
+            display_id = result['displayId']
+            sensor_code = display_id.split('_', 1)[0].upper()
+
+            # The shared OLI/TIRS dataset contains both Landsat 8 and 9.
+            if sensor_code not in requested_satellites:
+                continue
+
             results.append({
-                'displayId': result['displayId'],
-                'entityId': result['entityId']
+                'displayId': display_id,
+                'entityId': result['entityId'],
             })
         
     # After the loop:

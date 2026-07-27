@@ -1,11 +1,11 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/S2-new",
-  "download_mode": "cdse stac api",
+  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/rofental_shp/rofental.shp",
+  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/daily_SCA_downscaling/Rofental_S3/Sentinel2",
+  "download_mode": "sentinelhub",
   "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2021-10-16",
-  "date_end": "2021-12-15",
+  "date_start": "2013-04-01",
+  "date_end": "2013-05-31",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -18,12 +18,12 @@
   "resampling_params": {
     "resolution": 50,
     "extent_target": [
-      366000,
-      6215000,
-      428500,
-      6340000
+      630800,
+      5180500,
+      646800,
+      5195500
     ],
-    "epsg_target": 32719
+    "epsg_target": 25832
   },
   "overwrite": false,
   "no_data_value": "nan",

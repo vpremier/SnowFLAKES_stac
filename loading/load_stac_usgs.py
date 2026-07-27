@@ -300,7 +300,7 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
         msg = f"Failed to load data for {merged_image_id}: {str(e)}"
         logging.error(msg)
         print(msg)
-        return    
+        return None, None
         
     
     #=== Extract info_src from xarray ===
@@ -319,6 +319,29 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
 
         # conversion to Top of Atmosphere reflectance
         MTL_info = get_MTL_file(items[0]) 
+
+        # Landsat 7 ETM+ Band 6 uses VCID-specific calibration metadata,
+        # unlike the generic Band-6 keys used by the other Landsat sensors.
+        thermal_suffix = ""
+        if platform == "LANDSAT_7":
+            radiometric = MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_RADIOMETRIC_RESCALING']
+            thermal = MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_THERMAL_CONSTANTS']
+            for candidate in ("_VCID_1", "_VCID_2"):
+                required_keys = (
+                    f"RADIANCE_ADD_BAND_6{candidate}",
+                    f"RADIANCE_MULT_BAND_6{candidate}",
+                    f"K1_CONSTANT_BAND_6{candidate}",
+                    f"K2_CONSTANT_BAND_6{candidate}",
+                )
+                if all(key in radiometric or key in thermal for key in required_keys):
+                    thermal_suffix = candidate
+                    break
+
+            if not thermal_suffix:
+                raise KeyError(
+                    "Landsat-7 MTL metadata does not contain a complete "
+                    "VCID-specific calibration set for Band 6."
+                )
         
         zenith = np.radians(90 - float(MTL_info['LANDSAT_METADATA_FILE']['IMAGE_ATTRIBUTES']['SUN_ELEVATION']))
         
@@ -329,11 +352,11 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                 # thermal bands
                 
                 # Get parameters from the MTL file
-                K1 = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_THERMAL_CONSTANTS'][f'K1_CONSTANT_BAND_{band}'])
-                K2 = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_THERMAL_CONSTANTS'][f'K2_CONSTANT_BAND_{band}'])
+                K1 = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_THERMAL_CONSTANTS'][f'K1_CONSTANT_BAND_{band}{thermal_suffix}'])
+                K2 = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_THERMAL_CONSTANTS'][f'K2_CONSTANT_BAND_{band}{thermal_suffix}'])
         
-                thermal_rad_add = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_RADIOMETRIC_RESCALING'][f'RADIANCE_ADD_BAND_{band}'])
-                thermal_rad_mult = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_RADIOMETRIC_RESCALING'][f'RADIANCE_MULT_BAND_{band}'])
+                thermal_rad_add = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_RADIOMETRIC_RESCALING'][f'RADIANCE_ADD_BAND_{band}{thermal_suffix}'])
+                thermal_rad_mult = float(MTL_info['LANDSAT_METADATA_FILE']['LEVEL1_RADIOMETRIC_RESCALING'][f'RADIANCE_MULT_BAND_{band}{thermal_suffix}'])
         
                 thermal_array = data.sel(band=band_name)
         
