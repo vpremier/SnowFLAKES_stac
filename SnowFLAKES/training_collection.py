@@ -248,6 +248,10 @@ def define_threshold(feature,
         0.15 = 15%
     """
 
+    if np.size(feature[mask]) == 0:
+        
+        return np.asarray(threshold)
+        
     
     values = feature[mask].reshape(-1, 1)
 
