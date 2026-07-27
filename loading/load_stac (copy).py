@@ -62,7 +62,6 @@ def setup_cdse_credentials():
     os.environ["AWS_HTTPS"] = "YES"
     os.environ["AWS_VIRTUAL_HOSTING"] = "FALSE"
     
-        
     # trying to get 429s under control
     os.environ["GDAL_HTTP_MAX_RETRY"] = "5"
     os.environ["GDAL_HTTP_RETRY_DELAY"] = "1"
@@ -71,6 +70,7 @@ def setup_cdse_credentials():
     os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = ".jp2,.tif,.tiff"
     os.environ["VSI_CACHE"] = "TRUE"
     os.environ["VSI_CACHE_SIZE"] = "67108864"
+    
 
     return creds
 
@@ -381,7 +381,6 @@ def convert_sentinel2_bands(outdir,
 
     # determine AOI bbox in wgs84
     if filter_by_geometry:
-        print('Filtering STAC by geometry')
         # determine AOI bbox in wgs84
         print('Filtering STAC by geometry')
         if shp:
@@ -482,6 +481,21 @@ def convert_sentinel2_bands(outdir,
         os.makedirs(os.path.join(outdir, f"{merged_image_id}"), exist_ok=True)
 
     try:
+        
+        %%time
+        %%time
+        items = list(cat.search(**params).item_collection())
+
+        dataset = odc.stac.load(
+            items=items,
+            bands=bands,
+            bounds=extent_target,
+            epsg=epsg_target,
+            groupby="solar_day",
+            resolution=resolution,
+        )
+
+
     
         data = stackstac.stack(
             items=items,

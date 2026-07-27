@@ -227,28 +227,19 @@ def run_workflow(date_start, date_end, config_path):
         
 
 if __name__ == "__main__":
-<<<<<<< Updated upstream
 
     start = pd.Timestamp("2021-10-01")
-    end = pd.Timestamp("2026-05-31")
-=======
+    end = pd.Timestamp("2024-03-31")
     
-    
-    start = pd.Timestamp("2018-04-01")
-    end = pd.Timestamp("2020-04-30")
->>>>>>> Stashed changes
+
     # start = pd.Timestamp("2024-03-05")
     # end = pd.Timestamp("2024-03-06")
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
     # config_path = './config/config_snowcop_landsat.json'
-<<<<<<< Updated upstream
-    # config_path = './config/config_rofental_Landsat8.json'
-    config_path = './config/config_rofental_Landsat9.json'
-=======
-    config_path = './config/config_snowcop_landsat.json'
->>>>>>> Stashed changes
+
+    config_path = './config/config_snowcop.json'
 
     
     step = pd.Timedelta(days=60)
