@@ -29,6 +29,8 @@ from utils import (
 )
 
 
+import glob
+from SnowFLAKES.utilities import get_uncertainty
 
 
 
@@ -78,6 +80,12 @@ def run_workflow(date_start, date_end, config_path):
     outdir = config["output_directory"]
     data_df = pd.read_csv(os.path.join(outdir, 'query.csv'))
     
+    # sceneList = glob.glob(outdir + os.sep + 'L*')
+    # for scene in sceneList:
+    #     scene_id = os.path.basename(scene)
+    #     get_uncertainty(scene_id, config)
+
+
     if data_df.empty:
         return
     

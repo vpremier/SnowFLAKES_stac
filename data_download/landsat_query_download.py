@@ -152,7 +152,7 @@ def downloadfiles(download):
 
 
 def query_landsat(date_start, date_end, username, token, shp=None,
-                  max_cc=90, sat=None):
+                  max_cc=90, sat=None, tierList=None):
     
     """Returns list of matching Landsat scenes for a selected period and
         for a specific area (defined from a shapefile). The username and
@@ -181,6 +181,10 @@ def query_landsat(date_start, date_end, username, token, shp=None,
     sat : list, optional
         list with desired missions. If not specified, all matching missions are selected. 
         Possible options are LT05, LE07, LC08 and LC09
+    tierList : list, optional
+        Processing tiers to retain (for example ``['T1']`` or
+        ``['T1', 'T2']``). If ``None`` (default), only Tier 1 scenes are
+        returned. Pass an empty list to disable tier filtering.
     
     Returns
     -------
@@ -243,6 +247,13 @@ def query_landsat(date_start, date_end, username, token, shp=None,
             f"Invalid Landsat satellite code(s): {sorted(invalid_satellites)}. "
             f"Allowed values are: {sorted(valid_satellites)}."
         )
+
+    # Tier 1 is the default because it is the highest-quality processing
+    # category. The tier is encoded as the final component of displayId.
+    if tierList is None:
+        requested_tiers = {'T1'}
+    else:
+        requested_tiers = {str(tier).upper() for tier in tierList}
         
     # Request
     results = []
@@ -277,9 +288,12 @@ def query_landsat(date_start, date_end, username, token, shp=None,
         for result in scenes['results']:
             display_id = result['displayId']
             sensor_code = display_id.split('_', 1)[0].upper()
+            tier = display_id.rsplit('_', 1)[-1].upper()
 
             # The shared OLI/TIRS dataset contains both Landsat 8 and 9.
             if sensor_code not in requested_satellites:
+                continue
+            if requested_tiers and tier not in requested_tiers:
                 continue
 
             results.append({

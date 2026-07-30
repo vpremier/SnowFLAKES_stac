@@ -632,7 +632,42 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
+def get_blue_ice(wd, data, scene_id):
 
+    scene_folder = create_folder(wd, scene_id)   
+
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+    
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    # load information for current scene
+    sensor = get_sensor(scene_id)
+    bands = define_bands(data, sensor)
+    
+    bands = define_bands(data, sensor)
+    
+    swir = bands["SWIR"]
+
+
+    scf_map, FSC_SVM_map_path = load_map(scene_folder, '*SnowFLAKES.tif', return_path=True)
+    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
+    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    
+    
+    blue_ice = np.logical_and.reduce((glacier_mask == 1, 
+                                    shadow_mask == 0, 
+                                    cloud_mask == 0,
+                                    scf_map > 0, 
+                                    diff_B_NIR > 0.15,
+                                    swir < 0.05))
+    
+    scf_map[blue_ice] = 215
+
+    save_tif(scf_map, FSC_SVM_map_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 
 
 
@@ -722,3 +757,73 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
     save_tif(scf_data, shadow_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 
     
+
+
+
+def get_uncertainty(
+    scene_id, 
+    config,
+    u_min: int = 5,
+    u_max: int = 15,
+) -> np.ndarray:
+    """Calculate triangular uncertainty from snow-cover fraction values.
+
+    Uncertainty increases linearly from ``u_min`` at SCF 0 to ``u_max``
+    at SCF 50, then decreases linearly to ``u_min`` at SCF 100.
+
+    Values outside the valid SCF range 0–100 are clipped. NaN values
+    remain NaN.
+
+    Parameters
+    ----------
+    scf : numpy.ndarray
+        Snow-cover fraction values expressed as percentages from 0 to 100.
+    u_min : float, default=0.05
+        Uncertainty at SCF 0 and SCF 100.
+    u_max : float, default=0.15
+        Maximum uncertainty at SCF 50.
+
+    Returns
+    -------
+    numpy.ndarray
+        Uncertainty array with the same shape as ``scf``.
+    """
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
+    
+    output_path = os.path.join(scene_folder, scene_id + "_SnowFLAKES_UNC.tif")
+
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+    
+    shadow_mask, shadow_path = load_map(curr_aux_folder, '*shadow_mask.tif', return_path=True)
+    scf_map = load_map(scene_folder, '*SnowFLAKES.tif')
+
+
+    if u_max < u_min:
+        raise ValueError("u_max must be greater than or equal to u_min.")
+
+    scf_valid = np.clip(scf_map, 0.0, 100.0)
+    delta = u_max - u_min
+
+    left = u_min + (scf_valid / 50.0) * delta
+    right = u_max - ((scf_valid - 50.0) / 50.0) * delta
+
+    uncertainty = np.where(scf_valid <= 50.0, left, right)
+
+    # Increase uncertainty in shadowed areas
+    uncertainty[shadow_mask == 1] += 20
+
+    # Round valid pixels
+    uncertainty = np.rint(uncertainty)
+
+    # Set NoData
+    uncertainty[scf_map > 100] = 255
+    
+    uncertainty = uncertainty.astype(np.uint8)
+    
+    save_tif(uncertainty, shadow_path, output_path, nodata=255, dtype=rasterio.uint8)
+
+    return uncertainty

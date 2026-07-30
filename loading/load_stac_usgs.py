@@ -164,7 +164,8 @@ def get_query_items(date, img4ext = None, extent_target=None, resolution=None,
                 "eo:cloud_cover": {
                     "lte": max_cc
                     },
-                "platform": {'in': [platform]}
+                "platform": {'in': [platform]},
+                "landsat:collection_category": {"eq": "T1"}
                 }
             }
         

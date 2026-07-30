@@ -19,7 +19,7 @@ from shapely.geometry import Point
 from sklearn.metrics import silhouette_score
 from skimage.filters import threshold_otsu
 from sklearn.preprocessing import StandardScaler
-from scipy.ndimage import binary_erosion
+from scipy.ndimage import binary_erosion, binary_dilation
 from sklearn.mixture import GaussianMixture
 from joblib import Parallel, delayed
 
@@ -685,13 +685,14 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     
     # enlarge shadow - sun masks to create a buffer where training collection
     # is avoided
+
     shadow_mask_eroded = binary_erosion(
-        shadow_mask == 1,
+        binary_dilation(shadow_mask == 1),
         iterations=3
     )
 
     sun_mask_eroded = binary_erosion(
-        shadow_mask == 0,
+        binary_dilation(shadow_mask == 0),
         iterations=3
     )
     
@@ -732,7 +733,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
 
         # mask angles and shadow
         mask_shadow = np.logical_and.reduce((curr_angle_valid, 
-                                             shadow_mask_eroded,
+                                             shadow_mask,
                                              glacier_mask==0)) # no dilation applied for glacier here
           
         pixel_perc_shadow = int(np.sum(mask_shadow) *100/ np.sum(curr_scene_valid))
@@ -1204,8 +1205,6 @@ def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_
     glacier_map[ice] = 215
     
     return glacier_map
-
-
 
 
 

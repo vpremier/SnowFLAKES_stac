@@ -18,7 +18,8 @@ from SnowFLAKES.utilities import (
     define_datetime,
     find_closest_valid_scf,
     snow_around_glacier,
-    remove_low_scf
+    remove_low_scf,
+    get_uncertainty
 )
 
 from SnowFLAKES.training_collection import (
@@ -57,6 +58,9 @@ def run_snowflakes(config, data, scene_id):
     
     # overwrite
     ow = config['overwrite']
+    
+    # uncertainty
+    unc = config['uncertainty']
 
     # whether to classify glaciers or not
     classify_glaciers = config['classify_glaciers']
@@ -137,24 +141,36 @@ def run_snowflakes(config, data, scene_id):
     
     # post-processing map cleaning
     remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder)
-
+    
+    # add uncertainty layer
+    if unc:
+        get_uncertainty(scene_id, config)
         
     # check if there is snow around the glacier
-    if classify_glaciers == 'yes' and snow_around_glacier(wd, scene_id):
-
-        snow_mask, ice_mask = get_pixels_ice(scene_id, data, config)
+    if classify_glaciers == 'yes':
         
-        results_glacier = run_snow_ice_classification(
-            data=data,
-            snow_mask=snow_mask,
-            ice_mask=ice_mask,
-            output_folder=None,
-            max_samples_per_class=10000,
-            prediction_mask=None,
-        )
+        if snow_around_glacier(wd, scene_id):
+     
+            snow_mask, ice_mask = get_pixels_ice(scene_id, data, config)
+            
+            results_glacier = run_snow_ice_classification(
+                data=data,
+                snow_mask=snow_mask,
+                ice_mask=ice_mask,
+                output_folder=None,
+                max_samples_per_class=10000,
+                prediction_mask=None,
+            )
+            
+            mask_raster_with_glacier(scene_id, data, config, results_glacier)
+
+            
+        # else:
+            
+        #     get_blue_ice(wd, data, scene_id)
+            
 
   
-        mask_raster_with_glacier(scene_id, data, config, results_glacier)
             
 
     print("Process completed. Condition met, and no points found where SCF > 0 and NDSI < 0.")

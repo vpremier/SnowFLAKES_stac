@@ -1,6 +1,6 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/rofental_shp/rofental.shp",
-  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/daily_SCA_downscaling/Rofental_S3/Landsat8",
+  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/daily_SCA_downscaling/Rofental_S3/Landsat8_new",
   "download_mode": "cdse",
   "remove_auxiliary": false,
   "satellite": "Landsat-8",
