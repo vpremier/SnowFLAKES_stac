@@ -228,8 +228,8 @@ def run_workflow(date_start, date_end, config_path):
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2021-10-01")
-    end = pd.Timestamp("2024-03-31")
+    start = pd.Timestamp("2013-02-18")
+    end = pd.Timestamp("2026-06-30")
     
 
     # start = pd.Timestamp("2024-03-05")
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     # config_path = './config/config_snowcop.json'
     # config_path = './config/config_snowcop_landsat.json'
 
-    config_path = './config/config_snowcop.json'
+    config_path = './config/config_rofental_Sentinel2.json'
 
     
     step = pd.Timedelta(days=60)
