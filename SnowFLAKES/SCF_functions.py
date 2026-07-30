@@ -130,7 +130,7 @@ def model_training(data, scene_id, shapefile_path, curr_aux_folder,
     all_bands_image = np.squeeze(selected_data.where(validMask, no_data_value).values)
 
 
-    gamma_range = np.logspace(-2, 2, 100)
+    gamma_range = np.logspace(-2, 2, 1000)
 
     # Load the shapefile
     shapefile = gpd.read_file(shapefile_path)

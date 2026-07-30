@@ -20,10 +20,6 @@ from SnowFLAKES.utilities import *
 
 
 
-
-
-
-
 def remove_glaciers(outdir):
     for scf_path in glob.glob(os.path.join(outdir, "*", "SCF")):
         
@@ -213,5 +209,4 @@ def get_shape_extent(shape_name, epsg=3035, outres=500, merge=True, row=None):
     yMax = round(int(np.ceil(ymax / outres)) * outres, 5)
 
     return xMin, yMin, xMax, yMax
-
 

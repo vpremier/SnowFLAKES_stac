@@ -451,8 +451,10 @@ def convert_sentinel2_bands(outdir,
         return None, None
     
     # for Sentinel-2: needs to be changed in case of other sensors
-    bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
-             "B10", "B11", "B12", "B8A"]
+    # bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
+    #          "B10", "B11", "B12", "B8A"]
+    
+    bands = ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B11', 'B12', 'B8A']
     
 
     # id of the scene 

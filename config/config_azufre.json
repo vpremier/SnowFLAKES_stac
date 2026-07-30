@@ -1,9 +1,12 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/check_Biagio",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2-new",
+  "download_mode": "cdse stac api",
+  "uncertainty": false,
+  "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2015-07-20",
-  "date_end": "2015-09-18",
+  "date_start": "2018-03-30",
+  "date_end": "2018-05-29",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -12,6 +15,7 @@
   "landsat_satellite": [],
   "s2_tile": null,
   "landsat_tile_list": [],
+  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
     "resolution": 20,
     "extent_target": [
@@ -24,19 +28,8 @@
   },
   "overwrite": false,
   "no_data_value": "nan",
-  "External_water_mask": null,
-  "Compute_clouds": "yes",
-  "Cloud_cover_probability": "0.6",
-  "average_over": "5",
-  "dilation_cloud_cover": "3",
-  "Overwrite_cloud": "0",
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
-  "glaciers_model_name": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/glaciers_classification/Azufre/round_02/round_02_Snow_model.p",
-  "start_glaciers_month": "10",
-  "end_glaciers_month": "04",
-  "SVM_folder_name": "SCF",
-  "PCA": "no",
   "exclude_tiles": null,
-  "simple_class": false
+  "simple_class": true
 }

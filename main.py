@@ -29,6 +29,8 @@ from utils import (
 )
 
 
+import glob
+from SnowFLAKES.utilities import get_uncertainty
 
 
 
@@ -38,6 +40,7 @@ def run_workflow(date_start, date_end, config_path):
     # Read
     with open(config_path, "r") as f:
         config = json.load(f)
+        
     
     # Modify dates
     config["date_start"] = date_start
@@ -77,6 +80,12 @@ def run_workflow(date_start, date_end, config_path):
     # Look for the data in our folder
     outdir = config["output_directory"]
     data_df = pd.read_csv(os.path.join(outdir, 'query.csv'))
+    
+    # sceneList = glob.glob(outdir + os.sep + 'L*')
+    # for scene in sceneList:
+    #     scene_id = os.path.basename(scene)
+    #     get_uncertainty(scene_id, config)
+
     
     if data_df.empty:
         return
@@ -228,7 +237,7 @@ def run_workflow(date_start, date_end, config_path):
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2021-10-01")
+    start = pd.Timestamp("2017-10-01")
     end = pd.Timestamp("2024-03-31")
     
 
@@ -239,7 +248,7 @@ if __name__ == "__main__":
     # config_path = './config/config_snowcop.json'
     # config_path = './config/config_snowcop_landsat.json'
 
-    config_path = './config/config_snowcop.json'
+    config_path = './config/config_azufre.json'
 
     
     step = pd.Timedelta(days=60)
