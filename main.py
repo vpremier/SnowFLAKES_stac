@@ -236,8 +236,8 @@ def run_workflow(date_start, date_end, config_path):
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2013-02-18")
-    end = pd.Timestamp("2026-06-30")
+    start = pd.Timestamp("2020-12-12")
+    end = pd.Timestamp("2020-12-20")
     
 
     # start = pd.Timestamp("2024-03-05")

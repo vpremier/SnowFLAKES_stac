@@ -55,6 +55,7 @@ def run_snowflakes(config, data, scene_id):
     
     # log files: create log files
     skipped_scenes_file = create_log(wd, '00_scenes_to_skip')
+    closest_models_file = create_log(wd, '00_closest_models_used')
     
     # overwrite
     ow = config['overwrite']
@@ -85,28 +86,82 @@ def run_snowflakes(config, data, scene_id):
     # Collect training data and train the SVM model if no pretrained model exists
 
     print("Generating training shapefile.")
+    shapefile_path = None
+    training_error = None
+    unique_values = set()
+    class_counts = {}
+
     try:
-        shapefile_path = collect_trainings(data,
-                                           scene_id, 
-                                           config)
-    except:
-        print("Error for training collection")
-        return
-    
-    # Load the shapefile
-    gdf = gpd.read_file(shapefile_path)
-
-    # Check if the shapefile has both values (assuming they are in a column named 'class')
-    unique_values = set(gdf['value'].unique())
-
-    if unique_values != {1, 2}:
+        shapefile_path = collect_trainings(
+            data,
+            scene_id,
+            config,
+        )
+    except Exception as error:
+        training_error = error
         print(
-            f"Skipping scene {scene_id} due to missing value 1 or 2. Produced just default map")
+            "Training collection failed: "
+            f"{type(error).__name__}: {error}"
+        )
+
+    if shapefile_path is None:
+        if training_error is None:
+            training_reason = (
+                "Training collection did not return a shapefile."
+            )
+        else:
+            training_reason = (
+                "Training collection failed before a shapefile was created: "
+                f"{type(training_error).__name__}: {training_error}"
+            )
+    else:
+        # Load the shapefile
+        gdf = gpd.read_file(shapefile_path)
+
+        if "value" not in gdf.columns:
+            training_reason = (
+                "The training shapefile has no 'value' column."
+            )
+        else:
+            class_counts = gdf["value"].value_counts().to_dict()
+            unique_values = set(class_counts)
+
+            if not unique_values:
+                training_reason = (
+                    "The training shapefile contains no training samples."
+                )
+            elif unique_values == {1}:
+                training_reason = (
+                    f"Only snow training samples were found: {class_counts}"
+                )
+            elif unique_values == {2}:
+                training_reason = (
+                    f"Only snow-free training samples were found: {class_counts}"
+                )
+            elif unique_values != {1, 2}:
+                training_reason = (
+                    f"Unexpected training classes were found: {class_counts}"
+                )
+            else:
+                training_reason = None
+
+    if training_reason is not None:
+        print(
+            f"Cannot train a model for {scene_id}. "
+            f"Reason: {training_reason}"
+        )
         
         if config["find_closest_model"]: 
             
             # Look for the closest date with representative trainings
             closest = find_closest_valid_scf(wd, date)
+
+            if closest is None:
+                print("No valid model from another scene was found.")
+                with open(skipped_scenes_file, "a") as f:
+                    f.write(f"{scene_id}\n")
+                return
+
             scene_id_closest = os.path.basename(closest).split("_SnowFLAKES.tif")[0]
 
             
@@ -114,12 +169,31 @@ def run_snowflakes(config, data, scene_id):
             date_closest = dt.strptime(date_closest, "%Y%m%d").strftime("%Y-%m-%d")
             
             # take the model of the closest image
-            svm_model_filename = os.path.join(os.path.dirname(closest), "svm_model.p")
-            
-            
+            svm_model_filename = os.path.join(
+                os.path.dirname(closest),
+                "auxiliary",
+                "svm_model.p",
+            )
+
             # Run SCF prediction
             FSC_SVM_map_path = SCF_dist_SV(data, scene_id, config, svm_model_filename, 
                                            Nprocesses=1, overwrite=ow)
+
+            # Record which existing model was used for this scene.
+            target_date = dt.strptime(date, "%Y%m%d").strftime("%Y-%m-%d")
+            write_header = os.path.getsize(closest_models_file) == 0
+
+            with open(closest_models_file, "a") as f:
+                if write_header:
+                    f.write(
+                        "target_scene,target_date,"
+                        "model_scene,model_date\n"
+                    )
+
+                f.write(
+                    f"{scene_id},{target_date},"
+                    f"{scene_id_closest},{date_closest}\n"
+                )
             
         else:
 
@@ -128,15 +202,17 @@ def run_snowflakes(config, data, scene_id):
                 f.write(f"{scene_id}\n")
 
             return  # Skip to the next scene
-  
-    
-    # SCF map creation
-    print('TRAINING')
-    svm_model_filename = model_training(data, scene_id, shapefile_path, 
-                                        curr_aux_folder, no_data_value, gamma=None)
 
-    # Run SCF prediction
-    FSC_SVM_map_path = SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=1, overwrite=ow)
+    else:
+        print(f"Training class counts: {class_counts}")
+
+        # SCF map creation
+        print('TRAINING')
+        svm_model_filename = model_training(data, scene_id, shapefile_path,
+                                            curr_aux_folder, no_data_value, gamma=None)
+
+        # Run SCF prediction
+        FSC_SVM_map_path = SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=1, overwrite=ow)
         
     
     # post-processing map cleaning

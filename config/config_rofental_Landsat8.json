@@ -30,5 +30,7 @@
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "exclude_tiles": null,
-  "simple_class": true
+  "simple_class": true,
+  "find_closest_model": true,
+  "uncertainty": true
 }

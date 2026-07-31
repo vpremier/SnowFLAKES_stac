@@ -483,24 +483,35 @@ def find_closest_valid_scf(working_folder, date):
     
 
     for _, folder_date, folder in candidates:
-        scf_path = os.path.join(working_folder, folder, "SCF")
+        scene_path = os.path.join(working_folder, folder)
+        auxiliary_path = os.path.join(scene_path, "auxiliary")
         
-        if not os.path.exists(scf_path):
+        if not os.path.isdir(auxiliary_path):
             continue
         
         # -------------------------
         # 3. find shapefile
         # -------------------------
-        shp_files = [f for f in os.listdir(scf_path) if f.endswith(".shp")]
+        shp_files = [
+            f for f in os.listdir(auxiliary_path)
+            if f == "representative_pixels_for_training_samples.shp"
+        ]
         if not shp_files:
             continue
         
         # check SnowFLAKES.tif exists
-        tif_files = [f for f in os.listdir(scf_path) if f.endswith("SnowFLAKES.tif")]
+        tif_files = [
+            f for f in os.listdir(scene_path)
+            if f.endswith("_SnowFLAKES.tif")
+        ]
         if not tif_files:
             continue
-        
-        shp_path = os.path.join(scf_path, shp_files[0])
+
+        model_path = os.path.join(auxiliary_path, "svm_model.p")
+        if not os.path.isfile(model_path):
+            continue
+
+        shp_path = os.path.join(auxiliary_path, shp_files[0])
 
         try:
             gdf = gpd.read_file(shp_path)
@@ -515,7 +526,7 @@ def find_closest_valid_scf(working_folder, date):
 
                 print(f"✅ Valid SCF found at {folder_date}")
 
-                return os.path.join(scf_path, tif_files[0])
+                return os.path.join(scene_path, tif_files[0])
 
         except Exception as e:
             print(f"⚠️ Error reading {shp_path}: {e}")
