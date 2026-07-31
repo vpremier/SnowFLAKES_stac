@@ -238,6 +238,7 @@ if __name__ == "__main__":
 
     start = pd.Timestamp("2020-12-12")
     end = pd.Timestamp("2020-12-20")
+
     
 
     # start = pd.Timestamp("2024-03-05")
@@ -248,6 +249,7 @@ if __name__ == "__main__":
     # config_path = './config/config_snowcop_landsat.json'
 
     config_path = './config/config_rofental_Sentinel2.json'
+
 
     
     step = pd.Timedelta(days=60)
