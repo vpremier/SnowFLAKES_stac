@@ -1,12 +1,12 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2-new",
+  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/ValleAurina/ValleAurina.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/ValleAurina/Sentinel2",
   "download_mode": "cdse stac api",
   "uncertainty": false,
   "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2020-04-01",
-  "date_end": "2020-05-31",
+  "date_start": "2017-10-01",
+  "date_end": "2017-10-10",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -17,14 +17,14 @@
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
-    "resolution": 20,
+    "resolution": 25,
     "extent_target": [
-      344000,
-      6080000,
-      369000,
-      6114000
+      704500,
+      5199000,
+      746500,
+      5220500
     ],
-    "epsg_target": 32719
+    "epsg_target": 25832
   },
   "overwrite": false,
   "no_data_value": "nan",
