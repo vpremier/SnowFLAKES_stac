@@ -85,13 +85,35 @@ def get_processed_dates(config):
 def get_dates_to_skip(config):
     working_folder = config['output_directory']
 
-    scenes_to_skip_clouds = read_log(working_folder, '00_skip_cloud_masks')
-    dates_to_skip_emptyitems = read_log(working_folder, '00_dates_no_items')
+    # scenes_to_skip_clouds = read_log(working_folder, '00_skip_cloud_masks')
+    # dates_to_skip_emptyitems = read_log(working_folder, '00_dates_no_items')
+    #
+    #
+    # # Combine and remove duplicates
+    # all_scenes = set(scenes_to_skip_clouds) #set(scenes_to_skip)
 
-    
-    # Combine and remove duplicates
-    all_scenes = set(scenes_to_skip_clouds) #set(scenes_to_skip) 
-    
+    scenes_to_skip_clouds = read_log(
+        working_folder,
+        "00_skip_cloud_masks",
+    )
+    scenes_missing_training = read_log(
+        working_folder,
+        "00_scenes_to_skip",
+    )
+    dates_to_skip_emptyitems = read_log(
+        working_folder,
+        "00_dates_no_items",
+    )
+
+    # Cloud-invalid scenes are always skipped.
+    all_scenes = set(scenes_to_skip_clouds)
+
+    # Missing-training scenes are skipped during the initial training run,
+    # but retried when existing models—including models from later dates—
+    # should be considered.
+    if not config["find_closest_model"]:
+        all_scenes.update(scenes_missing_training)
+
     # Extract dates
     dates = sorted({
         (
