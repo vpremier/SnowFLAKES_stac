@@ -5,8 +5,8 @@
   "uncertainty": false,
   "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2020-04-01",
-  "date_end": "2020-05-31",
+  "date_start": "2024-03-11",
+  "date_end": "2024-03-31",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -32,5 +32,5 @@
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "exclude_tiles": null,
   "simple_class": true,
-  "find_closest_model": false
+  "find_closest_model": true
 }
