@@ -2,7 +2,7 @@
 
 This guide describes how to:
 1. Access and load Sentinel-2 data from the **CDSE STAC catalogue** and Landsat data from the **USGS STAC catalogue**. In the first case, a CDSE account is needed. Furthermore, S3 CDSE credentials also need to be set up (see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials). In the second case, the USGS STAC catalogue is accessed and an AWS Requester Pays account is needed.
-2. Classify snow using **SnowFLAKES**. See https://github.com/bare92/SnowFLAKES/tree/main for the original version.
+2. Classify snow using **SnowFLAKES**. See https://github.com/bare92/SnowFLAKES/tree/main for the original version. This version includes some minor changes. For example, training sample selection is based on rules derived from the spectral signatures.
 
 ---
 
@@ -108,3 +108,4 @@ AWS_SECRET_ACCESS_KEY = ********************
 The `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values for the `cdse` profile can be generated from:
 
 https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
+
