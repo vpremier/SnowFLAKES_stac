@@ -235,6 +235,8 @@ def create_aoi_map(
 
     return m, state
 
+
+
 def save_aoi_geojson(aoi, output_path="aoi.geojson"):
     geometry = aoi.get("geometry")
 

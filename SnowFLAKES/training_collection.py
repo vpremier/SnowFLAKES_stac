@@ -345,7 +345,8 @@ def define_threshold(feature,
         bbox_inches="tight"
     )
 
-    plt.show()
+    # The histogram is a diagnostic file; do not open an interactive window
+    # when SnowFLAKES is run from the command line.
     plt.close()
 
     return final_means
@@ -426,9 +427,9 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
     
     # fixed conditions for being a snow pixel
     mask_snow = np.logical_and.reduce((mask_sun, 
-                                          NDWI<0.1, 
-                                          distance_idx != 255, 
-                                          NDSI>0.6)) 
+                                        NDWI<0.1, 
+                                        distance_idx != 255, 
+                                        NDSI>0.6)) 
     
     # fixed conditions for being a snowfree pixel
     mask_sf = np.logical_and.reduce((mask_sun, 
@@ -475,7 +476,7 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
                                   swir < swir_threshold_snow))
     
     # snowfree = snowfree_1 | snowfree_2
-    snowfree = np.logical_and.reduce((mask_sun,
+    snowfree = np.logical_and.reduce((mask_sf,
                                       green < green_threshold_sf,
                                       swir > swir_threshold_sf))
 
@@ -755,7 +756,9 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             print('Collecting trainings in shadow')
             snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
 
-            
+            print(np.sum(snow_shad))
+            print(np.sum(snowfree_shad))
+
             if np.sum(snow_shad) > 10:
                 representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
 
@@ -1205,7 +1208,6 @@ def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_
     glacier_map[ice] = 215
     
     return glacier_map
-
 
 
 

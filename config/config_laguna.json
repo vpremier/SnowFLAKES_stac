@@ -1,12 +1,12 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Gadertal/Gadertal.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Gadertal/Sentinel2",
+  "shapefile": "file:///mnt/CEPH_PROJECTS/SNOWCOP/AOI/basin_Echaurren/basin_Echaurren.shp",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Dataset_eotraining/Sentinel2",
   "download_mode": "cdse stac api",
   "uncertainty": false,
-  "remove_auxiliary": false,
+  "remove_auxiliary": true,
   "satellite": "Sentinel-2",
-  "date_start": "2024-08-14",
-  "date_end": "2024-09-30",
+  "date_start": "2015-04-01",
+  "date_end": "2015-05-31",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -17,14 +17,14 @@
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
-    "resolution": 25,
+    "resolution": 20,
     "extent_target": [
-      713000,
-      5154000,
-      735000,
-      5185500
+      393500,
+      6271000,
+      400500,
+      6278000
     ],
-    "epsg_target": 25832
+    "epsg_target": 32719
   },
   "overwrite": false,
   "no_data_value": "nan",
@@ -32,5 +32,5 @@
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "exclude_tiles": null,
   "simple_class": true,
-  "find_closest_model": true
+  "find_closest_model": false
 }
