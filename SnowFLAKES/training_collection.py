@@ -416,7 +416,7 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     
     
     
-def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
+def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range, sun_altitude):
     
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
     NDWI = load_map(curr_aux_folder, '*NDWI.tif')
@@ -426,7 +426,7 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
 
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
     
-    NDSI_thresholds = define_threshold(NDSI, mask_sun, "NDSI_sun", curr_aux_folder, threshold=(0.2, 0.7))
+    NDSI_thresholds = define_threshold(NDSI, sun_mask_eroded, "NDSI_sun", curr_aux_folder, threshold=(0.2, 0.7))
 
     
     
@@ -826,7 +826,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             
             print('Collecting trainings in sun')
 
-            snow_sun, snowfree_sun = get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude)
+            snow_sun, snowfree_sun = get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range, sun_altitude)
 
     
             if np.sum(snow_sun) > 10:
