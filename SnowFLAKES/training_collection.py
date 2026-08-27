@@ -359,8 +359,9 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     green = bands["GREEN"]
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     
+    
     mask = np.logical_and.reduce((shadow_mask==1, 
-                                    green <0.25, 
+                                    green < np.nanpercentile(green[shadow_mask], 95), 
                                     curr_scene_valid))
     
     green_thresholds = define_threshold(green, mask, "green_shadow", curr_aux_folder, threshold=(0.075, 0.1))
@@ -756,8 +757,8 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             print('Collecting trainings in shadow')
             snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
 
-            print(np.sum(snow_shad))
-            print(np.sum(snowfree_shad))
+            # print(np.sum(snow_shad))
+            # print(np.sum(snowfree_shad))
 
             if np.sum(snow_shad) > 10:
                 representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)

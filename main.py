@@ -236,8 +236,8 @@ def run_workflow(date_start, date_end, config_path):
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2020-06-27")
-    end = pd.Timestamp("2020-06-28")
+    start = pd.Timestamp("2015-04-01")
+    end = pd.Timestamp("2025-03-31")
 
     
 
@@ -248,7 +248,7 @@ if __name__ == "__main__":
     # config_path = './config/config_snowcop.json'
     # config_path = './config/config_snowcop_landsat.json'
 
-    config_path = './config/config_rofental.json'
+    config_path = './config/config_aguirre.json'
 
 
     
