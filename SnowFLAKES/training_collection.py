@@ -434,11 +434,11 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
     mask_snow = np.logical_and.reduce((mask_sun, 
                                         NDWI<0.1, 
                                         distance_idx != 255, 
-                                        NDSI>NDSI_thresholds[1])) 
+                                        NDSI>max(NDSI_thresholds)))
     
     # fixed conditions for being a snowfree pixel
     mask_sf = np.logical_and.reduce((mask_sun, 
-                                     NDSI<NDSI_thresholds[0])) 
+                                     NDSI<min(NDSI_thresholds)))
     
 
     # find dynamic thresholds
