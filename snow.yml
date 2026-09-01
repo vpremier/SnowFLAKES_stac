@@ -1,0 +1,37 @@
+name: snowmap-cdse
+
+channels:
+	- conda-forge
+	- nodefaults
+
+dependencies:
+	- python=3.11
+	- numpy=1.26.4
+
+	# Keep the compiled geospatial stack together
+	- gdal=3.12.3
+	- libgdal-jp2openjpeg=3.12.3
+	- openjpeg=2.5.4
+	- rasterio=1.4.4
+	- pyproj
+	- shapely
+	- geopandas
+
+	# Data cubes and STAC
+	- xarray=2025.6.1
+	- rioxarray=0.19.0
+	- stackstac=0.5.1
+	- dask
+	- pystac-client
+	- odc-stac
+	- boto3
+
+	# Notebook and training workflow
+	- jupyterlab
+	- ipykernel
+	- ipywidgets
+	- ipyleaflet
+	- pillow
+	- matplotlib
+	- scikit-learn
+
