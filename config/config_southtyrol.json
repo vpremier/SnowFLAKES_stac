@@ -1,0 +1,36 @@
+{
+  "shapefile": "/home/vpremier/Documents/git/sca4provbz/shapefile/SouthTyrol.geojson",
+  "output_directory": "/home/vpremier/Documents/git/sca4provbz/shapefile/",
+  "download_mode": "cdse stac api",
+  "uncertainty": false,
+  "remove_auxiliary": false,
+  "satellite": "Sentinel-2",
+  "date_start": "2025-03-25",
+  "date_end": "2025-03-31",
+  "query_landsat": false,
+  "query_sentinel2": true,
+  "download_landsat": false,
+  "download_sentinel2": false,
+  "max_cloudcover": 90,
+  "landsat_satellite": [],
+  "s2_tile": null,
+  "landsat_tile_list": [],
+  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
+  "resampling_params": {
+    "resolution": 250,
+    "extent_target": [
+      597972,
+      5117987,
+      767972,
+      5221987
+    ],
+    "epsg_target": 32632
+  },
+  "overwrite": false,
+  "no_data_value": "nan",
+  "classify_glaciers": "yes",
+  "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
+  "exclude_tiles": null,
+  "simple_class": true,
+  "find_closest_model": true
+}
