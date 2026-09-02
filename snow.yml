@@ -1,4 +1,4 @@
-name: snowmap-cdse
+name: snow
 
 channels:
  - conda-forge
