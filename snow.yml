@@ -26,12 +26,22 @@ dependencies:
  - odc-stac
  - boto3
 
+ # Gap-filling tutorial and interactive maps
+ - pandas
+ - affine
+ - planetary-computer
+ - leafmap=0.62.0
+ - localtileserver=0.11.0
+ - joblib
+ - tqdm
+
  # Notebook and training workflow
- - jupyterlab
  - ipykernel
  - ipywidgets
  - ipyleaflet
  - pillow
  - matplotlib
  - scikit-learn
-
+ - pip
+ - pip:
+   - tqdm-joblib
