@@ -1,12 +1,12 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Ultental/Ultental.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Ultental/Sentinel2",
+  "shapefile": "/mnt/CEPH_PROJECTS/ALPSNOW/Sara/SCF_RETRIEVAL/aoi_Val_d_Isere/VHR_S2/Isere.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/ALPSNOW/Sara/SCF_RETRIEVAL/aoi_Val_d_Isere/VHR_S2/SnowFLAKES_new",
   "download_mode": "cdse stac api",
   "uncertainty": false,
   "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2016-01-29",
-  "date_end": "2016-03-29",
+  "date_start": "2020-11-25",
+  "date_end": "2020-11-26",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -17,14 +17,14 @@
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
-    "resolution": 25,
+    "resolution": 20,
     "extent_target": [
-      623000,
-      5144000,
-      667500,
-      5172000
+      344400,
+      5025140,
+      348360,
+      5035500
     ],
-    "epsg_target": 25832
+    "epsg_target": 32632
   },
   "overwrite": false,
   "no_data_value": "nan",
