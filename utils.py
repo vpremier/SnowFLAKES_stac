@@ -166,14 +166,14 @@ def get_dates_to_process(files, config):
     
     
     
-def save_false_color(wd, bands, ds):
+def save_false_color(wd, bands, ds, name):
 
     # Extract bands from xarray dataset
     b1 = np.squeeze(ds.sel(band = bands[0]).values)
     b2 = np.squeeze(ds.sel(band = bands[1]).values)
     b3 = np.squeeze(ds.sel(band = bands[2]).values)
 
-    output_path = os.path.join(wd, "false_color_composite.tif")
+    output_path = os.path.join(wd, f"{name}.tif")
 
     # Stack as RGB
     rgb = np.stack([b1, b2, b3])

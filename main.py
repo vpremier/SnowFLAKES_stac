@@ -194,7 +194,9 @@ def run_workflow(date_start, date_end, config_path):
                 
                 # save RGB for visualization
                 if config["satellite"] == "Sentinel-2":
-                    save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data)
+                    save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data, "fcc")
+                    save_false_color(os.path.join(outdir, scene_id), ["B04", "B03", "B02"], data, "rgb")
+
                     
                 elif config["satellite"].startswith("Landsat"):
                     save_false_color(os.path.join(outdir, scene_id), ["swir16", "nir08", "green"], data)
@@ -236,13 +238,12 @@ def run_workflow(date_start, date_end, config_path):
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2015-10-01")
-    end = pd.Timestamp("2025-09-30")
+    start = pd.Timestamp("2016-03-01")
+    end = pd.Timestamp("2016-03-30")
 
-    
+    # end = pd.Timestamp("2025-09-30")
 
-    # start = pd.Timestamp("2024-03-05")
-    # end = pd.Timestamp("2024-03-06")
+
     # shape of the AOI
     # config_path = './config_snowcop_landsat.json'
     # config_path = './config/config_snowcop.json'
@@ -273,8 +274,3 @@ if __name__ == "__main__":
         run_workflow(date_start, date_end, config_path)
 
         
-            
-
-
-    
-# guarda land cover

@@ -361,7 +361,7 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     
     
     mask = np.logical_and.reduce((shadow_mask==1, 
-                                    green < np.nanpercentile(green[shadow_mask], 95), 
+                                    green < np.nanpercentile(green[shadow_mask==1], 95), 
                                     curr_scene_valid))
     
     green_thresholds = define_threshold(green, mask, "green_shadow", curr_aux_folder, threshold=(0.075, 0.1))
@@ -727,7 +727,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     # collect training for each SIA range 
     for curr_range, sample_count in range_samples.items():
 
-
+        
         curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
                                                   solar_incidence_angle >= curr_range[0],
                                                   solar_incidence_angle < curr_range[1]))
@@ -756,7 +756,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
         
         if pixel_perc_shadow > 0:
             
-   
+            zz
             
             print('Collecting trainings in shadow')
             snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
