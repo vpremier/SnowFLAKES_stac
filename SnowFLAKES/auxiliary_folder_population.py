@@ -14,7 +14,6 @@ import numpy as np
 import cv2
 import rasterio
 from shapely.geometry import Polygon
-import glob
 from scipy.ndimage import distance_transform_edt
 from pyproj import Transformer
 from datetime import timezone
@@ -24,9 +23,7 @@ from scipy.ndimage import binary_dilation
 
 from pysolar.solar import get_altitude, get_azimuth
 
-from rasterio.transform import from_bounds
-from rasterio.warp import reproject, Resampling
-from rasterio.merge import merge
+from rasterio.enums import Resampling
 
 from SnowFLAKES.utilities import (
     load_map,
@@ -44,6 +41,7 @@ from SnowFLAKES.utilities import (
 
 from loading.load_stac import (
     load_cdse_collection,
+    load_latest_cdse_asset,
     setup_cdse_credentials,
 )
 
@@ -163,148 +161,82 @@ def spectral_idx_computer(data, B1, B2, idx_name, curr_aux_folder,
 
 
 
-def water_identifier(data, auxiliary_folder_path):
-    """Generate and save a water mask aligned with the input scene."""
-    print("Generating water mask...")
+def water_identifier(
+    auxiliary_folder_path,
+    reference_raster_path=None,
+    collection="clms_lcm_global_10m_yearly_v1_cog",
+    asset="map",
+    water_value=100,
+    dilation_kernel_size=2,
+    overwrite=False,
+):
+    """Download and save a CDSE water mask aligned with a reference raster.
 
-    # Load DEM
-    dem_path = os.path.join(auxiliary_folder_path, "DEM.tif")
-    
-    # path to the water mask file
-    water_mask_file = glob.glob("/mnt/CEPH_BASEDATA/GIS/WORLD/WATER/Global_water_mask/*")[0]
+    The newest annual CLMS 10 m Land Cover Map is read from the CDSE STAC
+    catalogue. Its permanent-water class is converted to the binary convention
+    used by SnowFLAKES (water=1, all other classes=0).
+    """
+    print("Generating water mask...")
 
     target_wb_mask_path = os.path.join(auxiliary_folder_path, "Water_Mask.tif")
 
-    if os.path.exists(target_wb_mask_path):
-        return target_wb_mask_path
-        
-    # ---- get CRS and bounds from xarray ----
-    try:
-        epsg_code = data.epsg.item()
-    except:
-        epsg_code = data.rio.crs.to_epsg()
+    if os.path.exists(target_wb_mask_path) and not overwrite:
+        with rasterio.open(target_wb_mask_path) as existing_mask:
+            tags = existing_mask.tags()
+        if (
+            tags.get("source_collection") == collection
+            and tags.get("source_asset") == asset
+        ):
+            return target_wb_mask_path
+        print("Replacing water mask created from the legacy local dataset...")
 
-    
-    resolution = float(abs(data.x[1] - data.x[0]))
-
-    E_min_old = float(data.x.min())
-    E_max_old = float(data.x.max() + resolution)
-    N_min_old = float(data.y.min() - resolution)
-    N_max_old = float(data.y.max())
-
-    
-    # ---- water mask CRS ----
-    with rasterio.open(water_mask_file) as d_target:
-        srOut = d_target.crs
-    
-    # ---- transform extent to water-mask CRS ----
-    if epsg_code != 4326:
-    
-        transformer = Transformer.from_crs(
-            f"EPSG:{epsg_code}",
-            srOut,
-            always_xy=True
+    if reference_raster_path is None:
+        reference_raster_path = os.path.join(auxiliary_folder_path, "DEM.tif")
+    if not os.path.exists(reference_raster_path):
+        raise FileNotFoundError(
+            f"Reference raster for the water mask does not exist: {reference_raster_path}"
         )
-    
-        E_min, N_min = transformer.transform(E_min_old, N_min_old)
-        E_max, N_max = transformer.transform(E_max_old, N_max_old)
-    
-        resolution /= 100000
-    
-    else:
-    
-        E_min = E_min_old
-        E_max = E_max_old
-        N_min = N_min_old
-        N_max = N_max_old
-    
-    
-    # ---- compute tile corners (unchanged logic) ----
-    V1 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_min / 10) * 10))
-    V2 = (int(np.floor(E_min / 10) * 10), int(np.ceil(N_max / 10) * 10))
-    V3 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_min / 10) * 10))
-    V4 = (int(np.floor(E_max / 10) * 10), int(np.ceil(N_max / 10) * 10))
-    
-    V_LIST = [V1, V2, V3, V4]
-    
-    nome_tile = []
-    
-    for v in V_LIST:
-    
-        if v[0] >= 0:
-            E = str(int(np.floor(v[0] / 10) * 10))
-            lat = "E"
-            W = None
-        else:
-            W = str(int(abs(np.floor(v[0] / 10) * 10)))
-            lat = "W"
-            E = None
-    
-        if v[1] >= 0:
-            N = str(int(np.ceil(v[1] / 10) * 10))
-            lon = "N"
-            S = None
-        else:
-            S = str(int(abs(np.floor(v[1] / 10) * 10)))
-            lon = "S"
-            N = None
-    
-        if W is None and N is None:
-            nome = f"extent_{E}{lat}_{S}{lon}v1_4_2021.tif"
-        elif W is None and S is None:
-            nome = f"extent_{E}{lat}_{N}{lon}v1_4_2021.tif"
-        elif E is None and N is None:
-            nome = f"extent_{W}{lat}_{S}{lon}v1_4_2021.tif"
-        else:
-            nome = f"extent_{W}{lat}_{N}{lon}v1_4_2021.tif"
-    
-        file = f"/mnt/CEPH_BASEDATA/GIS/WORLD/WATER/Global_water_mask/{nome}"
-    
-        if file not in nome_tile:
-            nome_tile.append(file)
-    
-    
+    if dilation_kernel_size < 0:
+        raise ValueError("dilation_kernel_size must be non-negative")
 
-    # ---- open and mosaic tiles ----
-    src_files = [rasterio.open(f) for f in nome_tile]
-    mosaic, mosaic_transform = merge(src_files)
-    
-    
-    # ---- target grid from xarray ----
-    width = data.sizes["x"]
-    height = data.sizes["y"]
-    
-    dst_transform = from_bounds(E_min_old, N_min_old, E_max_old, N_max_old, width, height)
-    dst_crs = f"EPSG:{epsg_code}"
-    
-    dst = np.empty((height, width), dtype=np.float32)
-    
-    
-    # ---- reproject to Sentinel grid ----
-    reproject(
-        source=mosaic[0],
-        destination=dst,
-        src_transform=mosaic_transform,
-        src_crs=src_files[0].crs,
-        dst_transform=dst_transform,
-        dst_crs=dst_crs,
-        resampling=Resampling.nearest,
+    water_classes, source_item = load_latest_cdse_asset(
+        collection,
+        asset,
+        reference_raster_path,
+        reproj_type=Resampling.nearest,
     )
-    
-    
-    # Postprocess mask
-    if np.sum(dst == 255) > 0:
-        K = np.ones((30, 30)).astype(np.uint8)
-    
-        Water_dilated = cv2.dilate((dst == 255).astype(np.uint8), K, iterations=1)
-    
-        dst[Water_dilated == 1] = 255
-        dst[dst == 210] = 1
-        dst[dst == 255] = 1
-    
-    
-    # Save result
-    save_tif(dst, dem_path, target_wb_mask_path, dtype=rasterio.uint8)
+
+    water_classes = np.asarray(water_classes)
+    with rasterio.open(reference_raster_path) as reference:
+        expected_shape = (reference.height, reference.width)
+    if water_classes.shape != expected_shape:
+        raise ValueError(
+            f"Water mask shape {water_classes.shape} does not match "
+            f"reference grid {expected_shape}"
+        )
+
+    water_mask = (water_classes == water_value).astype(np.uint8)
+    if dilation_kernel_size > 0 and np.any(water_mask):
+        kernel = np.ones(
+            (dilation_kernel_size, dilation_kernel_size),
+            dtype=np.uint8,
+        )
+        water_mask = cv2.dilate(water_mask, kernel, iterations=1)
+
+    save_tif(
+        water_mask,
+        reference_raster_path,
+        target_wb_mask_path,
+        nodata=255,
+        dtype=rasterio.uint8,
+    )
+    with rasterio.open(target_wb_mask_path, "r+") as output:
+        output.update_tags(
+            source_collection=collection,
+            source_asset=asset,
+            source_item=source_item,
+            water_value=water_value,
+        )
     print(f"Water mask saved at {target_wb_mask_path}")
 
     return target_wb_mask_path
@@ -708,8 +640,8 @@ def create_auxiliary_information(scene_id, data, config):
                                               overwrite=config['overwrite'])
     
     
-    # Generate water mask ----> to be replaced!!
-    water_mask_path = water_identifier(data, auxiliary_folder)
+    # Extract permanent water from the latest CLMS 10 m land-cover map.
+    water_mask_path = water_identifier(auxiliary_folder)
 
 
     # Generate glacier mask
@@ -797,16 +729,6 @@ def create_auxiliary_information(scene_id, data, config):
     adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
     return True
-
-
-
-
-
-
-
-
-
-
 
 
 

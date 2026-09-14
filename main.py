@@ -266,7 +266,7 @@ if __name__ == "__main__":
 
     start = pd.Timestamp("2015-10-01")
     # end = pd.Timestamp("2016-03-30")
-    end = pd.Timestamp("2025-09-30")
+    end = pd.Timestamp("2015-10-30")
 
 
     # shape of the AOI

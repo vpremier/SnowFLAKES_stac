@@ -20,6 +20,7 @@ from shapely.geometry import box
 from shapely.geometry import mapping
 from rasterio.enums import Resampling
 from rasterio.session import AWSSession
+from rasterio.vrt import WarpedVRT
 from urllib3 import Retry
 from pystac_client.stac_api_io import StacApiIO
 from affine import Affine   
@@ -237,6 +238,127 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
     print(f"Total runtime of the program is {end - start} seconds")
     
     return data
+
+
+def load_latest_cdse_asset(
+    collection,
+    asset,
+    reference_raster_path,
+    reproj_type=Resampling.nearest,
+):
+    """Read and mosaic the newest COG assets from CDSE on a target grid.
+
+    Rasterio's warped virtual dataset is used instead of stackstac here because
+    global STAC 1.1 assets can cross projection discontinuities and are not
+    reliably windowed by stackstac 0.5.x. Returns the array and source item IDs.
+    """
+    print(f"Loading latest '{asset}' asset from CDSE collection {collection}...")
+    setup_cdse_credentials()
+
+    with rio.open(reference_raster_path) as reference:
+        if reference.crs is None:
+            raise ValueError(
+                f"Reference raster has no CRS: {reference_raster_path}"
+            )
+        target_crs = reference.crs
+        target_transform = reference.transform
+        target_width = reference.width
+        target_height = reference.height
+
+    bbox_of_interest = get_bbox_wgs84(img4ext=reference_raster_path)
+    geometry = mapping(box(*bbox_of_interest))
+
+    retry = Retry(
+        total=5,
+        backoff_factor=8,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods={"GET", "POST"},
+        raise_on_status=False,
+        respect_retry_after_header=True,
+        retry_after_max=300,
+    )
+    cat = pystac_client.Client.open(
+        "https://stac.dataspace.copernicus.eu/v1",
+        stac_io=StacApiIO(max_retries=retry),
+    )
+    cat.add_conforms_to("ITEM_SEARCH")
+    items = list(
+        cat.search(
+            collections=[collection],
+            intersects=geometry,
+            sortby="-datetime",
+        ).items_as_dicts()
+    )
+    if not items:
+        raise ValueError(
+            f"No items from CDSE collection '{collection}' intersect the target area"
+        )
+
+    def item_datetime(item):
+        properties = item.get("properties", {})
+        return properties.get("datetime") or properties.get("start_datetime") or ""
+
+    latest_datetime = max(item_datetime(item) for item in items)
+    latest_items = [
+        item for item in items if item_datetime(item) == latest_datetime
+    ]
+
+    cdse_session = AWSSession(
+        profile_name="cdse",
+        region_name="default",
+        endpoint_url="eodata.dataspace.copernicus.eu",
+        requester_pays=False,
+    )
+    with rio.Env(
+        session=cdse_session,
+        AWS_VIRTUAL_HOSTING="FALSE",
+        AWS_HTTPS="YES",
+        GDAL_HTTP_UNSAFESSL="YES",
+        GDAL_HTTP_TCP_KEEPALIVE="YES",
+    ):
+        data = None
+        for item in latest_items:
+            try:
+                asset_href = item["assets"][asset]["href"]
+            except KeyError as error:
+                available_assets = sorted(item.get("assets", {}))
+                raise ValueError(
+                    f"Asset '{asset}' is not present in CDSE item '{item['id']}'. "
+                    f"Available assets: {available_assets}"
+                ) from error
+
+            with rio.open(asset_href) as source:
+                with WarpedVRT(
+                    source,
+                    crs=target_crs,
+                    transform=target_transform,
+                    width=target_width,
+                    height=target_height,
+                    resampling=reproj_type,
+                    nodata=source.nodata,
+                ) as warped:
+                    tile = warped.read(1, masked=True)
+
+            if data is None:
+                fill_value = tile.fill_value
+                data = np.full(
+                    (target_height, target_width),
+                    fill_value,
+                    dtype=tile.dtype,
+                )
+            valid = ~np.ma.getmaskarray(tile)
+            data[valid] = tile.data[valid]
+
+    if data is None:
+        raise ValueError(
+            f"No '{asset}' assets could be read from collection '{collection}'"
+        )
+
+    item_ids = [item["id"] for item in latest_items]
+    print(
+        f"Loaded {len(item_ids)} CDSE item(s) for observation {latest_datetime}"
+    )
+    return data, ",".join(item_ids)
             
     
 def convert_sentinel2_bands(outdir,
@@ -615,4 +737,3 @@ if __name__ == "__main__":
 
 # processare ghiacciai?
 # check openeo
-
