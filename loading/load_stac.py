@@ -255,7 +255,8 @@ def convert_sentinel2_bands(outdir,
                             filter_by_geometry = True,
                             save = True,
                             shp=None,
-                            exclude_tiles=None):
+                            exclude_tiles=None,
+                            bands=None):
     """
     Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
     reprojects it to a user-defined grid, applies radiometric calibration, and
@@ -454,7 +455,8 @@ def convert_sentinel2_bands(outdir,
     # bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
     #          "B10", "B11", "B12", "B8A"]
     
-    bands = ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B11', 'B12', 'B8A']
+    if bands is None:
+        bands = ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B11', 'B12', 'B8A']
     
 
     # id of the scene 
@@ -613,5 +615,4 @@ if __name__ == "__main__":
 
 # processare ghiacciai?
 # check openeo
-
 

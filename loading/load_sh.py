@@ -181,7 +181,8 @@ def convert_sentinel2_bands(outdir,
                             filter_by_geometry = True,
                             save = True,
                             shp=None,
-                            exclude_tiles=None):
+                            exclude_tiles=None,
+                            bands=None):
   
     
     
@@ -318,8 +319,9 @@ def convert_sentinel2_bands(outdir,
     print(f"Loading {image_id}")
     
     # for Sentinel-2: needs to be changed in case of other sensors
-    bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
-             "B10", "B11", "B12", "B8A"]
+    if bands is None:
+        bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09",
+                 "B10", "B11", "B12", "B8A"]
     
     # Split by underscore
     parts = image_id.split("_")
@@ -495,4 +497,3 @@ def convert_sentinel2_bands(outdir,
     print(f"Total runtime of the program is {end - start} seconds")
     
     return data, merged_image_id
-

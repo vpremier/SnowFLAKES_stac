@@ -755,8 +755,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
         representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8') 
         
         if pixel_perc_shadow > 0:
-            
-            zz
+
             
             print('Collecting trainings in shadow')
             snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)

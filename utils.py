@@ -181,10 +181,25 @@ def save_false_color(wd, bands, ds, name):
     # Get raster metadata from dataset
     height, width = ds.sizes['y'], ds.sizes['x']
 
-    try: 
+    # ``rio.crs`` can return None (rather than raising) for stackstac arrays
+    # that carry their spatial reference only in the scalar ``epsg``
+    # coordinate.  Passing that None to rasterio creates a GeoTIFF whose CRS
+    # QGIS cannot detect, so explicitly fall back to the EPSG metadata.
+    try:
         crs = ds.rio.crs
-    except:
-        crs = CRS.from_epsg(ds.epsg.item())
+    except (AttributeError, KeyError, ValueError):
+        crs = None
+    if crs is None:
+        epsg = ds.coords.get("epsg")
+        if epsg is None:
+            epsg = ds.attrs.get("epsg")
+        if epsg is None:
+            raise ValueError(
+                "Cannot save composite: the source dataset has no CRS or EPSG metadata"
+            )
+        if hasattr(epsg, "item"):
+            epsg = epsg.item()
+        crs = CRS.from_epsg(int(epsg))
         
     meta = {
         "driver": "GTiff",
@@ -231,4 +246,3 @@ def get_shape_extent(shape_name, epsg=3035, outres=500, merge=True, row=None):
     yMax = round(int(np.ceil(ymax / outres)) * outres, 5)
 
     return xMin, yMin, xMax, yMax
-

@@ -58,7 +58,7 @@ def run_workflow(date_start, date_end, config_path):
         config["download_sentinel2"] = False
         config["download_landsat"] = False
         config["query_landsat"] = False
-        
+
     elif config["satellite"].startswith("Landsat"):
         config["query_sentinel2"] = False
         config["download_sentinel2"] = False
@@ -195,7 +195,33 @@ def run_workflow(date_start, date_end, config_path):
                 # save RGB for visualization
                 if config["satellite"] == "Sentinel-2":
                     save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data, "fcc")
-                    save_false_color(os.path.join(outdir, scene_id), ["B04", "B03", "B02"], data, "rgb")
+
+                    # Optional visualization-only RGB load. Keep the analysis
+                    # cube at its configured resolution and request only the
+                    # three native 10 m RGB bands when explicitly enabled.
+                    if config.get("save_rgb_10m", False):
+                        rgb_path = os.path.join(outdir, scene_id, "rgb_10m.tif")
+                        if not os.path.exists(rgb_path) or config.get("overwrite", False):
+                            rgb_kwargs = dict(sentinel2_kwargs)
+                            rgb_kwargs.update({
+                                "resolution": 10,
+                                "bands": ["B04", "B03", "B02"],
+                                "save": False,
+                            })
+                            if download_mode == "sentinelhub":
+                                rgb_data, _ = load_sh.convert_sentinel2_bands(**rgb_kwargs)
+                            else:
+                                rgb_data, _ = load_stac.convert_sentinel2_bands(**rgb_kwargs)
+                            load_with_retry(rgb_data, max_retries=20, wait_seconds=2)
+                            save_false_color(
+                                os.path.join(outdir, scene_id),
+                                ["B04", "B03", "B02"],
+                                rgb_data,
+                                "rgb_10m",
+                            )
+                            del rgb_data
+                        else:
+                            print(f"Skipping existing {rgb_path}")
 
                     
                 elif config["satellite"].startswith("Landsat"):
@@ -226,7 +252,7 @@ def run_workflow(date_start, date_end, config_path):
                     
                     
           
-        
+
         # Recompute dates to process (removes processed ones automatically)
         dates_to_process = get_dates_to_process(files, config)
     
@@ -234,14 +260,13 @@ def run_workflow(date_start, date_end, config_path):
         if set(dates_to_process) == set(failed_dates):
             print("Only failing dates remain. Stopping to avoid infinite loop.")
             break     
-        
+
 
 if __name__ == "__main__":
 
-    start = pd.Timestamp("2016-03-01")
-    end = pd.Timestamp("2016-03-30")
-
-    # end = pd.Timestamp("2025-09-30")
+    start = pd.Timestamp("2015-10-01")
+    # end = pd.Timestamp("2016-03-30")
+    end = pd.Timestamp("2025-09-30")
 
 
     # shape of the AOI
@@ -272,5 +297,4 @@ if __name__ == "__main__":
 
     for date_start, date_end in date_pairs:
         run_workflow(date_start, date_end, config_path)
-
         

@@ -3,6 +3,7 @@
   "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/S2-new",
   "download_mode": "cdse stac api",
   "remove_auxiliary": false,
+  "save_rgb_10m": false,
   "uncertainty": true,
   "satellite": "Sentinel-2",
   "date_start": "2020-07-02",
