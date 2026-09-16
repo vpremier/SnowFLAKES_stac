@@ -1,0 +1,37 @@
+{
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Mendoza.geojson",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area05/S2-new",
+  "download_mode": "cdse stac api",
+  "uncertainty": false,
+  "remove_auxiliary": false,
+  "satellite": "Sentinel-2",
+  "date_start": "2015-11-01",
+  "date_end": "2015-12-31",
+  "query_landsat": false,
+  "query_sentinel2": true,
+  "download_landsat": false,
+  "download_sentinel2": false,
+  "max_cloudcover": 90,
+  "landsat_satellite": [],
+  "s2_tile": null,
+  "landsat_tile_list": [],
+  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
+  "resampling_params": {
+    "resolution": 50,
+    "extent_target": [
+      390000,
+      6304000,
+      448500,
+      6400000
+    ],
+    "epsg_target": 32719
+  },
+  "overwrite": false,
+  "no_data_value": "nan",
+  "classify_glaciers": "yes",
+  "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
+  "exclude_tiles": null,
+  "simple_class": false,
+  "find_closest_model": false,
+  "save_rgb_10m": true
+}

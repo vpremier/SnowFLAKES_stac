@@ -700,7 +700,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     sun_mask_eroded = binary_erosion(
         binary_dilation(shadow_mask == 0),
         iterations=3
-    ) & curr_scene_valid
+    )
     
 
     # define solar incidence angle ranges
