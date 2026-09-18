@@ -78,6 +78,11 @@ def run_snowflakes(config, data, scene_id):
 
     # Create all auxiliary information
     valid_scene = create_auxiliary_information(scene_id, data, config)
+    
+    
+    
+    
+    
 
     if not valid_scene:
         print("Ending process. No valid data for this image.")

@@ -1,0 +1,17 @@
+# This experiment computes snow cover fraction over 100x100km near Mendoza for snow season of 2025
+# You can run it with `python snow_cover_fraction.py +experiment=andes_scf.yaml`
+aoi:  [ 399960.0, 6290160.0, 459760.0, 6350020.0 ]
+aoi_crs: "EPSG:32719"
+temporal_extent: ['2025-04-01', '2025-06-01']
+title_prefix: "Andes snow cover fraction"
+job_options:
+  executor-memory: "3G"
+  python-memory: "disable"
+  executor-memoryOverhead: "6500m"
+  executor-request-cores: "2500m"
+
+
+
+
+# LOG:
+# 2024-06-16: 182 credits, larger spatiotemporal extents failed max memory of 10.5GB, 1 hour wall time

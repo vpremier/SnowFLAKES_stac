@@ -1,0 +1,8 @@
+[2026-09-18 11:34:12,322][openeo.config][INFO] - Loaded openEO client config from sources: []
+[2026-09-18 11:34:12,663][openeo.rest.connection][INFO] - Found OIDC providers: ['CDSE']
+[2026-09-18 11:34:12,664][openeo.rest.connection][INFO] - No OIDC provider given, but only one available: 'CDSE'. Using that one.
+[2026-09-18 11:34:12,832][openeo.rest.connection][INFO] - Using default client_id 'sh-b1c3a958-52d4-40fe-a333-153595d1c71e' from OIDC provider 'CDSE' info.
+[2026-09-18 11:34:12,835][openeo.rest.connection][INFO] - Found refresh token: trying refresh token based authentication.
+[2026-09-18 11:34:12,835][openeo.rest.auth.oidc][INFO] - Doing 'refresh_token' token request 'https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token' with post data fields ['grant_type', 'client_id', 'refresh_token'] (client_id 'sh-b1c3a958-52d4-40fe-a333-153595d1c71e')
+[2026-09-18 11:34:12,977][openeo.rest.connection][INFO] - Obtained tokens: ['token_type', 'access_token', 'expires_in', 'id_token', 'refresh_token', 'scope']
+[2026-09-18 11:34:12,978][openeo.rest.auth.config][INFO] - Storing refresh token for issuer 'https://identity.dataspace.copernicus.eu/auth/realms/CDSE' (client 'sh-b1c3a958-52d4-40fe-a333-153595d1c71e')

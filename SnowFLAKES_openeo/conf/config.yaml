@@ -1,0 +1,31 @@
+connection:
+  endpoint: "openeo.dataspace.copernicus.eu"
+
+
+sentinel2_l2a:
+  collection: "SENTINEL2_L2A"
+  scl_band: "SCL"
+  cloud_values: [8,9,3,10]
+
+sentinel2_l1c:
+  collection: "SENTINEL2_L1C"
+  bands: ["B02", "B03", "B04", "B08", "B11", "sunZenithAngles", "sunAzimuthAngles"]
+
+water_mask:
+  collection: "ESA_WORLDCOVER_10M_2021_V2"
+  band: "MAP"
+  water_values: [80]
+
+
+experiment:
+  aoi:  [ 354000.0, 6014000.0, 362000.0, 6022000.0 ]
+  aoi_crs: "EPSG:32719"
+  temporal_extent: ['2015-08-18', '2015-08-19']
+  title_prefix: "Aguirre snow cover fraction"
+  job_options:
+    executor-memory: "3G"
+    python-memory: "disable"
+    executor-memoryOverhead: "6500m"
+    executor-request-cores: "2500m"
+
+corsa_job: None

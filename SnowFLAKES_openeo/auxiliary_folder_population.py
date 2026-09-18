@@ -687,17 +687,12 @@ def create_auxiliary_information(scene_id, data, config):
                           curr_aux_folder, f"{scene_id}_diffBNIR.tif", no_data_value)
     spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'shad_idx',
                           curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value)
-    # spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'normDiff',
-    #                       curr_aux_folder, f"{scene_id}_NormDiffBNIR.tif", no_data_value)
-    # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'normDiff',
-    #                       curr_aux_folder, f"{scene_id}_NormDiffGreenRed.tif", no_data_value)
     spectral_idx_computer(data, bands['NIR'], bands['RED'], 'EVI',
                           curr_aux_folder, f"{scene_id}_EVI.tif", no_data_value)
     spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'idx6',
                           curr_aux_folder, f"{scene_id}_idx6.tif", no_data_value,
                           B3=bands['NIR'])
-    # spectral_idx_computer(data, bands['RED'], bands['SWIR'], 'bandRatioGlaciers',
-    #                       curr_aux_folder, f"{scene_id}_bandRatioGlaciers.tif", no_data_value)
+
     
     
     
