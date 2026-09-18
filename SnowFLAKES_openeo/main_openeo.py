@@ -6,7 +6,6 @@ Created on Thu Sep 17 10:02:49 2026
 @author: vpremier
 """
 import math
-import numpy as np
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import openeo
@@ -14,7 +13,16 @@ import shapely
 import json
 from pathlib import Path
 from pyproj import Transformer
-from openeo.processes import cos, sin, arccos, array_create, array_append
+from openeo.processes import (
+    arccos,
+    array_append,
+    array_create,
+    cos,
+    max as openeo_max,
+    min as openeo_min,
+    quantiles,
+    sin,
+)
 
 
 def elevation_mask(region, conn: openeo.Connection, cfg:DictConfig):
@@ -62,58 +70,63 @@ def cloud_water_mask(region, time_period, conn: openeo.Connection, cfg:DictConfi
 
 
 
-def shadow_mask(s2_cube):
-    """Generate the shadow mask."""
+def shadow_mask(s2_cube, region):
+    """Add the scene-wide composite shadow mask as a new band.
+    """
 
-    def normalize(arr):
-        # Normalize indices to range [0, 1]
-        arr_min, arr_max = np.nanmin(arr), np.nanmax(arr)
-        return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
-   
-    def compute_shadow_mask(data):
-        NIR = data["B08"]
-        ndvi = data["NDVI"] 
-        SIA = data["SIA"]
-        idx6 = data["idx6"] 
-        shad_idx = data["SI"] 
-        evi = data["EVI"] 
-        
-        idx6_norm = normalize(idx6)
-        shad_idx_norm = normalize(shad_idx)
-        ndvi_norm = normalize(ndvi)
-        evi_norm = normalize(evi)
-        nir_norm = normalize(NIR)
-        
-        # SIA between 70 and 180
-        curr_angle_valid = np.logical_and(SIA >= 70,
-                                          SIA < 180)
-        
-        # Combine indices to create a composite shadow score
-        shadow_score = (
-            (idx6_norm + shad_idx_norm) /
-            (ndvi_norm + evi_norm + nir_norm + 1e-6)
+    def normalize(band):
+        """Min-max normalize each time slice over both spatial dimensions."""
+        band_min = band.aggregate_spatial(
+            geometries=region,
+            reducer=lambda data: openeo_min(data, ignore_nodata=True)
+        ).vector_to_raster(target=band)
+        band_max = band.aggregate_spatial(
+            geometries=region,
+            reducer=lambda data: openeo_max(data, ignore_nodata=True)
+        ).vector_to_raster(target=band)
+        band_range = band_max - band_min
+
+        # Adding one only for a zero-width range reproduces the local
+        # ``zeros_like`` branch without an eager Python/NumPy conditional.
+        safe_range = band_range + (band_range == 0)
+        return (band - band_min) / safe_range
+
+    def select_band(name):
+        # ``DataCube.band`` enables a special client-side band-math mode that
+        # cannot be combined with the aggregated statistic cubes above.
+        return s2_cube.filter_bands([name]).reduce_dimension(
+            dimension="bands", reducer="first"
         )
-        
-        threshold = np.nanpercentile(shadow_score, 85)
-        
-        # DIFFERENT SHADOWS
-        self_shadow = SIA >= 90
-        # cloud_shadow = cloud_mask == 3
-        spectral_shadow = shadow_score > threshold
-        casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
-        # shadow_mask = np.logical_or.reduce((casted_shadow, self_shadow, cloud_shadow))
-        shadow_mask = np.logical_or.reduce((casted_shadow, self_shadow))
 
-        return shadow_mask
-    
-    # apply the function
-    extended_cube = s2_cube.apply_dimension(
-        dimension="bands",
-        process=lambda data: compute_shadow_mask(data)
+    nir = select_band("B08")
+    ndvi = select_band("NDVI")
+    sia = select_band("local_solar_incidence_angle")
+    idx6 = select_band("idx6")
+    shad_idx = select_band("SI")
+    evi = select_band("EVI")
+
+    shadow_score = (
+        (normalize(idx6) + normalize(shad_idx))
+        / (normalize(ndvi) + normalize(evi) + normalize(nir) + 1e-6)
     )
-    extended_cube = extended_cube.rename_labels(dimension="bands", target=s2_cube.metadata.band_names + ["shadow_mask"])
-    
-    return extended_cube
+
+    threshold = shadow_score.aggregate_spatial(
+        geometries=region,
+        reducer=lambda data: quantiles(
+            data, probabilities=[0.85], ignore_nodata=True
+        )[0]
+    ).vector_to_raster(target=shadow_score)
+
+    curr_angle_valid = (sia >= 70) & (sia < 180)
+    self_shadow = sia >= 90
+    spectral_shadow = shadow_score > threshold
+    shadow = (spectral_shadow & curr_angle_valid) | self_shadow
+
+    shadow = shadow.process_with_node(shadow.result_node(), metadata=sia.metadata)
+    shadow_band = shadow.add_dimension(
+        name="bands", label="shadow_mask", type="bands"
+    )
+    return s2_cube.merge_cubes(shadow_band)
 
 
 
@@ -192,17 +205,18 @@ def snowflake_inputs_cube(aoi, time_period, connection, cfg):
         SI = ((green - swir) / (green + swir) / green)
         updated = array_append(updated, SI, "SI")
         
-        idx6 = 2 * (2 * bands["B01"] - blue - green) / (2 * bands["B01"] + blue + green)
+        red = bands["B04"]
+        idx6 = 2 * (2 * green - red - nir) / (2 * green + red + nir)
         updated = array_append(updated, idx6, "idx6")
         
-        EVI =  2.5 * (bands["B01"] - blue) / (bands["B01"] + 2.4 * blue + 1)
+        EVI = 2.5 * (nir - red) / (nir + 2.4 * red + 1)
         updated = array_append(updated, EVI, "EVI")
         return updated
 
     bands_indices = s2_with_local_angle.apply_dimension(dimension="bands", process=compute_indices).rename_labels(
         dimension="bands", target=s2_with_local_angle.metadata.band_names + ["NDVI", "NDSI", "NDWI", "diff_B_NIR", "SI", "idx6", "EVI"])
     
-    with_shadow_mask = shadow_mask(bands_indices)
+    with_shadow_mask = shadow_mask(bands_indices, aoi)
 
     return with_shadow_mask
 
