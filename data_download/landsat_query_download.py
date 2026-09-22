@@ -338,7 +338,8 @@ def query_landsat(date_start, date_end, username, token, shp=None,
 
 
 def download_landsat(results, outdir, username, token,
-                     pathrowList=None, tierList=None):
+                     pathrowList=None, tierList=None,
+                     folder_style='sensor'):
     
     """Downloads a list of Landsat given as input. Possibility to filter 
         by tile and tier. The same credentials as function 
@@ -384,11 +385,19 @@ def download_landsat(results, outdir, username, token,
     results['tier'] = results['displayId'].str.split('_').str[-1]
 
     # Mark already downloaded
+    folder_names = {
+        'LT05': 'Landsat-5',
+        'LE07': 'Landsat-7',
+        'LC08': 'Landsat-8',
+        'LC09': 'Landsat-9',
+    }
+
     def is_downloaded(row):
         sensor = row['satellite']
         tile = row['pathrow']
         filename = row['displayId'] + '.tar'
-        filepath = os.path.join(outdir, 'Landsat', sensor, tile, filename)
+        folder = folder_names.get(sensor, sensor) if folder_style == 'mission' else sensor
+        filepath = os.path.join(outdir, 'Landsat', folder, tile, filename)
         return os.path.exists(filepath)
 
     results['already_downloaded'] = results.apply(is_downloaded, axis=1)
@@ -451,7 +460,7 @@ def download_landsat(results, outdir, username, token,
                 for download in moreDownloadUrls['available']:
                     if (str(download['downloadId']) in requestResults['newRecords'] or
                             str(download['downloadId']) in requestResults['duplicateProducts']):
-                        download_scene(download, group_df, outdir)
+                        download_scene(download, group_df, outdir, folder_style)
                         downloadIds.append(download['downloadId'])
 
                 remaining = requestedDownloadsCount - len(downloadIds) - len(requestResults['failed'])
@@ -463,11 +472,11 @@ def download_landsat(results, outdir, username, token,
             print("\nAll downloads available immediately:\n")
             for download in requestResults['availableDownloads']:
                 print(download)
-                download_scene(download, group_df, outdir)
+                download_scene(download, group_df, outdir, folder_style)
                   
          
                 
-def download_scene(download, group_df, outdir):
+def download_scene(download, group_df, outdir, folder_style='sensor'):
     """
     Download a single scene and save to Landsat/SENSOR/TILE/SCENE.tar
     """
@@ -480,8 +489,15 @@ def download_scene(download, group_df, outdir):
     tile = row['pathrow']
     scene = row['displayId'] + '.tar'
 
+    folder_names = {
+        'LT05': 'Landsat-5',
+        'LE07': 'Landsat-7',
+        'LC08': 'Landsat-8',
+        'LC09': 'Landsat-9',
+    }
+    folder = folder_names.get(sensor, sensor) if folder_style == 'mission' else sensor
     # Build target folder and ensure it exists
-    dest_dir = os.path.join(outdir, 'Landsat', sensor, tile)
+    dest_dir = os.path.join(outdir, 'Landsat', folder, tile)
     os.makedirs(dest_dir, exist_ok=True)
 
     filepath = os.path.join(dest_dir, scene)

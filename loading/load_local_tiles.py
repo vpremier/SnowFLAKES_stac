@@ -3,6 +3,7 @@
 """Load and mosaic locally downloaded Sentinel-2 or Landsat Level-1 tiles."""
 
 import os
+import re
 import tarfile
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import rioxarray  # noqa: F401 - registers the xarray ``rio`` accessor
 import xarray as xr
 from rasterio.enums import Resampling
 from rasterio.transform import from_origin
-from rasterio.warp import reproject
+from rasterio.warp import reproject, transform_bounds
 
 
 SENTINEL2_BANDS = [
@@ -52,8 +53,43 @@ def _target_grid(extent, resolution):
     return transform, height, width
 
 
-def _read_on_grid(path, epsg, transform, height, width):
-    """Read one raster and reproject it directly to the target grid."""
+def _resolve_epsg(paths, epsg):
+    if epsg is not None:
+        return epsg
+    with rasterio.open(paths[0]) as source:
+        resolved = source.crs.to_epsg() if source.crs else None
+    if resolved is None:
+        raise ValueError("The source raster has no EPSG and none was configured")
+    return resolved
+
+
+def _union_extent(paths, epsg, resolution):
+    """Return a target-grid-aligned union extent for complete tiles."""
+    xmin = ymin = float("inf")
+    xmax = ymax = float("-inf")
+    for path in paths:
+        with rasterio.open(path) as source:
+            bounds = transform_bounds(
+                source.crs,
+                f"EPSG:{epsg}",
+                *source.bounds,
+                densify_pts=21,
+            )
+        xmin = min(xmin, bounds[0])
+        ymin = min(ymin, bounds[1])
+        xmax = max(xmax, bounds[2])
+        ymax = max(ymax, bounds[3])
+    return [
+        np.floor(xmin / resolution) * resolution,
+        np.floor(ymin / resolution) * resolution,
+        np.ceil(xmax / resolution) * resolution,
+        np.ceil(ymax / resolution) * resolution,
+    ]
+
+
+def _read_on_grid(path, epsg, transform, height, width,
+                  resampling=Resampling.bilinear):
+    """Read one raster and reproject it using bilinear resampling by default."""
     destination = np.full((height, width), np.nan, dtype="float32")
     with rasterio.open(path) as source:
         reproject(
@@ -65,7 +101,7 @@ def _read_on_grid(path, epsg, transform, height, width):
             dst_transform=transform,
             dst_crs=f"EPSG:{epsg}",
             dst_nodata=np.nan,
-            resampling=Resampling.bilinear,
+            resampling=resampling,
         )
     return destination
 
@@ -99,22 +135,35 @@ def _as_data_array(arrays, bands, date, epsg, transform):
 
 
 def _sentinel2_band_path(scene_dir, band):
-    patterns = (
-        f"*_{band}.jp2", f"*_{band}_*.jp2",
-        f"*_{band}.tif", f"*_{band}_*.tif",
-    )
+    """Find a band regardless of whether S2DL includes a filename prefix."""
+    if not Path(scene_dir).is_dir():
+        raise FileNotFoundError(f"Scene directory is missing: {scene_dir}")
+    band_pattern = re.compile(rf"(?:^|[_-]){re.escape(band)}(?:$|[_-])")
     matches = []
-    for pattern in patterns:
-        matches.extend(Path(scene_dir).rglob(pattern))
+    for path in Path(scene_dir).rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in {".jp2", ".tif"}:
+            continue
+        if band_pattern.search(path.stem + "_"):
+            matches.append(path)
     if not matches:
         raise FileNotFoundError(f"Band {band} is missing in {scene_dir}")
     return sorted(set(matches))[0]
 
 
+def _sentinel2_scene_dir(outdir, tile, product_id):
+    """Resolve S2DL/SAFE directory naming variants."""
+    base = Path(outdir) / tile
+    candidates = (base / product_id, base / f"{product_id}.SAFE")
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    # Return the canonical path so the resulting error remains informative.
+    return candidates[0]
+
+
 def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
                          exclude_tiles=None):
     """Load S2DL products for one date and merge their MGRS tiles."""
-    transform, height, width = _target_grid(extent, resolution)
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     selected = products[
         products["Name"].str.split("_").str[2].str.startswith(date_token)
@@ -126,13 +175,25 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
     if selected.empty:
         return None, None
 
+    source_paths = []
+    for name in selected["Name"]:
+        product_id = str(name).removesuffix(".SAFE")
+        tile = product_id.split("_")[5]
+        scene_dir = _sentinel2_scene_dir(outdir, tile, product_id)
+        source_paths.append(_sentinel2_band_path(scene_dir, "B02"))
+    epsg = _resolve_epsg(source_paths, epsg)
+    if extent is None:
+        extent = _union_extent(source_paths, epsg, resolution)
+    transform, height, width = _target_grid(extent, resolution)
+
     mosaics = []
     for band in SENTINEL2_BANDS:
         mosaic = None
         for name in selected["Name"]:
-            parts = name.split("_")
+            product_id = str(name).removesuffix(".SAFE")
+            parts = product_id.split("_")
             tile = parts[5]
-            scene_dir = Path(outdir) / tile / name 
+            scene_dir = _sentinel2_scene_dir(outdir, tile, product_id)
             band_path = _sentinel2_band_path(scene_dir, band)
             values = _read_on_grid(
                 band_path, epsg, transform, height, width
@@ -178,6 +239,18 @@ def _landsat_member(archive, band):
     return f"/vsitar/{os.path.abspath(archive)}/{member}"
 
 
+def _landsat_archive(outdir, sensor, tile, name):
+    mission = {
+        "LT05": "Landsat-5",
+        "LE07": "Landsat-7",
+        "LC08": "Landsat-8",
+        "LC09": "Landsat-9",
+    }.get(sensor, sensor)
+    mission_path = Path(outdir) / "Landsat" / mission / tile / f"{name}.tar"
+    sensor_path = Path(outdir) / "Landsat" / sensor / tile / f"{name}.tar"
+    return mission_path if mission_path.exists() else sensor_path
+
+
 def _calibrate_landsat(values, band, sensor, metadata):
     if band == 6 and sensor == "LE07":
         suffix = next(
@@ -213,7 +286,6 @@ def _calibrate_landsat(values, band, sensor, metadata):
 def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
                        exclude_tiles=None):
     """Load downloaded USGS tar archives for one date and merge WRS tiles."""
-    transform, height, width = _target_grid(extent, resolution)
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     names = products["Name"].astype(str)
     selected = products[names.str.split("_").str[3] == date_token]
@@ -224,6 +296,16 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
     if selected.empty:
         return None, None
 
+    source_paths = []
+    for name in selected["Name"]:
+        sensor, _, tile = name.split("_")[:3]
+        source_paths.append(
+            _landsat_member(_landsat_archive(outdir, sensor, tile, name), 2)
+        )
+    epsg = _resolve_epsg(source_paths, epsg)
+    if extent is None:
+        extent = _union_extent(source_paths, epsg, resolution)
+
     first_sensor = selected.iloc[0]["Name"].split("_")[0]
     band_map = LANDSAT_BANDS[first_sensor]
     mosaics = []
@@ -233,7 +315,7 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
             sensor, _, tile = name.split("_")[:3]
             if sensor != first_sensor:
                 continue
-            archive = Path(outdir) / "Landsat" / sensor / tile / f"{name}.tar"
+            archive = _landsat_archive(outdir, sensor, tile, name)
             if not archive.exists():
                 raise FileNotFoundError(f"Downloaded scene is missing: {archive}")
             metadata = _read_mtl(archive)

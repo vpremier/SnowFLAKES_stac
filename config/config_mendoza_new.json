@@ -2,11 +2,24 @@
   "study_area": "Mendoza",
   "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test_SnowFlakes",
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Mendoza.geojson",
-  "date_start": "2023-03-01",
+  "date_start": "2023-04-01",
   "date_end": "2023-04-10",
-  "satellite": "both",
+  "satellite": "Sentinel-2",
   "max_cloudcover": 90,
-  "download_mode": "cdse stac api",
+  "DOWNLOAD_MODE": "RAW",
+  "CROP": true,
+  "SAVE": true,
+  "resampling_params": {
+     "resolution": 50,
+     "extent_target": [
+       390000,
+       6304000,
+       448500,
+       6400000
+     ],
+     "epsg_target": 32719
+   },
+  "run_snowflakes": false,
   "uncertainty": false,
   "remove_auxiliary": false,
   "query_landsat": false,
@@ -17,16 +30,6 @@
   "s2_tile": null,
   "landsat_tile_list": [],
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
-  "resampling_params": {
-    "resolution": 50,
-    "extent_target": [
-      390000,
-      6304000,
-      448500,
-      6400000
-    ],
-    "epsg_target": 32719
-  },
   "overwrite": false,
   "no_data_value": "nan",
   "classify_glaciers": "yes",

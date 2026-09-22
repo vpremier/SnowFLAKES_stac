@@ -18,9 +18,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 run_query() {
-    echo "[1/1] Querying available satellite scenes"
+    echo "[1/2] Querying available satellite scenes"
     python3 "${SCRIPT_DIR}/data_download/query_available.py" \
         --config "${CONFIG_PATH}"
 }
 
+run_load() {
+    echo "[2/2] Loading and preparing SnowFLAKES data arrays"
+    python3 "${SCRIPT_DIR}/loading/main_load.py" \
+        "${CONFIG_PATH}"
+}
+
 run_query
+run_load
