@@ -1,12 +1,12 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2-new",
+  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Glaciers/Azufre/Sentinel2-newnew",
   "download_mode": "cdse stac api",
   "uncertainty": false,
   "remove_auxiliary": false,
   "satellite": "Sentinel-2",
-  "date_start": "2024-03-11",
-  "date_end": "2024-03-31",
+  "date_start": "2017-01-26",
+  "date_end": "2017-01-27",
   "query_landsat": false,
   "query_sentinel2": true,
   "download_landsat": false,
@@ -31,6 +31,6 @@
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "exclude_tiles": null,
-  "simple_class": true,
-  "find_closest_model": true
+  "simple_class": false,
+  "find_closest_model": false
 }

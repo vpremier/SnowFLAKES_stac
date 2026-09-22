@@ -301,9 +301,18 @@ def download_cdse(s2List, outdir, username, psw):
         os.makedirs(scene_dir, exist_ok=True)
         
         outname = os.path.join(scene_dir, fileName.replace('.SAFE', '.zip'))
-                
-        if os.path.exists(outname) and os.stat(outname).st_size>0:
-            print('%s already downloaded' %fileName.replace('.SAFE','.zip'))
+        safe_dir = os.path.join(scene_dir, fileName)
+
+        archive_exists = (
+            os.path.isfile(outname) and os.stat(outname).st_size > 0
+        )
+        safe_exists = (
+            os.path.isdir(safe_dir) and any(os.scandir(safe_dir))
+        )
+
+        if archive_exists or safe_exists:
+            existing = outname if archive_exists else safe_dir
+            print('%s already downloaded: %s' % (fileName, existing))
         
         else:
             print("Downloading %s" %fileName)
@@ -367,4 +376,3 @@ if __name__ == "__main__":
     
     end = time.time()
     print(f"Download time: {end - start:.2f} seconds")
-

@@ -26,6 +26,7 @@ dependencies:
  - pystac-client
  - odc-stac
  - boto3
+ - python-dotenv
 
  # Gap-filling tutorial and interactive maps
  - pandas
@@ -45,4 +46,5 @@ dependencies:
  - scikit-learn
  - pip
  - pip:
+   - s2dl==0.4.1
    - tqdm-joblib

@@ -470,9 +470,10 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     
     threshold = np.nanpercentile(shadow_score[curr_scene_valid], 85)
     
-    # DIFFERENT SHADOWS
-    self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle >= 90)
+    # DIFFERENT SHADOWS: i) cloud shadows, ii) self-shadows, and iii) cast-shadows 
     cloud_shadow = cloud_mask == 3
+    self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle > 90)
+
 
     spectral_shadow = shadow_score > threshold
     casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)

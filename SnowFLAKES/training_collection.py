@@ -517,7 +517,12 @@ def get_pixels_ice(scene_id, data, config):
     cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
     water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
     glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
-    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
+    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
+    nir = bands["NIR"]
+    red = bands["RED"]
+
+
     SCF = load_map(scene_folder, '*SnowFLAKES.tif')
     swir = bands["SWIR"]
         
@@ -531,8 +536,35 @@ def get_pixels_ice(scene_id, data, config):
                                          water_mask == 1)
 
 
-    # fixed conditions for being an ice pixel
-    mask_ice = np.logical_and.reduce((glacier_mask==1, 
+    # fixed conditions for being an ice pixel   
+    mask_snow = np.logical_and.reduce((glacier_mask==1, 
+                                      shadow_mask == 0,
+                                      NDSI > 0.7, 
+                                      curr_scene_valid,
+                                      nir>0.5))
+    
+    mask_potential_ice = np.logical_and.reduce((glacier_mask==1, 
+                                      shadow_mask == 0,
+                                      NDSI > 0.7, 
+                                      curr_scene_valid,
+                                      nir<0.5))
+    
+    red_thresholds = define_threshold(red, mask_potential_ice, "red_ice", curr_aux_folder, threshold=(0.45, 0.55))
+    
+    if min(nir_thresholds) > 0.5:
+        ice = None
+        snow = None
+        
+    elif max(nir_thresholds) < 0.5:
+        
+        
+
+    
+    plt.hist(nir[mask_ice_snow])
+    plt.hist(green[mask_ice_snow])
+
+    
+    mask_ice = np.logical_and.reduce((mask_ice_snow, 
                                       SCF > 0,
                                       diff_B_NIR > 0.15, 
                                       curr_scene_valid))
