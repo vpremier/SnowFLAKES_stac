@@ -25,7 +25,7 @@ run_query() {
 
 run_load() {
     echo "[2/2] Loading and preparing SnowFLAKES data arrays"
-    python3 "${SCRIPT_DIR}/loading/main_load.py" \
+    python3 "${SCRIPT_DIR}/main.py" \
         "${CONFIG_PATH}"
 }
 

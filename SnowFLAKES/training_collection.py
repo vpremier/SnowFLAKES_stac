@@ -488,7 +488,7 @@ def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range
     return snow, snowfree
 
 
-
+"""
 def get_pixels_ice(scene_id, data, config):
     
     # load information for current scene
@@ -600,7 +600,7 @@ def get_pixels_ice(scene_id, data, config):
     return snow, ice
 
 
-
+"""
 def sample_histogram_equal(mask, values, n_samples, n_bins=20, seed=None):
     """
     Sample pixels approximately uniformly over the histogram.

@@ -134,6 +134,101 @@ def _as_data_array(arrays, bands, date, epsg, transform):
     return result.rio.write_crs(int(epsg)).rio.write_transform(transform)
 
 
+def _prepared_band_spec(scene_id):
+    """Return DataArray band names and accepted cached filename tokens."""
+    sensor = str(scene_id).split("_", 1)[0]
+    if sensor.startswith("S2"):
+        return [(band, (band,)) for band in SENTINEL2_BANDS]
+    if sensor not in LANDSAT_BANDS:
+        return []
+    return [
+        (name, (name, f"B{number}"))
+        for number, name in LANDSAT_BANDS[sensor].items()
+    ]
+
+
+def prepared_bands_are_complete(output_dir, scene_id):
+    """Return true when every prepared band exists for a saved scene."""
+    scene_dir = Path(output_dir) / scene_id
+    if not scene_dir.is_dir():
+        return False
+    for _, filename_tokens in _prepared_band_spec(scene_id):
+        if not any(
+            (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
+            for token in filename_tokens
+        ):
+            return False
+    return bool(_prepared_band_spec(scene_id))
+
+
+def prepared_grid_matches(
+    output_dir, scene_id, resolution, epsg, extent=None
+):
+    """Check that cached bands match the currently requested target grid."""
+    if resolution is None or epsg is None:
+        return False
+    if not prepared_bands_are_complete(output_dir, scene_id):
+        return False
+    scene_dir = Path(output_dir) / scene_id
+    _, filename_tokens = _prepared_band_spec(scene_id)[0]
+    path = next(
+        scene_dir / f"{scene_id}_{token}_toa.tif"
+        for token in filename_tokens
+        if (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
+    )
+    with rasterio.open(path) as source:
+        source_epsg = source.crs.to_epsg() if source.crs else None
+        source_resolution = (abs(source.transform.a), abs(source.transform.e))
+        if source_epsg != int(epsg):
+            return False
+        if not np.allclose(source_resolution, (resolution, resolution)):
+            return False
+        if extent is not None and not np.allclose(source.bounds, extent):
+            return False
+    return True
+
+
+def load_prepared_bands(output_dir, scene_id, date):
+    """Reconstruct a SnowFLAKES DataArray from prepared GeoTIFF bands.
+
+    ``None`` is returned for an absent or incomplete cache so callers can
+    transparently fall back to the original STAC or raw-archive loader.
+    """
+    if not prepared_bands_are_complete(output_dir, scene_id):
+        return None
+
+    scene_dir = Path(output_dir) / scene_id
+    arrays = []
+    bands = []
+    reference = None
+    epsg = None
+    transform = None
+    print(f"Loading prepared scene from GeoTIFF cache: {scene_id}")
+    for band, filename_tokens in _prepared_band_spec(scene_id):
+        path = next(
+            scene_dir / f"{scene_id}_{token}_toa.tif"
+            for token in filename_tokens
+            if (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
+        )
+        print(f"  Loading cached band {band}: {path.name}")
+        with rasterio.open(path) as source:
+            grid = (source.height, source.width, source.transform, source.crs)
+            if reference is None:
+                reference = grid
+                transform = source.transform
+                epsg = source.crs.to_epsg() if source.crs else None
+                if epsg is None:
+                    raise ValueError(f"Cached band has no EPSG CRS: {path}")
+            elif grid != reference:
+                raise ValueError(
+                    f"Cached bands do not share the same grid: {path}"
+                )
+            arrays.append(source.read(1).astype("float32"))
+        bands.append(band)
+
+    return _as_data_array(arrays, bands, date, epsg, transform)
+
+
 def _sentinel2_band_path(scene_dir, band):
     """Find a band regardless of whether S2DL includes a filename prefix."""
     if not Path(scene_dir).is_dir():
@@ -162,7 +257,7 @@ def _sentinel2_scene_dir(outdir, tile, product_id):
 
 
 def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
-                         exclude_tiles=None):
+                         exclude_tiles=None, merge=True, bands=None):
     """Load S2DL products for one date and merge their MGRS tiles."""
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     selected = products[
@@ -174,20 +269,34 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
     ]
     if selected.empty:
         return None, None
+    bands = list(bands or SENTINEL2_BANDS)
+
+    print(
+        f"Preparing Sentinel-2 date {date}: "
+        f"{len(selected)} product(s)"
+    )
 
     source_paths = []
     for name in selected["Name"]:
         product_id = str(name).removesuffix(".SAFE")
         tile = product_id.split("_")[5]
         scene_dir = _sentinel2_scene_dir(outdir, tile, product_id)
-        source_paths.append(_sentinel2_band_path(scene_dir, "B02"))
+        source_paths.append(_sentinel2_band_path(scene_dir, bands[0]))
     epsg = _resolve_epsg(source_paths, epsg)
     if extent is None:
         extent = _union_extent(source_paths, epsg, resolution)
     transform, height, width = _target_grid(extent, resolution)
+    print(
+        f"  Target grid: EPSG:{epsg}, {resolution} m, "
+        f"{width} x {height} pixels, extent={extent}"
+    )
 
     mosaics = []
-    for band in SENTINEL2_BANDS:
+    for band_index, band in enumerate(bands, start=1):
+        print(
+            f"  Resampling/calibrating Sentinel-2 band {band} "
+            f"({band_index}/{len(bands)})"
+        )
         mosaic = None
         for name in selected["Name"]:
             product_id = str(name).removesuffix(".SAFE")
@@ -195,6 +304,7 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
             tile = parts[5]
             scene_dir = _sentinel2_scene_dir(outdir, tile, product_id)
             band_path = _sentinel2_band_path(scene_dir, band)
+            print(f"    Tile {tile}, image {product_id}")
             values = _read_on_grid(
                 band_path, epsg, transform, height, width
             )
@@ -207,9 +317,10 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
 
     scene_id = selected.iloc[0]["Name"].removesuffix(".SAFE")
     parts = scene_id.split("_")
-    parts[5] = "merged"
+    if merge:
+        parts[5] = "merged"
     return (
-        _as_data_array(mosaics, SENTINEL2_BANDS, date, epsg, transform),
+        _as_data_array(mosaics, bands, date, epsg, transform),
         "_".join(parts),
     )
 
@@ -284,7 +395,7 @@ def _calibrate_landsat(values, band, sensor, metadata):
 
 
 def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
-                       exclude_tiles=None):
+                       exclude_tiles=None, merge=True):
     """Load downloaded USGS tar archives for one date and merge WRS tiles."""
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     names = products["Name"].astype(str)
@@ -296,6 +407,10 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
     if selected.empty:
         return None, None
 
+    print(
+        f"Preparing Landsat date {date}: {len(selected)} product(s)"
+    )
+
     source_paths = []
     for name in selected["Name"]:
         sensor, _, tile = name.split("_")[:3]
@@ -305,17 +420,28 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
     epsg = _resolve_epsg(source_paths, epsg)
     if extent is None:
         extent = _union_extent(source_paths, epsg, resolution)
+    transform, height, width = _target_grid(extent, resolution)
+    print(
+        f"  Target grid: EPSG:{epsg}, {resolution} m, "
+        f"{width} x {height} pixels, extent={extent}"
+    )
 
     first_sensor = selected.iloc[0]["Name"].split("_")[0]
     band_map = LANDSAT_BANDS[first_sensor]
     mosaics = []
-    for band in band_map:
+    for band_index, band in enumerate(band_map, start=1):
+        band_name = band_map[band]
+        print(
+            f"  Resampling/calibrating Landsat band B{band} "
+            f"({band_name}, {band_index}/{len(band_map)})"
+        )
         mosaic = None
         for name in selected["Name"]:
             sensor, _, tile = name.split("_")[:3]
             if sensor != first_sensor:
                 continue
             archive = _landsat_archive(outdir, sensor, tile, name)
+            print(f"    Tile {tile}, image {name}")
             if not archive.exists():
                 raise FileNotFoundError(f"Downloaded scene is missing: {archive}")
             metadata = _read_mtl(archive)
@@ -332,7 +458,8 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
 
     scene_id = selected.iloc[0]["Name"]
     parts = scene_id.split("_")
-    parts[2] = "merged"
+    if merge:
+        parts[2] = "merged"
     return (
         _as_data_array(
             mosaics, list(band_map.values()), date, epsg, transform
