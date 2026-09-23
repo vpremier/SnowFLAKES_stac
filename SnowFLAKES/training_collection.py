@@ -488,7 +488,7 @@ def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range
     return snow, snowfree
 
 
-"""
+
 def get_pixels_ice(scene_id, data, config):
     
     # load information for current scene
@@ -550,7 +550,7 @@ def get_pixels_ice(scene_id, data, config):
                                       nir<0.5))
     
     red_thresholds = define_threshold(red, mask_potential_ice, "red_ice", curr_aux_folder, threshold=(0.45, 0.55))
-    
+    """
     if min(nir_thresholds) > 0.5:
         ice = None
         snow = None
@@ -599,8 +599,10 @@ def get_pixels_ice(scene_id, data, config):
 
     return snow, ice
 
-
 """
+
+
+
 def sample_histogram_equal(mask, values, n_samples, n_bins=20, seed=None):
     """
     Sample pixels approximately uniformly over the histogram.

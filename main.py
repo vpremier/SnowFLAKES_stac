@@ -530,6 +530,14 @@ def _rgb_cache_exists(config, output_dir, scene_id):
     )
 
 
+def _rgb_uses_analysis_data(config, sensor):
+    """Return true when the analysis DataArray already has native RGB scale."""
+    return (
+        sensor == "Sentinel-2"
+        and config.get("resampling_params", {}).get("resolution") == 10
+    )
+
+
 def _load_raw_rgb10(config, products, date, crop, merge=True, save_dir=None):
     """Load only Sentinel-2 RGB bands at native 10 m for visualization."""
     if not _save_rgb_enabled(config) or products.empty:
@@ -603,7 +611,10 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
         )
         if data is not None:
             rgb_data = None
-            if not _rgb_cache_exists(config, snowflakes_dir, scene_id):
+            if _rgb_uses_analysis_data(config, "Sentinel-2"):
+                print("Reusing 10 m analysis DataArray for RGB; no second load")
+                rgb_data = data
+            elif not _rgb_cache_exists(config, snowflakes_dir, scene_id):
                 rgb_data, _ = _load_raw_rgb10(
                     config, sentinel2, date, True, merge=True
                 )
@@ -719,7 +730,13 @@ def _process_raw_tiles(config, study_dir, sentinel2, landsat, save, collected):
                     )
                     if data is not None:
                         rgb_data = None
-                        if sensor == "Sentinel-2" and not _rgb_cache_exists(
+                        if _rgb_uses_analysis_data(config, sensor):
+                            print(
+                                "Reusing 10 m analysis DataArray for RGB; "
+                                "no second load"
+                            )
+                            rgb_data = data
+                        elif sensor == "Sentinel-2" and not _rgb_cache_exists(
                             config, snowflakes_dir, scene_id
                         ):
                             rgb_data, _ = _load_raw_rgb10(
@@ -865,7 +882,10 @@ def run(config_path):
             )
             if data is not None:
                 rgb_data = None
-                if not _rgb_cache_exists(config, snowflakes_dir, scene_id):
+                if _rgb_uses_analysis_data(config, "Sentinel-2"):
+                    print("Reusing 10 m analysis DataArray for RGB; no second STAC load")
+                    rgb_data = data
+                elif not _rgb_cache_exists(config, snowflakes_dir, scene_id):
                     rgb_data, _ = _load_stac_rgb10(config, date)
                 _run_or_collect(
                     config,

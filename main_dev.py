@@ -29,7 +29,6 @@ from utils import (
 )
 
 
-import glob
 from SnowFLAKES.utilities import get_uncertainty
 
 
@@ -268,7 +267,7 @@ if __name__ == "__main__":
     # end = pd.Timestamp("2023-03-31")
     
     start = pd.Timestamp("2017-01-26")
-    end = pd.Timestamp("2017-01-27")
+    end = pd.Timestamp("2018-01-27")
 
 
     # shape of the AOI
@@ -294,5 +293,6 @@ if __name__ == "__main__":
         current = next_date
 
     for date_start, date_end in date_pairs:
+        print('ciao')
         run_workflow(date_start, date_end, config_path)
         
