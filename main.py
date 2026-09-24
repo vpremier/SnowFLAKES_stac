@@ -816,9 +816,9 @@ def run(config_path):
         sentinel_download = "s3"
     elif legacy_mode in {"raw", "archives", "download"}:
         sentinel_download = _download_flag(
-            config.get("sentinel2_source", "google"),
+            "google",
             {"odata", "s3", "google"},
-            "sentinel2_source",
+            "DOWNLOAD_SENTINEL",
         )
     elif legacy_mode not in {"", "stac-api"}:
         raise ValueError(
@@ -827,9 +827,9 @@ def run(config_path):
         )
     else:
         sentinel_download = _download_flag(
-            config.get("sentinel2_source", "google"),
+            "google",
             {"odata", "s3", "google"},
-            "sentinel2_source",
+            "DOWNLOAD_SENTINEL",
         )
 
     if "DOWNLOAD_LANDSAT" in config or "download_landsat_mode" in config:

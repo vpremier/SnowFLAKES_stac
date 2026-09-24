@@ -38,7 +38,7 @@ The following fields should be defined in the JSON configuration:
   "date_end": "2023-06-01",
   "max_cloudcover": 80,
   "satellite": "both",
-  "sentinel2_source": "google",
+  "DOWNLOAD_SENTINEL": "Google",
   "skip_sentinel2_tiles": ["T19HDE"],
   "skip_landsat_pathrows": ["232084"]
 }
@@ -116,20 +116,20 @@ The CSV contents are designed for the corresponding download functions:
 
 ## Sentinel-2 query source
 
-Choose the Sentinel-2 query source with:
+The query source is normally derived from `DOWNLOAD_SENTINEL`. For example:
 
 ```json
-"sentinel2_source": "google"
+"DOWNLOAD_SENTINEL": "Google"
 ```
 
 or:
 
 ```json
-"sentinel2_source": "odata"
+"DOWNLOAD_SENTINEL": "OData"
 ```
 
-Use `"s3"` instead of `"odata"` when the resulting query CSV will be used
-by the Copernicus Data Space S3 downloader; this preserves the `S3Path` field.
+Use `"DOWNLOAD_SENTINEL": "S3"` when the resulting query CSV will be used by
+the Copernicus Data Space S3 downloader; this preserves the `S3Path` field.
 
 ### Google mode
 

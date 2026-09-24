@@ -114,6 +114,21 @@ def _previous_day(value):
     ).isoformat()
 
 
+def _configured_sentinel_source(config):
+    """Resolve the query backend from DOWNLOAD_SENTINEL."""
+    download = config.get("DOWNLOAD_SENTINEL", config.get("download_sentinel"))
+    if download is None or download is False:
+        return "google"
+    normalized = str(download).strip().lower().replace("_", "-").replace(" ", "-")
+    if normalized in {"stac", "stac-api", "cdse-stac-api", "odata"}:
+        return "odata"
+    if normalized in {"s3", "sentinel2-s3", "sentinel-s3"}:
+        return "s3"
+    if normalized == "google":
+        return "google"
+    return "google"
+
+
 def _existing_sentinel2_query_is_compatible(path, source):
     if not path.exists():
         return False
@@ -137,7 +152,7 @@ def query_period(
     satellite,
     skip_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
-    sentinel2_source="google",
+    download_sentinel="google",
 ):
     """Query one period, skipping each CSV that already exists."""
     outputs = []
@@ -146,17 +161,17 @@ def query_period(
 
     if satellite in ("sentinel2", "both"):
         output = _csv_path(query_dir, "Sentinel2", date_start, date_end)
-        if _existing_sentinel2_query_is_compatible(output, sentinel2_source):
+        if _existing_sentinel2_query_is_compatible(output, download_sentinel):
             print(f"Skipping existing query: {output}")
         else:
-            if sentinel2_source == "google":
+            if download_sentinel == "google":
                 products = query_google_sentinel2(
                     date_start,
                     date_end,
                     shp=aoi,
                     max_cc=max_cloudcover,
                 )
-            elif sentinel2_source in {"odata", "s3"}:
+            elif download_sentinel in {"odata", "s3"}:
                 username = os.getenv("CDSE_USERNAME")
                 password = os.getenv("CDSE_PASSWORD")
                 if not username or not password:
@@ -175,7 +190,7 @@ def query_period(
                 )
             else:
                 raise ValueError(
-                    "sentinel2_source must be 'google', 'odata', or 's3'"
+                    "DOWNLOAD_SENTINEL must be Google, OData, or S3 for queries"
                 )
             products = _filter_sentinel2(products, skip_sentinel2_tiles)
             products.to_csv(output, index=False)
@@ -223,7 +238,7 @@ def run_queries(
     satellite="both",
     skip_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
-    sentinel2_source="google",
+    download_sentinel="google",
 ):
     """Create monthly query CSV files beneath ``<work>/<study>/QUERY``."""
     aoi = Path(aoi)
@@ -246,9 +261,9 @@ def run_queries(
         )
     if not 0 <= max_cloudcover <= 100:
         raise ValueError("max_cloudcover must be between 0 and 100")
-    sentinel2_source = str(sentinel2_source).lower()
-    if sentinel2_source not in {"google", "odata", "s3"}:
-        raise ValueError("sentinel2_source must be 'google', 'odata', or 's3'")
+    download_sentinel = str(download_sentinel).lower()
+    if download_sentinel not in {"google", "odata", "s3"}:
+        raise ValueError("DOWNLOAD_SENTINEL must be Google, OData, or S3")
 
     query_dir = Path(working_directory) / study_area / "QUERY"
     query_dir.mkdir(parents=True, exist_ok=True)
@@ -268,7 +283,7 @@ def run_queries(
                 satellite,
                 skip_sentinel2_tiles,
                 skip_landsat_pathrows,
-                sentinel2_source,
+                download_sentinel,
             )
         )
     return outputs
@@ -294,10 +309,10 @@ def build_parser():
         help="both, sentinel2/Sentinel-2, or landsat/Landsat-8",
     )
     parser.add_argument(
-        "--sentinel2-source",
+        "--download-sentinel",
         choices=("google", "odata", "s3"),
         default="google",
-        help="Sentinel-2 source; OData produces CSVs for download_cdse",
+        help="Sentinel-2 download/query source",
     )
     parser.add_argument(
         "--skip-sentinel2-tiles",
@@ -381,7 +396,7 @@ def _run_from_config(config_path):
             "landsat_tile_skip",
             default=[],
         ),
-        sentinel2_source=config.get("sentinel2_source", "google"),
+        download_sentinel=_configured_sentinel_source(config),
     )
 
 
@@ -421,7 +436,7 @@ def main():
         satellite=args.satellite,
         skip_sentinel2_tiles=args.skip_sentinel2_tiles,
         skip_landsat_pathrows=args.skip_landsat_pathrows,
-        sentinel2_source=args.sentinel2_source,
+        download_sentinel=args.download_sentinel,
     )
 
 

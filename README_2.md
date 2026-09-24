@@ -27,7 +27,7 @@ The query configuration should contain:
   "date_end": "2023-06-01",
   "max_cloudcover": 80,
   "satellite": "both",
-  "sentinel2_source": "google",
+  "DOWNLOAD_SENTINEL": "Google",
   "skip_sentinel2_tiles": ["T19HDE"],
   "skip_landsat_pathrows": ["232084"]
 }
@@ -58,13 +58,13 @@ reused. OData CSV files are reused only when they contain the CDSE `Id` column.
 Sentinel-2 can be queried with:
 
 ```json
-"sentinel2_source": "google"
+"DOWNLOAD_SENTINEL": "Google"
 ```
 
 for S2DL-compatible Google products, or:
 
 ```json
-"sentinel2_source": "odata"
+"DOWNLOAD_SENTINEL": "OData"
 ```
 
 for CSVs compatible with `download_cdse()`.
