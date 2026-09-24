@@ -6,7 +6,10 @@
   "date_end": "2022-04-10",
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
-  "DOWNLOAD_MODE": "STAC-API",
+  "DOWNLOAD_SENTINEL": "s3",
+  "sentinel2_s3_profile": "cdse",
+  "DOWNLOAD_LANDSAT": "stac-api",
+  "sentinel2_source": "odata",
   "CROP": true,
   "SAVE": true,
   "resampling_params": {

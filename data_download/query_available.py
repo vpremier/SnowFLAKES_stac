@@ -3,8 +3,9 @@
 """Query available Sentinel-2 and Landsat scenes for a study area.
 
 The output CSV files are compatible with the selected download helper. Google
-mode produces S2DL fields, while OData mode preserves the CDSE ``Id`` field
-required by ``download_cdse``. Dates use the same half-open interval as the query functions:
+mode produces S2DL fields, while OData/S3 mode preserves the CDSE ``Id`` and
+``S3Path`` fields required by the corresponding downloaders. Dates use the
+same half-open interval as the query functions:
 ``date_start <= acquisition_date < date_end``.
 """
 
@@ -119,7 +120,10 @@ def _existing_sentinel2_query_is_compatible(path, source):
     if source == "google":
         return True
     try:
-        return "Id" in pd.read_csv(path, nrows=0).columns
+        columns = pd.read_csv(path, nrows=0).columns
+        if source == "s3":
+            return "Id" in columns and "S3Path" in columns
+        return "Id" in columns
     except (OSError, pd.errors.ParserError):
         return False
 
@@ -152,7 +156,7 @@ def query_period(
                     shp=aoi,
                     max_cc=max_cloudcover,
                 )
-            elif sentinel2_source == "odata":
+            elif sentinel2_source in {"odata", "s3"}:
                 username = os.getenv("CDSE_USERNAME")
                 password = os.getenv("CDSE_PASSWORD")
                 if not username or not password:
@@ -162,7 +166,7 @@ def query_period(
                         f"{PROJECT_ROOT / '.env'} or beside the config file."
                     )
                 products = query_cdse(
-                    _previous_day(date_start),
+                    date_start,
                     date_end,
                     username,
                     password,
@@ -170,7 +174,9 @@ def query_period(
                     max_cc=max_cloudcover,
                 )
             else:
-                raise ValueError("sentinel2_source must be 'google' or 'odata'")
+                raise ValueError(
+                    "sentinel2_source must be 'google', 'odata', or 's3'"
+                )
             products = _filter_sentinel2(products, skip_sentinel2_tiles)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Sentinel-2 scenes: {output}")
@@ -241,8 +247,8 @@ def run_queries(
     if not 0 <= max_cloudcover <= 100:
         raise ValueError("max_cloudcover must be between 0 and 100")
     sentinel2_source = str(sentinel2_source).lower()
-    if sentinel2_source not in {"google", "odata"}:
-        raise ValueError("sentinel2_source must be 'google' or 'odata'")
+    if sentinel2_source not in {"google", "odata", "s3"}:
+        raise ValueError("sentinel2_source must be 'google', 'odata', or 's3'")
 
     query_dir = Path(working_directory) / study_area / "QUERY"
     query_dir.mkdir(parents=True, exist_ok=True)
@@ -289,7 +295,7 @@ def build_parser():
     )
     parser.add_argument(
         "--sentinel2-source",
-        choices=("google", "odata"),
+        choices=("google", "odata", "s3"),
         default="google",
         help="Sentinel-2 source; OData produces CSVs for download_cdse",
     )

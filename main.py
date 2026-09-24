@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """Run the complete SnowFLAKES query, preparation, and processing workflow.
 
-``DOWNLOAD_MODE``/``download_mode`` selects ``STAC-API`` or ``RAW``.
+``DOWNLOAD_SENTINEL`` selects ``OData``, ``S3``, ``Google``, ``STAC-API``, or
+false. ``DOWNLOAD_LANDSAT`` selects ``STAC-API``, ``USGS-M2M``, or false.
 ``CROP``/``crop`` must be true for STAC-API. With raw archives, false means
 that each complete tile is processed separately while retaining its own
 reprojected extent. ``SAVE``/``save`` controls whether prepared GeoTIFF bands
@@ -27,6 +28,7 @@ from dotenv import load_dotenv
 
 from data_download.landsat_query_download import download_landsat
 from data_download.sentinel2_query_download import download_cdse
+from data_download.sentinel2_s3_download import download_sentinel2_s3
 from loading.download_sentinel2_s2dl import download_s2dl
 from loading.load_local_tiles import (
     load_landsat_tiles,
@@ -41,6 +43,26 @@ def _value(config, upper, lower, default=None):
     if upper in config:
         return config[upper]
     return config.get(lower, default)
+
+
+def _download_flag(value, allowed, name):
+    """Normalize a sensor download flag, accepting JSON false."""
+    if value is False or value is None:
+        return False
+    normalized = str(value).strip().lower().replace("_", "-").replace(" ", "-")
+    if normalized in {"false", "none", "off", "0", ""}:
+        return False
+    aliases = {
+        "stac": "stac-api",
+        "cdse-stac": "stac-api",
+        "usgs": "usgs-m2m",
+        "m2m": "usgs-m2m",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized not in allowed:
+        choices = ", ".join(sorted(allowed | {"false"}))
+        raise ValueError(f"{name} must be one of: {choices}")
+    return normalized
 
 
 def _study_directory(config):
@@ -250,13 +272,22 @@ def _save_bands(data, output_dir, scene_id):
             destination.write(values, 1)
 
 
-def _download_raw(config, study_dir, sentinel2, landsat):
+def _download_raw(
+    config,
+    study_dir,
+    sentinel2,
+    landsat,
+    sentinel_source="google",
+    landsat_source="usgs-m2m",
+):
     raw_dir = study_dir / "RAW"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
-    if sentinel2 is not None and not sentinel2.empty:
-        source = str(config.get("sentinel2_source", "google")).lower()
-        if source == "odata":
+    if sentinel_source not in {False, "false", "none", ""} and sentinel2 is not None and not sentinel2.empty:
+        source = str(sentinel_source).lower()
+        if source == "s3":
+            download_sentinel2_s3(sentinel2, raw_dir / "Sentinel-2", config)
+        elif source == "odata":
             username = os.getenv("CDSE_USERNAME")
             password = os.getenv("CDSE_PASSWORD")
             if not username or not password:
@@ -266,7 +297,7 @@ def _download_raw(config, study_dir, sentinel2, landsat):
         else:
             download_s2dl(sentinel2, raw_dir / "Sentinel-2")
 
-    if landsat is not None and not landsat.empty:
+    if landsat_source not in {False, "false", "none", ""} and landsat is not None and not landsat.empty:
         username = os.getenv("ERS_USERNAME")
         token = os.getenv("ERS_TOKEN")
         if not username or not token:
@@ -769,26 +800,91 @@ def run(config_path):
     with open(config_path, "r", encoding="utf-8") as file:
         config = json.load(file)
 
-    mode = str(_value(config, "DOWNLOAD_MODE", "download_mode", "STAC-API"))
-    mode = mode.lower().replace("_", "-").replace(" ", "-")
-    if mode in {"stac", "stac-api", "cdse-stac-api"}:
-        mode = "stac-api"
-    elif mode in {"raw", "archives", "download"}:
-        mode = "raw"
+    legacy_mode = str(
+        _value(config, "DOWNLOAD_MODE", "download_mode", "STAC-API")
+    )
+    legacy_mode = legacy_mode.lower().replace("_", "-").replace(" ", "-")
+    if "DOWNLOAD_SENTINEL" in config or "download_sentinel" in config:
+        sentinel_download = _download_flag(
+            _value(config, "DOWNLOAD_SENTINEL", "download_sentinel", False),
+            {"odata", "s3", "google", "stac-api"},
+            "DOWNLOAD_SENTINEL",
+        )
+    elif legacy_mode in {"stac", "stac-api", "cdse-stac-api"}:
+        sentinel_download = "stac-api"
+    elif legacy_mode in {"s3", "sentinel2-s3", "sentinel-s3"}:
+        sentinel_download = "s3"
+    elif legacy_mode in {"raw", "archives", "download"}:
+        sentinel_download = _download_flag(
+            config.get("sentinel2_source", "google"),
+            {"odata", "s3", "google"},
+            "sentinel2_source",
+        )
+    elif legacy_mode not in {"", "stac-api"}:
+        raise ValueError(
+            "Unsupported DOWNLOAD_MODE value. Use DOWNLOAD_SENTINEL and "
+            "DOWNLOAD_LANDSAT instead."
+        )
     else:
-        raise ValueError("DOWNLOAD_MODE must be STAC-API or RAW")
+        sentinel_download = _download_flag(
+            config.get("sentinel2_source", "google"),
+            {"odata", "s3", "google"},
+            "sentinel2_source",
+        )
+
+    if "DOWNLOAD_LANDSAT" in config or "download_landsat_mode" in config:
+        landsat_download = _download_flag(
+            config.get("DOWNLOAD_LANDSAT", config.get("download_landsat_mode")),
+            {"stac-api", "usgs-m2m"},
+            "DOWNLOAD_LANDSAT",
+        )
+    elif legacy_mode in {"stac", "stac-api", "cdse-stac-api"}:
+        landsat_download = "stac-api"
+    else:
+        landsat_download = "usgs-m2m"
+
+    satellite = str(config.get("satellite", "both")).lower()
+    if satellite.startswith("sentinel"):
+        landsat_download = False
+    elif satellite.startswith("landsat"):
+        sentinel_download = False
+
+    sentinel_stac = sentinel_download == "stac-api"
+    landsat_stac = landsat_download == "stac-api"
+    # A false flag disables downloading but still permits processing products
+    # already present under RAW. STAC-API selects the remote processing path.
+    raw_sentinel = (
+        not satellite.startswith("landsat") and sentinel_download != "stac-api"
+    )
+    raw_landsat = (
+        not satellite.startswith("sentinel") and landsat_download != "stac-api"
+    )
 
     crop = bool(_value(config, "CROP", "crop", False))
     save = bool(_value(config, "SAVE", "save", False))
     run_snowflakes_enabled = bool(config.get("run_snowflakes", True))
-    if not save and not run_snowflakes_enabled:
+    # RAW + uncropped + no-save/no-SnowFLAKES is an intentional download-only
+    # mode: archives are downloaded and no in-memory processing is attempted.
+    download_only = (
+        (raw_sentinel or raw_landsat)
+        and not crop
+        and not save
+        and not run_snowflakes_enabled
+    )
+    processing_requested = raw_sentinel or raw_landsat or sentinel_stac or landsat_stac
+    if (
+        not save
+        and not run_snowflakes_enabled
+        and processing_requested
+        and not download_only
+    ):
         raise ValueError(
             "SAVE=false requires run_snowflakes=true because the prepared "
             "DataArray exists only in memory and would otherwise be lost "
             "when the loading process exits"
         )
-    if mode == "stac-api" and not crop:
-        raise ValueError("CROP must be true when DOWNLOAD_MODE is STAC-API")
+    if (sentinel_stac or landsat_stac) and not crop:
+        raise ValueError("CROP must be true when using STAC-API downloads")
 
     params = config.get("resampling_params", {})
     if crop:
@@ -799,7 +895,7 @@ def run(config_path):
                 "resampling_params is required when CROP=true; missing: "
                 + ", ".join(missing)
             )
-    elif mode == "raw":
+    elif raw_sentinel or raw_landsat:
         required = ("resolution", "epsg_target")
         missing = [key for key in required if params.get(key) is None]
         if missing:
@@ -809,7 +905,6 @@ def run(config_path):
             )
 
     study_dir = _study_directory(config)
-    satellite = str(config.get("satellite", "both")).lower()
     sentinel2 = (
         _read_query_files(study_dir, "Sentinel2")
         if satellite.startswith("sentinel") or satellite == "both"
@@ -820,13 +915,15 @@ def run(config_path):
         if satellite.startswith("landsat") or satellite == "both"
         else pd.DataFrame(columns=["Name"])
     )
-    if mode == "raw":
+    if raw_sentinel or raw_landsat:
+        sentinel_download_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
+        landsat_download_products = landsat if raw_landsat else landsat.iloc[0:0]
         if crop:
-            if _save_rgb_enabled(config) and not sentinel2.empty:
-                sentinel2_downloads = sentinel2
+            if _save_rgb_enabled(config) and not sentinel_download_products.empty:
+                sentinel2_downloads = sentinel_download_products
             else:
                 sentinel2_downloads = _remove_processed(
-                    sentinel2,
+                    sentinel_download_products,
                     study_dir,
                     "Sentinel-2",
                     exclude_tiles=config.get("exclude_tiles"),
@@ -835,7 +932,7 @@ def run(config_path):
                     extent=params["extent_target"],
                 )
             landsat_downloads = _remove_processed(
-                landsat,
+                landsat_download_products,
                 study_dir,
                 "Landsat",
                 exclude_tiles=config.get("exclude_tiles"),
@@ -844,32 +941,46 @@ def run(config_path):
                 extent=params["extent_target"],
             )
         else:
-            if _save_rgb_enabled(config) and not sentinel2.empty:
-                sentinel2_downloads = sentinel2
+            if _save_rgb_enabled(config) and not sentinel_download_products.empty:
+                sentinel2_downloads = sentinel_download_products
             else:
                 sentinel2_downloads = _remove_cached_tiles(
-                    sentinel2,
+                    sentinel_download_products,
                     study_dir,
                     "Sentinel-2",
                     resolution=params["resolution"],
                     epsg=params["epsg_target"],
                 )
             landsat_downloads = _remove_cached_tiles(
-                landsat,
+                landsat_download_products,
                 study_dir,
                 "Landsat",
                 resolution=params["resolution"],
                 epsg=params["epsg_target"],
             )
         _download_raw(
-            config, study_dir, sentinel2_downloads, landsat_downloads
+            config,
+            study_dir,
+            sentinel2_downloads,
+            landsat_downloads,
+            sentinel_source=sentinel_download,
+            landsat_source=landsat_download,
         )
+
+        if download_only:
+            print(
+                "Download step complete; CROP=false, SAVE=false, and "
+                "run_snowflakes=false, so processing stops here."
+            )
+            return []
 
     # When SnowFLAKES is enabled each DataArray is consumed immediately and
     # released. If it is disabled, retain the arrays for programmatic callers.
     arrays = []
-    if mode == "stac-api":
-        for date in _dates(sentinel2, "Sentinel-2"):
+    stac_sentinel_products = sentinel2 if sentinel_stac else sentinel2.iloc[0:0]
+    stac_landsat_products = landsat if landsat_stac else landsat.iloc[0:0]
+    if sentinel_stac or landsat_stac:
+        for date in _dates(stac_sentinel_products, "Sentinel-2"):
             snowflakes_dir = _snowflakes_output_directory(
                 study_dir, "Sentinel-2"
             )
@@ -878,7 +989,7 @@ def run(config_path):
                 "Sentinel-2",
                 date,
                 save,
-                products=sentinel2,
+                products=stac_sentinel_products,
             )
             if data is not None:
                 rgb_data = None
@@ -902,9 +1013,9 @@ def run(config_path):
                     if rgb_data is not None:
                         del rgb_data
                     gc.collect()
-        for date in _dates(landsat, "Landsat"):
-            date_products = landsat[
-                landsat["Name"].astype(str).str.split("_").str[3].str[:8]
+        for date in _dates(stac_landsat_products, "Landsat"):
+            date_products = stac_landsat_products[
+                stac_landsat_products["Name"].astype(str).str.split("_").str[3].str[:8]
                 == date.replace("-", "")
             ]
             for sensor_code in sorted(
@@ -939,14 +1050,16 @@ def run(config_path):
                     if config.get("run_snowflakes", True):
                         del data
                         gc.collect()
-    else:
+    if raw_sentinel or raw_landsat:
+        raw_sentinel_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
+        raw_landsat_products = landsat if raw_landsat else landsat.iloc[0:0]
         if crop:
             _process_cropped_raw(
-                config, study_dir, sentinel2, landsat, save, arrays
+                config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
             )
         else:
             _process_raw_tiles(
-                config, study_dir, sentinel2, landsat, save, arrays
+                config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
             )
 
     config["output_directory"] = str(study_dir)

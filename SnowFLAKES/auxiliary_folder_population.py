@@ -422,21 +422,20 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     """Generate and save a composite terrain and cloud-shadow mask."""
     
     # Load masks and other necessary data
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    ndvi = load_map(curr_aux_folder, '*NDVI.tif')
-    idx6 = load_map(curr_aux_folder, '*idx6.tif')
-    shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
+    # ndvi = load_map(curr_aux_folder, '*NDVI.tif')
+    # idx6 = load_map(curr_aux_folder, '*idx6.tif')
+    # shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
     evi = load_map(curr_aux_folder, '*EVI.tif')
+    cloud_mask, path = load_map(curr_aux_folder, '*cloud_Mask.tif', return_path=True)
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
 
-    _, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
 
 
     # Normalize indices to range [0, 1]
-    def normalize(arr):
-        arr_min, arr_max = np.nanmin(arr), np.nanmax(arr)
-        return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
+    # def normalize(arr):
+    #     arr_min, arr_max = np.nanmin(arr), np.nanmax(arr)
+    #     return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
 
     
     # validity mask
@@ -452,10 +451,9 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
                                               solar_incidence_angle <= 90))
     
 
-    CLOSDI = (1 - 1.5*bands["NIR"] -0.1*bands["RED"])*100/(1+3.5*bands["NIR"]+4.9*bands["RED"])
-    # plt.hist(CLOSDI[solar_incidence_angle > 90], bins=100)
+    # CLOSDI = (1 - 1.5*bands["NIR"] -0.1*bands["RED"])*100/(1+3.5*bands["NIR"]+4.9*bands["RED"])
     
-    threshold = np.nanpercentile(CLOSDI[solar_incidence_angle > 90], 10)
+    threshold = np.nanpercentile(evi[solar_incidence_angle > 90], 10)
 
 
 
@@ -481,7 +479,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     cloud_shadow = cloud_mask == 3
     self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle > 90)
 
-    spectral_shadow = CLOSDI > threshold
+    spectral_shadow = evi > threshold
     # spectral_shadow = shadow_score > threshold
     casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
     
@@ -491,7 +489,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     # Save shadow mask to GeoTIFF
     shadow_mask_path = os.path.join(curr_aux_folder, f'{scene_id}_shadow_mask.tif')
 
-    save_tif(shadow_mask, NDSI_path, shadow_mask_path, dtype=rasterio.uint8)
+    save_tif(shadow_mask, path, shadow_mask_path, dtype=rasterio.uint8)
     
     print(f"Shadow mask saved to {shadow_mask_path}")
 

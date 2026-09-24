@@ -343,14 +343,14 @@ if __name__ == "__main__":
     
     
     # dates for the query/download
-    date_start = '2024-03-28'
-    date_end = '2024-03-29'
+    date_start = '2022-04-01'
+    date_end = '2022-04-10'
     
     
     tile = 'T19JCH'
     
     # shapefile wth the AOI
-    shp = r'/mnt/CEPH_PROJECTS/SNOWCOP/AOI/DOMAIN/AOI-basins.shp'
+    shp = r'/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Mendoza.geojson'
     
     # directory where you want to download your data
     outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/' + tile
@@ -361,10 +361,10 @@ if __name__ == "__main__":
                         date_end, 
                         os.getenv("CDSE_USERNAME"), 
                         os.getenv("CDSE_PASSWORD"), 
-                        data_collection = "S2MSI2A",
+                        data_collection = "S2MSI1C",
                         shp=shp,
                         max_cc = 90, 
-                        tile=tile, 
+                        tile=None, 
                         filter_baseline = True,
                         filter_date = True,
                         RON_list = []) 

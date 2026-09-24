@@ -83,9 +83,9 @@ periods. For example:
 
 The query code compensates for the different date-boundary conventions of the
 backends. Landsat M2M uses the previous day internally for the inclusive end
-boundary, while CDSE OData uses the previous day internally for its strict
-start comparison. This prevents duplicate boundary scenes and avoids dropping
-the first day of a period.
+boundary. CDSE OData is queried directly from `date_start` because its strict
+`ContentDate/Start gt` filter already excludes scenes before the requested
+start date.
 
 If a query CSV already exists, it is reused. In OData mode, an existing CSV is
 only reused when it contains the required `Id` column.
@@ -110,7 +110,7 @@ The CSV contents are designed for the corresponding download functions:
 - Sentinel-2 Google queries contain fields compatible with S2DL, including
   `Name`, `tile`, sensing time, cloud cover and the Google product URL;
 - Sentinel-2 OData queries preserve the CDSE `Id` and `Name` fields required by
-  `download_cdse()`;
+  `download_cdse()`; S3 queries additionally preserve `S3Path`;
 - Landsat queries contain `Name` (the product/display ID) and `entityId`, which
   are required by the USGS M2M downloader.
 
@@ -127,6 +127,9 @@ or:
 ```json
 "sentinel2_source": "odata"
 ```
+
+Use `"s3"` instead of `"odata"` when the resulting query CSV will be used
+by the Copernicus Data Space S3 downloader; this preserves the `S3Path` field.
 
 ### Google mode
 
@@ -159,4 +162,3 @@ ERS_TOKEN=your_usgs_token
 
 The same repository-level `.env` file can contain both Sentinel-2 OData and
 Landsat credentials. Do not commit this file to Git.
-

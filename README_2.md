@@ -85,17 +85,22 @@ The loading stage uses:
 
 ```json
 {
-  "DOWNLOAD_MODE": "STAC-API",
+  "DOWNLOAD_SENTINEL": "STAC-API",
+  "DOWNLOAD_LANDSAT": "STAC-API",
   "CROP": true,
   "SAVE": true,
   "run_snowflakes": true
 }
 ```
 
-`DOWNLOAD_MODE` accepts `STAC-API` or `RAW`:
+`DOWNLOAD_SENTINEL` accepts `OData`, `S3`, `Google`, `STAC-API`, or `false`.
+`DOWNLOAD_LANDSAT` accepts `STAC-API`, `USGS-M2M`, or `false`:
 
-- `STAC-API` loads Sentinel-2 through CDSE STAC and Landsat through USGS STAC;
-- `RAW` downloads and locally loads the archives listed in the query CSVs.
+- `STAC-API` loads the corresponding sensor through its STAC API;
+- `OData`, `S3`, `Google`, and `USGS-M2M` download products into `RAW` and
+  locally load them;
+- `false` disables downloading for that sensor and allows processing existing
+  local products.
 
 `CROP` must be `true` for `STAC-API`. In `RAW` mode, `CROP=true` uses the
 configured target extent, while `CROP=false` processes every downloaded tile
@@ -148,6 +153,12 @@ False color defaults to `true`. RGB defaults to `false`; the existing
 resolution. For Sentinel-2, RGB uses the configured EPSG and either the
 cropped extent or complete tile extent, while resampling B04/B03/B02 at 10 m.
 Existing files are retained unless `overwrite` is `true`.
+
+RAW and STAC preparation use bilinear reprojection, resolution-aligned pixel
+edges, and pixel-center coordinates. RAW bounds are snapped outward to the
+same whole-pixel grid used by stackstac. When multiple same-day scenes overlap,
+RAW uses the same reducers as the STAC loaders: maximum for Sentinel-2 and
+mean for Landsat.
 
 Uncropped prepared outputs are grouped by tile:
 

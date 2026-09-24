@@ -45,8 +45,14 @@ LANDSAT_BANDS = {
 def _target_grid(extent, resolution):
     """Return the transform and shape for the configured output grid."""
     xmin, ymin, xmax, ymax = extent
-    width = int(round((xmax - xmin) / resolution))
-    height = int(round((ymax - ymin) / resolution))
+    # Match stackstac's default ``snap_bounds=True`` behavior: bounds are
+    # expanded to whole target pixels before the raster shape is calculated.
+    xmin = np.floor(xmin / resolution) * resolution
+    ymin = np.floor(ymin / resolution) * resolution
+    xmax = np.ceil(xmax / resolution) * resolution
+    ymax = np.ceil(ymax / resolution) * resolution
+    width = int((xmax - xmin) / resolution)
+    height = int((ymax - ymin) / resolution)
     if width <= 0 or height <= 0:
         raise ValueError("The configured target extent is not valid")
     transform = from_origin(xmin, ymax, resolution, resolution)
@@ -106,8 +112,29 @@ def _read_on_grid(path, epsg, transform, height, width,
     return destination
 
 
+def _combine_arrays(mosaic, tile, method):
+    """Combine overlapping scenes using the same reducers as stackstac."""
+    if mosaic is None:
+        return tile
+    stack = np.stack([mosaic, tile])
+    if method == "max":
+        valid = ~np.isnan(stack)
+        return np.where(valid.any(axis=0), np.nanmax(stack, axis=0), np.nan)
+    if method == "mean":
+        valid = ~np.isnan(stack)
+        count = valid.sum(axis=0)
+        total = np.nansum(stack, axis=0)
+        return np.divide(
+            total,
+            count,
+            out=np.full_like(total, np.nan, dtype="float32"),
+            where=count > 0,
+        )
+    raise ValueError(f"Unsupported scene combination method: {method}")
+
+
 def _fill_gaps(mosaic, tile):
-    """Apply the gap-filling rule used by the old ``merge_tiles.py``."""
+    """Backward-compatible first-valid gap filling helper."""
     if mosaic is None:
         return tile
     missing = np.isnan(mosaic)
@@ -183,8 +210,16 @@ def prepared_grid_matches(
             return False
         if not np.allclose(source_resolution, (resolution, resolution)):
             return False
-        if extent is not None and not np.allclose(source.bounds, extent):
-            return False
+        if extent is not None:
+            xmin, ymin, xmax, ymax = extent
+            snapped = (
+                np.floor(xmin / resolution) * resolution,
+                np.floor(ymin / resolution) * resolution,
+                np.ceil(xmax / resolution) * resolution,
+                np.ceil(ymax / resolution) * resolution,
+            )
+            if not np.allclose(source.bounds, snapped):
+                return False
     return True
 
 
@@ -312,7 +347,7 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
             offset = -1000 if baseline >= 400 else 0
             values = (values + offset) * 0.0001
             values[values <= 0] = np.nan
-            mosaic = _fill_gaps(mosaic, values)
+            mosaic = _combine_arrays(mosaic, values, "max")
         mosaics.append(mosaic)
 
     scene_id = selected.iloc[0]["Name"].removesuffix(".SAFE")
@@ -452,9 +487,17 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
                 height,
                 width,
             )
-            values = _calibrate_landsat(values, band, sensor, metadata)
-            mosaic = _fill_gaps(mosaic, values)
-        mosaics.append(mosaic)
+            mosaic = _combine_arrays(mosaic, values, "mean")
+        # Match the STAC Landsat path: reduce overlapping raw values first,
+        # then apply the radiometric conversion once to the reduced raster.
+        first_archive = _landsat_archive(
+            outdir,
+            first_sensor,
+            selected.iloc[0]["Name"].split("_")[2],
+            selected.iloc[0]["Name"],
+        )
+        metadata = _read_mtl(first_archive)
+        mosaics.append(_calibrate_landsat(mosaic, band, first_sensor, metadata))
 
     scene_id = selected.iloc[0]["Name"]
     parts = scene_id.split("_")
