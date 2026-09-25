@@ -3,22 +3,24 @@
   "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test_SnowFlakes",
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/ValidationDataset/SMB/glaciers/Azufre.geojson",
   "date_start": "2018-01-21",
-  "date_end": "2018-01-27",
+  "date_end": "2018-01-22",
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
-  "DOWNLOAD_MODE": "STAC-API",
+  "DOWNLOAD_SENTINEL": "s3",
+  "sentinel2_s3_profile": "cdse",
+  "DOWNLOAD_LANDSAT": "usgs-m2m",
   "CROP": true,
   "SAVE": true,
   "resampling_params": {
-     "resolution": 20,
-     "extent_target": [
+    "resolution": 20,
+    "extent_target": [
       344000,
       6080000,
       369000,
       6114000
-     ],
-     "epsg_target": 32719
-   },
+    ],
+    "epsg_target": 32719
+  },
   "run_snowflakes": true,
   "save_false_color": true,
   "save_rgb_10m": true,
@@ -34,7 +36,7 @@
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "overwrite": false,
   "no_data_value": "nan",
-  "classify_glaciers": "yes",
+  "classify_glaciers": "no",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
   "exclude_tiles": null,
   "simple_class": false,

@@ -190,7 +190,7 @@ archives for dates that have already been processed.
 Raw archives are organized as:
 
 ```text
-<working_directory>/<study_area>/RAW/
+<working_directory>/RAW/
 ├── Sentinel-2/
 │   └── TxxYYY/
 │       └── S2*_MSIL*.SAFE or .zip
@@ -201,4 +201,6 @@ Raw archives are organized as:
 ```
 
 Existing archives are skipped. OData Sentinel-2 ZIP archives are retained after
-extraction for subsequent reuse.
+extraction for subsequent reuse. If a downloaded ZIP/TAR is missing, empty, or
+fails archive integrity validation, the scene is recorded in
+`<working_directory>/RAW/download_errors.log` and processing continues.

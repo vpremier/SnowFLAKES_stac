@@ -447,25 +447,28 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     
     # SIA between 70 and 180
     curr_angle_valid = np.logical_and.reduce((curr_scene_valid, 
-                                              solar_incidence_angle >= 50,
+                                              solar_incidence_angle >= 70,
                                               solar_incidence_angle <= 90))
     
-
-    # CLOSDI = (1 - 1.5*bands["NIR"] -0.1*bands["RED"])*100/(1+3.5*bands["NIR"]+4.9*bands["RED"])
+    mask = np.logical_and.reduce((curr_scene_valid, 
+                                              solar_incidence_angle > 90))
     
-    threshold = np.nanpercentile(evi[solar_incidence_angle > 90], 10)
 
+    CLOSDI = (1 - 1.5*bands["NIR"] -0.1*bands["RED"])*100/(1+3.5*bands["NIR"]+4.9*bands["RED"])
+    
+    threshold = np.nanpercentile(CLOSDI[mask], 10)
 
+    # plt.hist(CLOSDI[cloud_mask == 3])
 
     
     # idx6_norm = normalize(idx6)
     # shad_idx_norm = normalize(shad_idx)
     # ndvi_norm = normalize(ndvi)
     # evi_norm = normalize(evi)
-    # nir_norm = normalize(NIR)
+    # nir_norm = normalize(bands["NIR"])
 
 
-    # Combine indices to create a composite shadow score
+    # # Combine indices to create a composite shadow score
     # shadow_score = (
     #     (idx6_norm + shad_idx_norm) /
     #     (ndvi_norm + evi_norm + nir_norm + 1e-6)
@@ -479,7 +482,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     cloud_shadow = cloud_mask == 3
     self_shadow = np.logical_and(curr_scene_valid, solar_incidence_angle > 90)
 
-    spectral_shadow = evi > threshold
+    spectral_shadow = CLOSDI > threshold
     # spectral_shadow = shadow_score > threshold
     casted_shadow = np.logical_and(spectral_shadow, curr_angle_valid)
     

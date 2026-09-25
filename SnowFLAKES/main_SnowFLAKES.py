@@ -255,3 +255,9 @@ def run_snowflakes(config, data, scene_id):
 
 if __name__ == "__main__":
     print('Running SnowFLAKES')
+    
+    
+    scene_config = r'/home/vpremier/Documents/git/SnowFLAKES_stac/config/config_azufre.json'
+    scene_config["output_directory"] = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test_SnowFlakes/Azufre/SnowFLAKES/Sentinel-2'
+    run_snowflakes(scene_config, data, scene_id)
+        

@@ -8,7 +8,7 @@
   "max_cloudcover": 90,
   "DOWNLOAD_SENTINEL": "s3",
   "sentinel2_s3_profile": "cdse",
-  "DOWNLOAD_LANDSAT": "a",
+  "DOWNLOAD_LANDSAT": "usgs-m2m",
   "CROP": true,
   "SAVE": true,
   "resampling_params": {

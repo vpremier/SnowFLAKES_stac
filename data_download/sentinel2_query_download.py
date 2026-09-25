@@ -297,7 +297,7 @@ def download_cdse(s2List, outdir, username, psw):
             continue
         
         # Build new folder path: outdir/Sentinel2/TxxXYZ/
-        scene_dir = os.path.join(outdir, 'Sentinel2', tile)
+        scene_dir = os.path.join(outdir, 'Sentinel-2', tile)
         os.makedirs(scene_dir, exist_ok=True)
         
         outname = os.path.join(scene_dir, fileName.replace('.SAFE', '.zip'))

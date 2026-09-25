@@ -15,6 +15,7 @@ import gc
 import json
 import os
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -65,7 +66,7 @@ def _download_flag(value, allowed, name):
     return normalized
 
 
-def _study_directory(config):
+def _working_directory(config):
     working = config.get("working_directory")
     if working is None:
         output = config.get("output_directory")
@@ -73,10 +74,15 @@ def _study_directory(config):
             working = str(Path(output).parent)
     if working is None:
         raise ValueError("Config requires 'working_directory'")
+    return Path(working)
+
+
+def _study_directory(config):
+    working = _working_directory(config)
     study = config.get("study_area") or config.get("study_area_name")
     if study is None:
         study = Path(config["shapefile"]).stem
-    return Path(working) / study
+    return working / study
 
 
 def _landsat_mission(sensor_code):
@@ -280,22 +286,87 @@ def _download_raw(
     sentinel_source="google",
     landsat_source="usgs-m2m",
 ):
-    raw_dir = study_dir / "RAW"
+    raw_dir = _working_directory(config) / "RAW"
     raw_dir.mkdir(parents=True, exist_ok=True)
 
+    def log_error(sensor, scene, reason):
+        log_path = raw_dir / "download_errors.log"
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(f"{sensor}\t{scene}\t{reason}\n")
+        print(f"Download validation failed for {scene}; logged to {log_path}")
+
+    def validate_sentinel(products):
+        invalid = []
+        for _, row in products.iterrows():
+            name = str(row["Name"])
+            product = name.removesuffix(".SAFE")
+            parts = product.split("_")
+            if len(parts) < 6:
+                log_error("Sentinel-2", name, "invalid product name")
+                invalid.append(name)
+                continue
+            scene_dir = raw_dir / "Sentinel-2" / parts[5]
+            candidates = [scene_dir / product, scene_dir / f"{product}.SAFE", scene_dir / f"{product}.zip"]
+            existing = next((path for path in candidates if path.exists()), None)
+            try:
+                if existing is None or existing.stat().st_size == 0:
+                    raise ValueError("missing or empty product")
+                if existing.suffix.lower() == ".zip":
+                    with zipfile.ZipFile(existing) as archive:
+                        if archive.testzip() is not None:
+                            raise ValueError("invalid ZIP member")
+                elif not any(path.is_file() for path in existing.rglob("*")):
+                    raise ValueError("empty SAFE directory")
+            except Exception as error:
+                log_error("Sentinel-2", name, str(error))
+                invalid.append(name)
+        return invalid
+
+    def validate_landsat(products):
+        mission = {"LT05": "Landsat-5", "LE07": "Landsat-7", "LC08": "Landsat-8", "LC09": "Landsat-9"}
+        invalid = []
+        for _, row in products.iterrows():
+            name = str(row["Name"])
+            parts = name.split("_")
+            sensor = parts[0] if parts else "unknown"
+            pathrow = parts[2] if len(parts) > 2 else "unknown"
+            archive = raw_dir / "Landsat" / mission.get(sensor, sensor) / pathrow / f"{name}.tar"
+            try:
+                if not archive.is_file() or archive.stat().st_size == 0:
+                    raise ValueError("missing or empty archive")
+                with tarfile.open(archive, mode="r") as tar:
+                    if not tar.getmembers():
+                        raise ValueError("empty TAR archive")
+            except Exception as error:
+                log_error("Landsat", name, str(error))
+                invalid.append(name)
+        return invalid
+
+    invalid_sentinel = []
+    invalid_landsat = []
     if sentinel_source not in {False, "false", "none", ""} and sentinel2 is not None and not sentinel2.empty:
         source = str(sentinel_source).lower()
         if source == "s3":
-            download_sentinel2_s3(sentinel2, raw_dir / "Sentinel-2", config)
+            try:
+                download_sentinel2_s3(sentinel2, raw_dir / "Sentinel-2", config)
+            except Exception as error:
+                print(f"Sentinel-2 S3 download failed: {error}; validating scenes and continuing")
         elif source == "odata":
             username = os.getenv("CDSE_USERNAME")
             password = os.getenv("CDSE_PASSWORD")
             if not username or not password:
                 raise ValueError("CDSE_USERNAME and CDSE_PASSWORD are required")
-            download_cdse(sentinel2, raw_dir, username, password)
-            _extract_sentinel2_archives(raw_dir / "Sentinel-2")
+            try:
+                download_cdse(sentinel2, raw_dir, username, password)
+                _extract_sentinel2_archives(raw_dir / "Sentinel-2")
+            except Exception as error:
+                print(f"Sentinel-2 OData download failed: {error}; validating scenes and continuing")
         else:
-            download_s2dl(sentinel2, raw_dir / "Sentinel-2")
+            try:
+                download_s2dl(sentinel2, raw_dir / "Sentinel-2")
+            except Exception as error:
+                print(f"Sentinel-2 Google download failed: {error}; validating scenes and continuing")
+        invalid_sentinel = validate_sentinel(sentinel2)
 
     if landsat_source not in {False, "false", "none", ""} and landsat is not None and not landsat.empty:
         username = os.getenv("ERS_USERNAME")
@@ -303,15 +374,21 @@ def _download_raw(
         if not username or not token:
             raise ValueError("ERS_USERNAME and ERS_TOKEN are required")
         results = landsat.rename(columns={"Name": "displayId"}).copy()
-        download_landsat(
-            results,
-            raw_dir,
-            username,
-            token,
-            pathrowList=config.get("landsat_tile_list"),
-            tierList=config.get("landsat_tiers", ["T1"]),
-            folder_style="mission",
-        )
+        try:
+            download_landsat(
+                results,
+                raw_dir,
+                username,
+                token,
+                pathrowList=config.get("landsat_tile_list"),
+                tierList=config.get("landsat_tiers", ["T1"]),
+                folder_style="mission",
+            )
+        except Exception as error:
+            print(f"Landsat download failed: {error}; validating scenes and continuing")
+        invalid_landsat = validate_landsat(landsat)
+
+    return invalid_sentinel, invalid_landsat
 
 
 def _extract_sentinel2_archives(sentinel_dir):
@@ -434,9 +511,9 @@ def _load_raw_date(
     )
     epsg = params.get("epsg_target")
     if sensor == "Sentinel-2":
-        raw_dir = _study_directory(config) / "RAW" / "Sentinel-2"
+        raw_dir = _working_directory(config) / "RAW" / "Sentinel-2"
         if not raw_dir.exists():
-            legacy_dir = _study_directory(config) / "RAW" / "Sentinel2"
+            legacy_dir = _working_directory(config) / "RAW" / "Sentinel2"
             if legacy_dir.exists():
                 raw_dir = legacy_dir
         data, scene_id = load_sentinel2_tiles(
@@ -450,7 +527,7 @@ def _load_raw_date(
             merge=merge,
         )
     else:
-        raw_dir = _study_directory(config) / "RAW"
+        raw_dir = _working_directory(config) / "RAW"
         data, scene_id = load_landsat_tiles(
             products,
             raw_dir,
@@ -575,9 +652,9 @@ def _load_raw_rgb10(config, products, date, crop, merge=True, save_dir=None):
         return None, None
     params = config.get("resampling_params", {})
     extent = params.get("extent_target") if crop else None
-    raw_dir = _study_directory(config) / "RAW" / "Sentinel-2"
+    raw_dir = _working_directory(config) / "RAW" / "Sentinel-2"
     if not raw_dir.exists():
-        legacy_dir = _study_directory(config) / "RAW" / "Sentinel2"
+        legacy_dir = _working_directory(config) / "RAW" / "Sentinel2"
         if legacy_dir.exists():
             raw_dir = legacy_dir
     print(f"Loading Sentinel-2 RGB bands at 10 m for {date}")
@@ -958,7 +1035,7 @@ def run(config_path):
                 resolution=params["resolution"],
                 epsg=params["epsg_target"],
             )
-        _download_raw(
+        invalid_sentinel, invalid_landsat = _download_raw(
             config,
             study_dir,
             sentinel2_downloads,
@@ -966,6 +1043,10 @@ def run(config_path):
             sentinel_source=sentinel_download,
             landsat_source=landsat_download,
         )
+        if invalid_sentinel:
+            sentinel2 = sentinel2[~sentinel2["Name"].isin(invalid_sentinel)].copy()
+        if invalid_landsat:
+            landsat = landsat[~landsat["Name"].isin(invalid_landsat)].copy()
 
         if download_only:
             print(
