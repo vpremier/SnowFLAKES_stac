@@ -31,7 +31,8 @@ from SnowFLAKES.utilities import (
     save_tif, 
     open_image,
     get_sensor,
-    valid_mask,
+    scene_valid_mask,
+    scene_no_data_value,
     create_folder,
     define_bands,
     define_datetime,
@@ -100,9 +101,11 @@ def create_omnicloudmask(data, scene_id, auxiliary_folder, curr_aux_folder,
 
 
 def spectral_idx_computer(data, B1, B2, idx_name, curr_aux_folder,
-                          output_filename, no_data_value=np.nan, B3=None, B4=None):
+                          output_filename, no_data_value=np.nan, B3=None, B4=None,
+                          validMask=None):
     """Compute, save, and return a spectral index raster."""
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    if validMask is None:
+        validMask = scene_valid_mask(data, {"no_data_value": no_data_value})
 
     calculations = {
         'normDiff': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2),
@@ -425,7 +428,7 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     # ndvi = load_map(curr_aux_folder, '*NDVI.tif')
     # idx6 = load_map(curr_aux_folder, '*idx6.tif')
     # shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
-    evi = load_map(curr_aux_folder, '*EVI.tif')
+    # evi = load_map(curr_aux_folder, '*EVI.tif')
     cloud_mask, path = load_map(curr_aux_folder, '*cloud_Mask.tif', return_path=True)
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
@@ -614,11 +617,7 @@ def create_auxiliary_information(scene_id, data, config):
     date_time, date = define_datetime(scene_id, config)
 
     # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
+    no_data_value = scene_no_data_value(config)
 
     # auxiliary folder with common features (dem, slope, etc..)
     auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
@@ -627,7 +626,7 @@ def create_auxiliary_information(scene_id, data, config):
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # valid mask
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    validMask = scene_valid_mask(data, config)
     no_data_perc = np.sum(~validMask) / (data.sizes["y"] * data.sizes["x"])
     
     
@@ -687,24 +686,30 @@ def create_auxiliary_information(scene_id, data, config):
     bands = define_bands(data, sensor)
     
     spectral_idx_computer(data, bands['GREEN'], bands['NIR'], 'normDiff',
-                          curr_aux_folder, f"{scene_id}_NDWI.tif", no_data_value)
+                          curr_aux_folder, f"{scene_id}_NDWI.tif", no_data_value,
+                          validMask=validMask)
     spectral_idx_computer(data, bands['NIR'], bands['RED'], 'normDiff',
-                          curr_aux_folder, f"{scene_id}_NDVI.tif", no_data_value)
+                          curr_aux_folder, f"{scene_id}_NDVI.tif", no_data_value,
+                          validMask=validMask)
     spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'normDiff',
-                          curr_aux_folder, f"{scene_id}_NDSI.tif", no_data_value)
+                          curr_aux_folder, f"{scene_id}_NDSI.tif", no_data_value,
+                          validMask=validMask)
     spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'band_diff',
-                          curr_aux_folder, f"{scene_id}_diffBNIR.tif", no_data_value)
+                          curr_aux_folder, f"{scene_id}_diffBNIR.tif", no_data_value,
+                          validMask=validMask)
     spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'shad_idx',
-                          curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value)
+                          curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value,
+                          validMask=validMask)
     # spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'normDiff',
     #                       curr_aux_folder, f"{scene_id}_NormDiffBNIR.tif", no_data_value)
     # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'normDiff',
     #                       curr_aux_folder, f"{scene_id}_NormDiffGreenRed.tif", no_data_value)
-    spectral_idx_computer(data, bands['NIR'], bands['RED'], 'EVI',
-                          curr_aux_folder, f"{scene_id}_EVI.tif", no_data_value)
-    spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'idx6',
-                          curr_aux_folder, f"{scene_id}_idx6.tif", no_data_value,
-                          B3=bands['NIR'])
+    # spectral_idx_computer(data, bands['NIR'], bands['RED'], 'EVI',
+    #                       curr_aux_folder, f"{scene_id}_EVI.tif", no_data_value,
+    #                       validMask=validMask)
+    # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'idx6',
+    #                       curr_aux_folder, f"{scene_id}_idx6.tif", no_data_value,
+    #                       B3=bands['NIR'], validMask=validMask)
     # spectral_idx_computer(data, bands['RED'], bands['SWIR'], 'bandRatioGlaciers',
     #                       curr_aux_folder, f"{scene_id}_bandRatioGlaciers.tif", no_data_value)
     
@@ -738,9 +743,6 @@ def create_auxiliary_information(scene_id, data, config):
     adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
     return True
-
-
-
 
 
 

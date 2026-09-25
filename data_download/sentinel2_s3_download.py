@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -24,7 +26,24 @@ def _credentials(config):
     return access, secret, profile
 
 
-def download_sentinel2_s3(products, outdir, config=None):
+def _log_and_remove_failed(outdir, product_id, reason):
+    outdir = Path(outdir)
+    raw_dir = outdir.parent
+    log_path = raw_dir / "download_errors.log"
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write(
+            f"{datetime.now(timezone.utc).isoformat()}\tSentinel-2\t"
+            f"{product_id}\t{reason}\n"
+        )
+    for candidate in outdir.glob(f"*/{product_id}"):
+        if candidate.is_dir():
+            shutil.rmtree(candidate, ignore_errors=True)
+        elif candidate.exists():
+            candidate.unlink(missing_ok=True)
+    print(f"Removed failed Sentinel-2 product {product_id}; logged to {log_path}")
+
+
+def download_sentinel2_s3(products, outdir, config=None, return_status=False):
     """Download queried Sentinel-2 products recursively from CDSE S3.
 
     The query DataFrame must contain ``Name`` and ``S3Path``.  ``S3Path`` is
@@ -65,32 +84,52 @@ def download_sentinel2_s3(products, outdir, config=None):
     s3 = session.resource("s3", **client_kwargs)
 
     downloaded = []
+    failed = []
     for _, product in products.drop_duplicates("Name").iterrows():
-        product_id, tile = _product_id_and_tile(product["Name"])
-        s3_path = str(product["S3Path"]).strip().lstrip("/")
-        if not s3_path or "/" not in s3_path:
-            raise ValueError(f"Invalid S3Path for {product_id}: {s3_path!r}")
-        bucket_name, prefix = s3_path.split("/", 1)
-        prefix = prefix.rstrip("/") + "/"
-        scene_dir = Path(outdir) / tile / product_id
-        scene_dir.mkdir(parents=True, exist_ok=True)
-        objects = list(s3.Bucket(bucket_name).objects.filter(Prefix=prefix))
-        if not objects:
-            raise FileNotFoundError(
-                f"No S3 objects found for {product_id} ({s3_path})"
+        product_id = None
+        try:
+            product_id, tile = _product_id_and_tile(product["Name"])
+            s3_path = str(product["S3Path"]).strip().lstrip("/")
+            if not s3_path or "/" not in s3_path:
+                raise ValueError(f"Invalid S3Path for {product_id}: {s3_path!r}")
+            bucket_name, prefix = s3_path.split("/", 1)
+            prefix = prefix.rstrip("/") + "/"
+            scene_dir = Path(outdir) / tile / product_id
+            scene_dir.mkdir(parents=True, exist_ok=True)
+            existing = any(
+                path.is_file() and path.stat().st_size > 0
+                for path in scene_dir.rglob("*")
             )
-        existing = any(path.is_file() for path in scene_dir.rglob("*"))
-        if existing:
-            print(f"{product_id} already downloaded: {scene_dir}")
-            downloaded.append(str(scene_dir))
-            continue
-        print(f"Downloading {product_id} from CDSE S3")
-        for obj in objects:
-            relative = obj.key[len(prefix):]
-            if not relative:
+            if existing:
+                print(f"{product_id} already downloaded: {scene_dir}")
+                downloaded.append(str(scene_dir))
                 continue
-            destination = scene_dir / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            s3.Bucket(bucket_name).download_file(obj.key, str(destination))
-        downloaded.append(str(scene_dir))
+            objects = list(s3.Bucket(bucket_name).objects.filter(Prefix=prefix))
+            if not objects:
+                raise FileNotFoundError(
+                    f"No S3 objects found for {product_id} ({s3_path})"
+                )
+            print(f"Downloading {product_id} from CDSE S3")
+            for obj in objects:
+                relative = obj.key[len(prefix):]
+                if not relative:
+                    continue
+                destination = scene_dir / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                s3.Bucket(bucket_name).download_file(obj.key, str(destination))
+            if not any(
+                path.is_file() and path.stat().st_size > 0
+                for path in scene_dir.rglob("*")
+            ):
+                raise ValueError("empty S3 product")
+            downloaded.append(str(scene_dir))
+        except Exception as error:
+            failed.append(str(product.get("Name", "unknown")))
+            if product_id is not None:
+                _log_and_remove_failed(outdir, product_id, str(error))
+            else:
+                print(f"S3 Sentinel-2 scene failed: {error}")
+            continue
+    if return_status:
+        return {"downloaded": downloaded, "failed": failed}
     return downloaded

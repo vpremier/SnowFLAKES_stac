@@ -29,7 +29,8 @@ from SnowFLAKES.utilities import (
     build_valid_scene,
     get_sensor,
     define_bands,
-    valid_mask,    
+    scene_valid_mask,
+    scene_no_data_value,
     create_folder,
     define_datetime
 )
@@ -215,17 +216,21 @@ def calculate_training_samples(solar_incidence_angle, ranges, total_samples):
     for r in ranges:
         range_pixel_counts[r] = np.sum((flattened_map >= r[0]) & (flattened_map < r[1]))
 
-    # Calculate the total number of pixels considered
     total_pixels = sum(range_pixel_counts.values())
+    range_samples = {r: 0 for r in ranges}
+    if total_pixels == 0 or total_samples <= 0:
+        return range_samples
 
-    range_samples = {
-        r: int(total_samples * (count / total_pixels)) + 20
-        if total_pixels > 0
-        else 0
-        for r, count in range_pixel_counts.items()
+    non_empty = [r for r in ranges if range_pixel_counts[r] > 0]
+    raw = {
+        r: total_samples * range_pixel_counts[r] / total_pixels
+        for r in non_empty
     }
-    
-    
+    for r in non_empty:
+        range_samples[r] = int(np.floor(raw[r]))
+    remainder = int(total_samples - sum(range_samples.values()))
+    for r in sorted(non_empty, key=lambda item: raw[item] - np.floor(raw[item]), reverse=True)[:remainder]:
+        range_samples[r] += 1
     return range_samples
 
 
@@ -248,12 +253,14 @@ def define_threshold(feature,
         0.15 = 15%
     """
 
-    if np.size(feature[mask]) == 0:
+    values = np.asarray(feature[mask], dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size < 2:
         
         return np.asarray(threshold)
         
     
-    values = feature[mask].reshape(-1, 1)
+    values = values.reshape(-1, 1)
 
 
     
@@ -278,7 +285,10 @@ def define_threshold(feature,
         tol = 1e-4
     )
 
-    gmm.fit(values)
+    try:
+        gmm.fit(values)
+    except ValueError:
+        return np.asarray(threshold)
 
     means = gmm.means_.flatten()
     stds = np.sqrt(gmm.covariances_.flatten())
@@ -354,50 +364,25 @@ def define_threshold(feature,
     
     
 def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
-    
-    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
     green = bands["GREEN"]
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     
     
-    mask = np.logical_and.reduce((shadow_mask==1, 
-                                    green < np.nanpercentile(green[shadow_mask==1], 95), 
-                                    curr_scene_valid))
+    shadow_training_mask = np.asarray(mask_shadow, dtype=bool)
+    valid_shadow_values = green[shadow_training_mask]
+    if valid_shadow_values.size == 0:
+        return np.zeros(green.shape, dtype=bool), np.zeros(green.shape, dtype=bool)
+
+    mask = np.logical_and.reduce((
+        shadow_training_mask,
+        green < np.nanpercentile(valid_shadow_values, 95),
+        curr_scene_valid,
+    ))
     
     green_thresholds = define_threshold(green, mask, "green_shadow", curr_aux_folder, threshold=(0.075, 0.1))
     BNIR_thresholds = define_threshold(diff_B_NIR, mask, "diffBNIR_shadow", curr_aux_folder, threshold=(0.08, 0.12))
 
 
-
-    # # fixed conditions for being a snow pixel
-    # mask_snow = np.logical_and.reduce((shadow_mask==1, 
-    #                                    diff_B_NIR>0.12, 
-    #                                    green <0.25, 
-    #                                    curr_scene_valid))
-    
-    # # fixed conditions for being a snowfree pixel
-    # mask_sf = np.logical_and.reduce((shadow_mask==1, 
-    #                                  diff_B_NIR>0, 
-    #                                  diff_B_NIR<0.08, 
-    #                                  green <0.25, 
-    #                                  curr_scene_valid)) 
-    
-    # fit_green_snow = fit_distribution_and_median(green, 
-    #                                             "green_shadow_snow", 
-    #                                              mask_snow, 
-    #                                              curr_aux_folder,
-    #                                              default_median=0.1)
-    
-    # fit_green_sf = fit_distribution_and_median(green, 
-    #                                            "green_shadow_sf", 
-    #                                             mask_sf, 
-    #                                             curr_aux_folder,
-    #                                             default_median=0.075)
-    
-    # green_threshold_snow = fit_green_snow['fitted_median'] #- 2*fit_green_snow['parameters']['std']
-    
-    # green_threshold_sf = fit_green_sf['fitted_median'] #+ 2*fit_green_snow['parameters']['std']
-    
 
     # conditions of val
     # snow = np.logical_and.reduce((mask_snow, green>green_threshold_snow))
@@ -416,7 +401,7 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     
     
     
-def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range, sun_altitude):
+def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
     
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
     NDWI = load_map(curr_aux_folder, '*NDWI.tif')
@@ -426,7 +411,13 @@ def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range
 
     distance_idx = load_map(curr_aux_folder, '*distance.tif')
     
-    NDSI_thresholds = define_threshold(NDSI, sun_mask_eroded, "NDSI_sun", curr_aux_folder, threshold=(0.2, 0.7))
+    NDSI_thresholds = define_threshold(
+        NDSI,
+        mask_sun,
+        f"NDSI_sun_{curr_range[0]}-{curr_range[1]}",
+        curr_aux_folder,
+        threshold=(0.2, 0.7),
+    )
 
     
     
@@ -461,7 +452,7 @@ def get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range
                                                 default_median=0.2)
     
     fit_swir_sf = fit_distribution_and_median(swir, 
-                                             f"green_sun_sf_{curr_range[0]}-{curr_range[1]}", 
+                                             f"swir_sun_sf_{curr_range[0]}-{curr_range[1]}",
                                              mask_sf, 
                                              curr_aux_folder,
                                              default_median=0.1)
@@ -506,11 +497,7 @@ def get_pixels_ice(scene_id, data, config):
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
+    no_data_value = scene_no_data_value(config)
         
         
     # Load masks and other necessary data
@@ -528,7 +515,7 @@ def get_pixels_ice(scene_id, data, config):
         
     # validity mask: a binary dilation is applied by default (avoid training 
     # collection near water bodies, clouds, etc)
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    validMask = scene_valid_mask(data, config)
 
     curr_scene_valid = build_valid_scene(~validMask,
                                          cloud_mask == 1,
@@ -633,7 +620,19 @@ def sample_histogram_equal(mask, values, n_samples, n_bins=20, seed=None):
 
     # Eligible pixels
     valid_idx = np.flatnonzero(mask)
-    valid_values = values.flat[valid_idx]
+    valid_values = np.asarray(values).flat[valid_idx]
+    finite = np.isfinite(valid_values)
+    valid_idx = valid_idx[finite]
+    valid_values = valid_values[finite]
+    if n_samples <= 0 or valid_values.size == 0:
+        return np.zeros(mask.shape, dtype=bool)
+    if np.all(valid_values == valid_values[0]):
+        selected = rng.choice(
+            valid_idx, min(int(n_samples), valid_idx.size), replace=False
+        )
+        result = np.zeros(mask.shape, dtype=bool)
+        result.flat[selected] = True
+        return result
 
     # Histogram bins
     bins = np.linspace(valid_values.min(), valid_values.max(), n_bins + 1)
@@ -696,11 +695,8 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     date_time, date = define_datetime(scene_id, config)
     
     # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
+    no_data_value = scene_no_data_value(config)
+    training_seed = config.get("training_seed", 0)
         
        
     # get sun altitude
@@ -716,7 +712,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     
     # validity mask: a binary dilation is applied by default (avoid training 
     # collection near water bodies, clouds, etc)
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    validMask = scene_valid_mask(data, config)
 
     curr_scene_valid = build_valid_scene(~validMask,
                                          cloud_mask == 1,
@@ -726,22 +722,22 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     # enlarge shadow - sun masks to create a buffer where training collection
     # is avoided
 
-    shadow_mask_eroded = binary_erosion(
-        binary_dilation(shadow_mask == 1),
-        iterations=3
-    )
-
     sun_mask_eroded = binary_erosion(
-        binary_dilation(shadow_mask == 0),
+        binary_dilation((shadow_mask == 0) & curr_scene_valid),
         iterations=3
     ) & curr_scene_valid
     
 
     # define solar incidence angle ranges
-    max_SIA = np.nanmax(solar_incidence_angle[curr_scene_valid])
+    valid_angles = np.asarray(solar_incidence_angle[curr_scene_valid], dtype=float)
+    valid_angles = valid_angles[np.isfinite(valid_angles)]
+    if valid_angles.size == 0:
+        print(f"No valid solar-incidence angles for {scene_id}; skipping training collection")
+        return None
+    max_SIA = float(np.max(valid_angles))
     
     if max_SIA <= 90: 
-        ranges = ((0, 20), (20, 45), (45, 70), (70, max_SIA))
+        ranges = ((0, 20), (20, 45), (45, 70), (70, np.nextafter(max_SIA, np.inf)))
     else:
         ranges = ((0, 20), (20, 45), (45, 70), (70, 90), (90, 180))
 
@@ -757,6 +753,53 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     
     training_stats = []
     pixel_stats = []
+
+    # Shadow training is intentionally independent of solar-incidence angle.
+    # Compute the thresholds and representative pixels once from the complete
+    # valid shadow population.
+    mask_shadow = np.logical_and.reduce((
+        curr_scene_valid,
+        shadow_mask == 1,
+        glacier_mask == 0,
+    ))
+    shadow_pixels = int(np.sum(mask_shadow))
+    shadow_percentage = int(
+        shadow_pixels * 100 / max(np.sum(curr_scene_valid), 1)
+    )
+    pixel_stats.append({
+        "angle_range": "all",
+        "illumination": "Shadow",
+        "pixels": shadow_percentage,
+    })
+    representative_pixels_mask_snow = np.zeros(empty.shape, dtype="uint8")
+    representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype="uint8")
+    if shadow_pixels > 0:
+        print("Collecting trainings in shadow (all solar-angle ranges)")
+        snow_shad, snowfree_shad = get_pixels_shadow(
+            bands, curr_aux_folder, curr_scene_valid, mask_shadow
+        )
+        if np.sum(snow_shad) > 10:
+            representative_pixels_mask_snow = sample_histogram_equal(
+                snow_shad, green, int(total_samples / 2), n_bins=20, seed=training_seed
+            )
+        if np.sum(snowfree_shad) > 10:
+            representative_pixels_mask_noSnow = sample_histogram_equal(
+                snowfree_shad, green, int(total_samples / 2), n_bins=20, seed=training_seed
+            ) * 2
+
+    representative_pixels_mask = (
+        representative_pixels_mask_noSnow + representative_pixels_mask_snow
+    )
+    empty[mask_shadow] = representative_pixels_mask[mask_shadow]
+    illumination[representative_pixels_mask > 0] = 2
+    print(f"{np.sum(representative_pixels_mask_snow)} SNOW PIXELS (shadow)")
+    print(f"{np.sum(representative_pixels_mask_noSnow) / 2} NO SNOW PIXELS (shadow)")
+    training_stats.append({
+        "angle_range": "all",
+        "illumination": "Shadow",
+        "snow_train": int(np.sum(representative_pixels_mask_snow)),
+        "nosnow_train": int(np.sum(representative_pixels_mask_noSnow) / 2),
+    })
     
     # collect training for each SIA range 
     for curr_range, sample_count in range_samples.items():
@@ -769,80 +812,14 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     
         print(f"SIA range: {curr_range}")
 
-        # SHADOW --------------------------------------------------------------
-
-        # mask angles and shadow
-        mask_shadow = np.logical_and.reduce((curr_angle_valid, 
-                                             shadow_mask,
-                                             glacier_mask==0)) # no dilation applied for glacier here
-          
-        pixel_perc_shadow = int(np.sum(mask_shadow) *100/ np.sum(curr_scene_valid))
-
-        pixel_stats.append({
-                            "angle_range": f"{curr_range[0]}-{curr_range[1]}",
-                            "illumination": "Shadow",
-                            "pixels": pixel_perc_shadow
-                            })
-        
-        # initialize empty masks
-        representative_pixels_mask_snow = np.zeros(empty.shape, dtype='uint8')
-        representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype='uint8') 
-        
-        if pixel_perc_shadow > 0:
-
-            
-            print('Collecting trainings in shadow')
-            snow_shad, snowfree_shad = get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow)
-
-            # print(np.sum(snow_shad))
-            # print(np.sum(snowfree_shad))
-
-            if np.sum(snow_shad) > 10:
-                representative_pixels_mask_snow  = sample_histogram_equal(snow_shad, green, int(sample_count / 2), n_bins=20, seed=None)
-
-
-                # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
-                #                                                             snow_shad,
-                #                                                             sample_count=int(sample_count / 2), 
-                #                                                             k=3,
-                #                                                             n_closest='auto')
-                
-            if np.sum(snowfree_shad) > 10:
-                representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_shad, green, int(sample_count / 2), n_bins=20, seed=None) * 2
-
-                # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image,
-                #                                                               snowfree_shad,
-                #                                                               sample_count=int(sample_count / 2), 
-                #                                                               k=3,
-                #                                                               n_closest='auto') * 2
-            
-        # merge the two masks
-        representative_pixels_mask = representative_pixels_mask_noSnow + representative_pixels_mask_snow
-        empty[mask_shadow] = representative_pixels_mask[mask_shadow]
-        
-        # mark selected training pixels as shadow
-        illumination[representative_pixels_mask > 0] = 2
-        
-        print(str(np.sum(representative_pixels_mask_snow.flatten())) + ' SNOW PIXELS')
-        print(str(np.sum(representative_pixels_mask_noSnow.flatten() / 2)) + ' NO SNOW PIXELS')
-        
-
-                        
-        training_stats.append({
-            "angle_range": f"{curr_range[0]}-{curr_range[1]}",
-            "illumination": "Shadow",
-            "snow_train": int(np.sum(representative_pixels_mask_snow)),
-            "nosnow_train": int(np.sum(representative_pixels_mask_noSnow) / 2)
-        })
-
-
-
         # # SUN --------------------------------------------------------------
 
         # mask angles and sun
         mask_sun = curr_angle_valid & sun_mask_eroded
         
-        pixel_perc_sun = int(np.sum(mask_sun) *100/ np.sum(curr_scene_valid))
+        pixel_perc_sun = int(
+            np.sum(mask_sun) * 100 / max(np.sum(curr_scene_valid), 1)
+        )
 
         pixel_stats.append({
                             "angle_range": f"{curr_range[0]}-{curr_range[1]}",
@@ -859,17 +836,14 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             
             print('Collecting trainings in sun')
 
-            snow_sun, snowfree_sun = get_pixels_sun(bands, curr_aux_folder, sun_mask_eroded, mask_sun, curr_range, sun_altitude)
+            snow_sun, snowfree_sun = get_pixels_sun(
+                bands, curr_aux_folder, mask_sun,
+                curr_range, sun_altitude
+            )
 
     
             if np.sum(snow_sun) > 10:
-                representative_pixels_mask_snow  = sample_histogram_equal(snow_sun, green, int(sample_count / 2), n_bins=20, seed=None)
-
-                # representative_pixels_mask_snow = get_representative_pixels(all_bands_image, 
-                #                                                             snow_sun,
-                #                                                             sample_count=int(sample_count / 2), 
-                #                                                             k=5,
-                #                                                             n_closest='auto')
+                representative_pixels_mask_snow  = sample_histogram_equal(snow_sun, green, int(sample_count / 2), n_bins=20, seed=training_seed)
                 
                 save_histogram(
                     green[representative_pixels_mask_snow],
@@ -882,13 +856,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
       
     
             if np.sum(snowfree_sun) > 10:
-                representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_sun, green, int(sample_count / 2), n_bins=20, seed=None) * 2
-
-                # representative_pixels_mask_noSnow = get_representative_pixels(all_bands_image, 
-                #                                                               snowfree_sun,
-                #                                                               sample_count=int(sample_count / 2), 
-                #                                                               k=10,
-                #                                                               n_closest='auto') * 2
+                representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_sun, green, int(sample_count / 2), n_bins=20, seed=training_seed) * 2
                 
                 save_histogram(
                     green[representative_pixels_mask_noSnow==2],
@@ -925,6 +893,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     values = []
     illum_values = []
     with rasterio.open(cloud_path) as src:
+        cloud_crs = src.crs
         for row, col in zip(*np.where((empty == 1) | (empty == 2))):
             x, y = src.xy(row, col)
             points.append(Point(x, y))
@@ -933,7 +902,11 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             
     gdf = gpd.GeoDataFrame({"value": values, 
                             "illum": illum_values}, 
-                           geometry=points, crs=src.crs)
+                            geometry=points, crs=cloud_crs)
+
+    if not points:
+        print(f"No representative training pixels found for {scene_id}")
+        return None
 
 
     shapefile_path = os.path.join(curr_aux_folder, 'representative_pixels_for_training_samples.shp')
@@ -1000,254 +973,3 @@ def glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder,
         
     
     
-    
-
-
-
-
-
-    
-# not used anymore
-
-def get_representative_pixels(bands_data, valid_mask, sample_count=50, k='auto', n_closest='auto'):
-    """
-    Selects representative "no snow" pixels by clustering and distance to cluster centroids.
-    Saves the output as a raster.
-
-    Parameters
-    ----------
-    bands_data : numpy.ndarray
-        3D array (bands, height, width) containing spectral data for each band.
-    valid_mask : numpy.ndarray
-        2D mask of valid pixels for selection.
-    k : int, optional
-        Number of clusters for K-means, by default 5.
-    n_closest : int, optional
-        Number of closest pixels to each centroid to select, by default 5.
-
-    Returns
-    -------
-    representative_pixels_mask : numpy.ndarray
-        2D mask with representative pixels marked as 1.
-    """
-    # Extract "valid" pixels for clustering
-    valid_pixels = bands_data[:, valid_mask].T   # (pixels, bands)
-    coords = np.argwhere(valid_mask)
-    # valid_pixels = bands_data[valid_mask, :]  # Shape (pixels, bands)
-
-    # Normalize the valid pixels
-    scaler = StandardScaler()
-    normalized_pixels = scaler.fit_transform(valid_pixels)
-
-    # find optimal K
-    if k == 'auto':
-        k = find_optimal_k(normalized_pixels, max_k=10, method="elbow")
-    if n_closest == 'auto':
-        n_closest = int(sample_count / k)
-
-    # Perform K-means clustering on "no snow" pixels
-    kmeans = KMeans(n_clusters=k, random_state=0)
-    kmeans.fit(normalized_pixels)
-
-    # Get cluster centroids and labels
-    labels = kmeans.labels_
-    centroids = kmeans.cluster_centers_
-
-    # Initialize an empty mask for representative pixels
-    representative_pixels_mask = np.zeros(valid_mask.shape, dtype='uint8')
-
-    # Find the n_closest pixels to each centroid
-    for cluster_idx in range(k):
-        # Select pixels in the current cluster
-        cluster_indices = np.where(labels == cluster_idx)[0]
-        cluster_pixels = normalized_pixels[cluster_indices]
-
-        # Compute distances to the centroid for these pixels
-        distances = distance.cdist(cluster_pixels, [centroids[cluster_idx]], 'euclidean').flatten()
-
-        # Get the indices of the n_closest pixels in the cluster
-        closest_indices = np.argsort(distances)[:n_closest]
-
-        # Map the closest indices back to the original image coordinates
-        # original_indices = np.argwhere(valid_mask)[cluster_indices]
-        # selected_pixels = original_indices[closest_indices]
-        selected_pixels = coords[cluster_indices][closest_indices]
-
-        # Set these pixels in the representative mask
-        # representative_pixels_mask[selected_pixels] = 1
-        representative_pixels_mask[selected_pixels[:, 0], selected_pixels[:, 1]] = 1
-        
-    return representative_pixels_mask
-
-
-
-def find_optimal_k(data, max_k=10, method="elbow", random_state=42):
-    """
-    Find the optimal number of clusters using the Elbow or Silhouette method.
-
-    Parameters:
-    - data (array-like): The dataset to cluster.
-    - max_k (int): The maximum number of clusters to evaluate.
-    - method (str): "elbow" for WCSS-based elbow method or "silhouette" for silhouette score.
-    - random_state (int): Random seed for reproducibility.
-
-    Returns:
-    - int: The optimal number of clusters.
-    """
-    wcss = []  # Within-Cluster Sum of Squares
-    silhouette_scores = []  # Silhouette Scores
-    k_values = range(2, max_k + 1)  # Start from 2 clusters for silhouette
-
-    for k in k_values:
-        kmeans = KMeans(n_clusters=k, random_state=random_state)
-        kmeans.fit(data)
-        wcss.append(kmeans.inertia_)
-        silhouette_scores.append(silhouette_score(data, kmeans.labels_))
-
-    if method == "elbow":
-        # Calculate second derivative to find the "elbow"
-        wcss_diff = np.diff(wcss)
-        wcss_diff2 = np.diff(wcss_diff)
-        optimal_k = k_values[np.argmin(wcss_diff2) + 1]  # Offset for the diff
-    elif method == "silhouette":
-        # Choose k with the highest silhouette score
-        optimal_k = k_values[np.argmax(silhouette_scores)]
-    else:
-        raise ValueError("Invalid method. Choose 'elbow' or 'silhouette'.")
-
-    return optimal_k
-
-    
-
-def apply_topographic_correction(band, band_name, SIA, sun_altitude, correction="weak", g=0.22):
-    
-    sun_zenith = 90 - sun_altitude
-    
-    if band_name in ['GREEN', 'BLUE', 'RED']:
-        b = 0.75
-    elif band_name in ['NIR', 'SWIR']:
-        if correction == "weak":
-            b = 0.33
-        elif correction == "strong":
-            b = 1
-            
-    # cos of the SIA
-    cos_beta = np.cos(np.deg2rad(SIA))
-    
-    # CALCULATE SEN2COR THRESHOLD:
-    if sun_zenith < 45:
-        beta_threshold = sun_zenith + 20
-    elif sun_zenith <= 55:
-        beta_threshold = sun_zenith + 15
-    else:
-        beta_threshold = sun_zenith + 10
-        
-    
-    # Prevent a zero or negative denominator.
-    beta_threshold_deg = min(beta_threshold, 89.0)
-    cos_beta_threshold = np.cos(np.deg2rad(beta_threshold_deg))
-    
-    # valid application range between betaT and 90
-    valid = cos_beta > 0
-    faint_illumination = valid & (SIA > beta_threshold_deg)
-
-    
-    # geometric function G Eq. 0.32 
-    G = np.clip((cos_beta/cos_beta_threshold)**b, g, 1.0)
-
-    band_corr = band.copy()
-    band_corr[faint_illumination] = band[faint_illumination]*G[faint_illumination]
-    
-    return band_corr     
-
-
-
-
-def glacier_classifier(scene_id, data, no_data_mask, curr_aux_folder, auxiliary_folder_path):
-    
-    NDSI_path = glob.glob(os.path.join(curr_aux_folder, '*NDSI.tif'))[0]
-    NDVI_path = glob.glob(os.path.join(curr_aux_folder, '*NDVI.tif'))[0]
-    path_cloud_mask = glob.glob(os.path.join(curr_aux_folder, '*cloud_Mask.tif'))[0]
-    glacier_mask_path = glob.glob(os.path.join(auxiliary_folder_path, '*glacier*.tif'))[0]
-
-    
-    sensor = get_sensor(scene_id)
-
-    # Create valid mask from no_data_mask (True means valid)
-    valid_mask = np.logical_not(no_data_mask)
-    cloud_mask = open_image(path_cloud_mask)[0]
-    glacier_mask = open_image(glacier_mask_path)[0]
-
-    # Load the image bands using your open_image and define_bands functions.
-    bands = define_bands(data, sensor)
-    
-    # Expected band ordering: blue, red, nir, swir
-    green = bands['GREEN']
-
-
-    nir = bands['NIR']
-    swir = bands['SWIR']
-    
-    # Load indices
-    ndsi = open_image(NDSI_path)[0]
-    ndvi = open_image(NDVI_path)[0]
-    
-
-    # NSIR
-    nsir = nir * nir/swir
-    
-    # NDWI
-    ndwi = (green - nir)/(green + nir)
-    
-    # Select NDSI > 0.7
-    ndwi[(ndsi>=0.7) & (cloud_mask==1)] # cambiare
-
-    
-    nsir_vals = nsir[((ndsi >= 0.7) & (cloud_mask == 1) & (glacier_mask == 1))] # cambiare
-
-    glacier_map = np.zeros_like(nir, dtype=np.uint8)
-
-    try:
-        nsir_threshold = threshold_otsu(nsir_vals)
-        
-        snow = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) & # cambiare
-            (glacier_mask == 1) &
-            (nsir >= nsir_threshold) &
-            (ndwi <= 0.1)
-        )
-        
-        ice = (
-            (ndsi >= 0.7) &
-            (cloud_mask == 1) & #cambiare
-            (glacier_mask == 1) &
-            ((nsir < nsir_threshold) |
-            (ndwi > 0.1))
-        )
-        
-
-        
-    except:
-        candidate_mask = valid_mask & (ndsi > 0.4) & (ndvi < 0.5)
-        
-        if np.any(candidate_mask):
-            red = bands['RED']
-            red_swir = red / (swir + 1e-10)
-    
-            red_swir_dynamic_threshold = threshold_otsu(red_swir[candidate_mask])
-        else:
-            red_swir_dynamic_threshold = 0.9  # fallback if candidate_mask is empty
-            
-        ice = np.logical_and.reduce((candidate_mask, red_swir <= red_swir_dynamic_threshold, glacier_mask == 1))
-        snow = np.logical_and.reduce((candidate_mask, red_swir > red_swir_dynamic_threshold, glacier_mask == 1))
-
-    glacier_map[snow] = 100
-    glacier_map[ice] = 215
-    
-    return glacier_map
-
-
-
-
-

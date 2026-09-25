@@ -178,6 +178,38 @@ def load_map(folder, pattern, return_path=False):
 
 
 
+def normalize_no_data_value(no_data_value):
+    """Return the configured nodata value in a numeric form."""
+    if no_data_value is None or "nan" in str(no_data_value).lower():
+        return np.nan
+    return float(no_data_value)
+
+
+def scene_valid_mask(data, config):
+    """Compute the scene validity mask once and reuse it downstream."""
+    data_id = id(data)
+    if config.get("_snowflakes_mask_data_id") == data_id:
+        cached = config.get("_snowflakes_valid_mask")
+        if cached is not None:
+            return cached
+
+    no_data_value = normalize_no_data_value(config.get("no_data_value"))
+    mask = valid_mask(data, no_data_value=no_data_value)
+    config["_snowflakes_mask_data_id"] = data_id
+    config["_snowflakes_valid_mask"] = mask
+    config["_snowflakes_no_data_value"] = no_data_value
+    return mask
+
+
+def scene_no_data_value(config):
+    """Return the normalized nodata value used by the cached scene mask."""
+    if "_snowflakes_no_data_value" not in config:
+        config["_snowflakes_no_data_value"] = normalize_no_data_value(
+            config.get("no_data_value")
+        )
+    return config["_snowflakes_no_data_value"]
+
+
 def valid_mask(data, no_data_value=np.nan):
     """
     Generate a valid-data mask from a multiband DataArray.

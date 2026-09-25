@@ -19,7 +19,9 @@ from SnowFLAKES.utilities import (
     find_closest_valid_scf,
     snow_around_glacier,
     remove_low_scf,
-    get_uncertainty
+    get_uncertainty,
+    scene_valid_mask,
+    scene_no_data_value,
 )
 
 from SnowFLAKES.training_collection import (
@@ -69,12 +71,9 @@ def run_snowflakes(config, data, scene_id):
     # Extract date and time from the folder name
     date_time, date = define_datetime(scene_id, config)
 
-    # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
+    # Compute the scene-level validity mask once; downstream stages reuse it.
+    scene_valid_mask(data, config)
+    no_data_value = scene_no_data_value(config)
 
     # Create all auxiliary information
     valid_scene = create_auxiliary_information(scene_id, data, config)
@@ -209,7 +208,9 @@ def run_snowflakes(config, data, scene_id):
         # SCF map creation
         print('TRAINING')
         svm_model_filename = model_training(data, scene_id, shapefile_path,
-                                            curr_aux_folder, no_data_value, gamma=None)
+                                            curr_aux_folder, no_data_value,
+                                            gamma=None,
+                                            validMask=config["_snowflakes_valid_mask"])
 
         # Run SCF prediction
         FSC_SVM_map_path = SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=1, overwrite=ow)

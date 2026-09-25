@@ -14,6 +14,7 @@ import argparse
 import gc
 import json
 import os
+import shutil
 import sys
 import tarfile
 import zipfile
@@ -103,7 +104,7 @@ def _sensor_directory(root, sensor, platform=None):
     return root / "Landsat" / mission
 
 
-def _read_query_files(study_dir, prefix):
+def _read_query_files(study_dir, prefix, date_start=None, date_end=None):
     paths = sorted((study_dir / "QUERY").glob(f"{prefix}_*.csv"))
     if not paths:
         raise FileNotFoundError(
@@ -113,7 +114,24 @@ def _read_query_files(study_dir, prefix):
     result = pd.concat(frames, ignore_index=True)
     if "Name" not in result.columns:
         raise ValueError(f"{prefix} query files must contain a 'Name' column")
-    return result.drop_duplicates(subset=["Name"]).reset_index(drop=True)
+    result = result.drop_duplicates(subset=["Name"]).reset_index(drop=True)
+    if date_start is None and date_end is None:
+        return result
+
+    sensor = "Sentinel-2" if prefix.lower().startswith("sentinel") else "Landsat"
+    date_index = 2 if sensor == "Sentinel-2" else 3
+    tokens = result["Name"].astype(str).str.split("_").str[date_index]
+    parsed = pd.to_datetime(tokens.str[:8], format="%Y%m%d", errors="coerce")
+    start = pd.Timestamp(date_start) if date_start is not None else parsed.min()
+    end = pd.Timestamp(date_end) if date_end is not None else parsed.max() + pd.Timedelta(days=1)
+    selected = result.loc[parsed.ge(start) & parsed.lt(end)].reset_index(drop=True)
+    skipped = len(result) - len(selected)
+    if skipped:
+        print(
+            f"Ignoring {skipped} {sensor} query scene(s) outside "
+            f"the configured period [{start.date()}, {end.date()})"
+        )
+    return selected
 
 
 def _dates(products, sensor):
@@ -315,9 +333,20 @@ def _download_raw(
                     with zipfile.ZipFile(existing) as archive:
                         if archive.testzip() is not None:
                             raise ValueError("invalid ZIP member")
-                elif not any(path.is_file() for path in existing.rglob("*")):
+                elif not any(
+                    path.is_file() and path.stat().st_size > 0
+                    for path in existing.rglob("*")
+                ):
                     raise ValueError("empty SAFE directory")
             except Exception as error:
+                for candidate in candidates:
+                    if candidate.is_dir():
+                        shutil.rmtree(candidate, ignore_errors=True)
+                    elif candidate.exists():
+                        try:
+                            candidate.unlink()
+                        except OSError:
+                            pass
                 log_error("Sentinel-2", name, str(error))
                 invalid.append(name)
         return invalid
@@ -338,6 +367,11 @@ def _download_raw(
                     if not tar.getmembers():
                         raise ValueError("empty TAR archive")
             except Exception as error:
+                if archive.exists():
+                    try:
+                        archive.unlink()
+                    except OSError:
+                        pass
                 log_error("Landsat", name, str(error))
                 invalid.append(name)
         return invalid
@@ -346,9 +380,17 @@ def _download_raw(
     invalid_landsat = []
     if sentinel_source not in {False, "false", "none", ""} and sentinel2 is not None and not sentinel2.empty:
         source = str(sentinel_source).lower()
+        products_to_validate = sentinel2
         if source == "s3":
             try:
-                download_sentinel2_s3(sentinel2, raw_dir / "Sentinel-2", config)
+                result = download_sentinel2_s3(
+                    sentinel2, raw_dir / "Sentinel-2", config, return_status=True
+                )
+                failed_names = set(result.get("failed", []))
+                if failed_names:
+                    products_to_validate = sentinel2[
+                        ~sentinel2["Name"].astype(str).isin(failed_names)
+                    ]
             except Exception as error:
                 print(f"Sentinel-2 S3 download failed: {error}; validating scenes and continuing")
         elif source == "odata":
@@ -363,10 +405,20 @@ def _download_raw(
                 print(f"Sentinel-2 OData download failed: {error}; validating scenes and continuing")
         else:
             try:
-                download_s2dl(sentinel2, raw_dir / "Sentinel-2")
+                # S2DL handles scenes independently.  Keep track of scenes it
+                # actually attempted so a single failed scene does not make
+                # every unconfirmed query result appear as another failure.
+                result = download_s2dl(
+                    sentinel2, raw_dir / "Sentinel-2", return_status=True
+                )
+                failed_names = set(result.get("failed", []))
+                if failed_names:
+                    products_to_validate = sentinel2[
+                        ~sentinel2["Name"].astype(str).isin(failed_names)
+                    ]
             except Exception as error:
                 print(f"Sentinel-2 Google download failed: {error}; validating scenes and continuing")
-        invalid_sentinel = validate_sentinel(sentinel2)
+        invalid_sentinel = validate_sentinel(products_to_validate)
 
     if landsat_source not in {False, "false", "none", ""} and landsat is not None and not landsat.empty:
         username = os.getenv("ERS_USERNAME")
@@ -983,12 +1035,22 @@ def run(config_path):
 
     study_dir = _study_directory(config)
     sentinel2 = (
-        _read_query_files(study_dir, "Sentinel2")
+        _read_query_files(
+            study_dir,
+            "Sentinel2",
+            config.get("date_start"),
+            config.get("date_end"),
+        )
         if satellite.startswith("sentinel") or satellite == "both"
         else pd.DataFrame(columns=["Name"])
     )
     landsat = (
-        _read_query_files(study_dir, "Landsat")
+        _read_query_files(
+            study_dir,
+            "Landsat",
+            config.get("date_start"),
+            config.get("date_end"),
+        )
         if satellite.startswith("landsat") or satellite == "both"
         else pd.DataFrame(columns=["Name"])
     )

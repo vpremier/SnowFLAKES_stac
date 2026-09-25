@@ -25,7 +25,8 @@ from SnowFLAKES.utilities import (
     save_tif,
     get_sensor,
     select_band_names,
-    valid_mask,
+    scene_valid_mask,
+    scene_no_data_value,
     create_folder
 )
 
@@ -117,7 +118,7 @@ def _save_training_samples_csv(shapefile, shapefile_path, data,
 
    
 def model_training(data, scene_id, shapefile_path, curr_aux_folder,
-                   no_data_value, gamma=None):
+                   no_data_value, gamma=None, validMask=None):
     
 
     # load bands used for SCF retrieval
@@ -125,7 +126,8 @@ def model_training(data, scene_id, shapefile_path, curr_aux_folder,
     all_bands = select_band_names(sensor, 'scf') 
     selected_data = data.sel(band=all_bands)
     
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    if validMask is None:
+        validMask = scene_valid_mask(data, {"no_data_value": no_data_value})
 
     all_bands_image = np.squeeze(selected_data.where(validMask, no_data_value).values)
 
@@ -230,11 +232,7 @@ def SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=8, overwr
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
+    no_data_value = scene_no_data_value(config)
         
         
     # load bands used for SCF retrieval
@@ -242,7 +240,7 @@ def SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=8, overwr
     all_bands = select_band_names(sensor, 'scf') 
     selected_data = data.sel(band=all_bands)
     
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    validMask = scene_valid_mask(data, config)
 
     all_bands_image = np.squeeze(selected_data.where(validMask, no_data_value).values)
     
@@ -339,13 +337,9 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
-    if no_data_value is None or 'nan' in str(no_data_value).lower():
-        no_data_value = np.nan
-    else:
-        no_data_value = float(no_data_value)
-    
-    validMask = valid_mask(data, no_data_value=no_data_value)
+    no_data_value = scene_no_data_value(config)
+
+    validMask = scene_valid_mask(data, config)
 
 
     # Load masks and maps
@@ -391,7 +385,6 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
 
     print(f"Modified raster saved at: {output_path}")
     return output_path
-
 
 
 
