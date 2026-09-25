@@ -424,7 +424,6 @@ def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
     # fixed conditions for being a snow pixel
     mask_snow = np.logical_and.reduce((mask_sun, 
                                         NDWI<0.1, 
-                                        distance_idx != 255, 
                                         NDSI>max(NDSI_thresholds)))
     
     # fixed conditions for being a snowfree pixel
