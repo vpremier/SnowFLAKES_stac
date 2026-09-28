@@ -6,7 +6,7 @@
   "date_end": "2022-04-10",
   "satellite": "Landsat",
   "max_cloudcover": 90,
-  "DOWNLOAD_SENTINEL": "s3",
+  "DOWNLOAD_SENTINEL": "STAC-API",
   "sentinel2_s3_profile": "cdse",
   "DOWNLOAD_LANDSAT": "usgs-m2m",
   "CROP": true,
@@ -21,7 +21,7 @@
      ],
      "epsg_target": 32719
    },
-  "run_snowflakes": false,
+  "run_snowflakes": true,
   "save_false_color": true,
   "save_rgb_10m": true,
   "uncertainty": false,

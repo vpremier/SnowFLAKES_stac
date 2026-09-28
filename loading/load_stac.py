@@ -42,6 +42,55 @@ from loading.utils_stac import *
 
 # load_stac.py
 
+
+def load_with_retry(data, max_retries=20, wait_seconds=2):
+    """Materialize a lazy xarray object with retry/backoff handling."""
+    for attempt in range(max_retries):
+        try:
+            data.load()
+            return True
+        except Exception as error:
+            print(
+                f"STAC DataArray load failed "
+                f"(attempt {attempt + 1}/{max_retries}): {error}"
+            )
+            if attempt < max_retries - 1:
+                time.sleep(wait_seconds)
+            else:
+                raise
+
+
+def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="toa"):
+    """Write a materialized STAC DataArray one GeoTIFF per band."""
+    output_dir = os.path.join(outdir, scene_id)
+    os.makedirs(output_dir, exist_ok=True)
+    height = len(data.y)
+    width = len(data.x)
+    for band_name in data.band.values:
+        band_name = str(band_name)
+        out_path = os.path.join(
+            output_dir, f"{scene_id}_{band_name}_{suffix}.tif"
+        )
+        if os.path.exists(out_path) and not ow:
+            print(f"Skipping {out_path} (already exists)")
+            continue
+        band_data = np.squeeze(
+            data.sel(band=band_name).values.astype("float32")
+        )
+        profile = {
+            "driver": "GTiff",
+            "height": height,
+            "width": width,
+            "count": 1,
+            "dtype": "float32",
+            "crs": crs,
+            "transform": transform,
+            "nodata": np.nan,
+        }
+        with rio.open(out_path, "w", **profile) as destination:
+            destination.write(band_data, 1)
+        print(f"Saved {out_path}")
+
 def setup_cdse_credentials():
     session = boto3.Session(profile_name="cdse")
     creds = session.get_credentials().get_frozen_credentials()
@@ -198,7 +247,7 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
         )
 
         data = data.mean(dim="time", skipna=True)
-        data = data.compute(scheduler="single-threaded")
+        load_with_retry(data, max_retries=20, wait_seconds=2)
             
     #  === Extract info_src from xarray ===
     transform = Affine(
@@ -658,37 +707,25 @@ def convert_sentinel2_bands(outdir,
         else:
             raise ValueError("Old Sentinel-2 processing baseline (<0400) not supported")
             
-    data = data.where(data > 0)        
+    data = data.where(data > 0)
+
+    # Materialize the complete DataArray once, using the same retry logic as
+    # the development workflow. This prevents one remote read/reprojection
+    # per band and makes transient CDSE failures recoverable.
+    load_with_retry(data, max_retries=20, wait_seconds=2)
             
     # Iterate through bands
     if save:
-        for band_name in data.band.values:
-        
-            out_path = os.path.join(outdir, f"{merged_image_id}", 
-                                    f"{merged_image_id}_{band_name}_{suffix}.tif")
-            
-            if os.path.exists(out_path) and not ow:
-                print(f"Skipping {out_path} (already exists)")
-                continue
-        
-            band_data = np.squeeze(data.sel(band=str(band_name)).values.astype("float32"))
-
-            # === Save GeoTIFF ===
-            profile = {
-                'driver': 'GTiff',
-                'height': height,
-                'width': width,
-                'count': 1,
-                'dtype': 'float32',
-                'crs': dst_crs,
-                'transform': transform,
-                'nodata': np.nan,
-            }
-            
-            with rio.open(out_path, 'w', **profile) as dst:
-                dst.write(band_data, 1)
-    
-            print(f"Saved {out_path}")
+        print("STAC DataArray loaded; saving bands from memory")
+        save_stac_bands(
+            data,
+            outdir,
+            merged_image_id,
+            transform,
+            dst_crs,
+            ow=ow,
+            suffix=suffix,
+        )
         
         
     end = time.time()

@@ -132,13 +132,18 @@ def _configured_sentinel_source(config):
 def _existing_sentinel2_query_is_compatible(path, source):
     if not path.exists():
         return False
-    if source == "google":
-        return True
     try:
         columns = pd.read_csv(path, nrows=0).columns
+        if source == "google":
+            return True
         if source == "s3":
             return "Id" in columns and "S3Path" in columns
         return "Id" in columns
+    except pd.errors.EmptyDataError:
+        # A zero-byte cached query represents a completed empty period. Keep
+        # it cached so the remote query is not repeated.
+        print(f"Skipping empty cached query: {path}")
+        return True
     except (OSError, pd.errors.ParserError):
         return False
 
@@ -163,6 +168,7 @@ def query_period(
         output = _csv_path(query_dir, "Sentinel2", date_start, date_end)
         if _existing_sentinel2_query_is_compatible(output, download_sentinel):
             print(f"Skipping existing query: {output}")
+            outputs.append(output)
         else:
             if download_sentinel == "google":
                 products = query_google_sentinel2(
@@ -195,12 +201,13 @@ def query_period(
             products = _filter_sentinel2(products, skip_sentinel2_tiles)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Sentinel-2 scenes: {output}")
-        outputs.append(output)
+            outputs.append(output)
 
     if satellite in ("landsat", "both"):
         output = _csv_path(query_dir, "Landsat", date_start, date_end)
         if output.exists():
             print(f"Skipping existing query: {output}")
+            outputs.append(output)
         else:
             username = os.getenv("ERS_USERNAME")
             token = os.getenv("ERS_TOKEN")
@@ -223,7 +230,7 @@ def query_period(
             products = _filter_landsat(products, skip_landsat_pathrows)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Landsat scenes: {output}")
-        outputs.append(output)
+            outputs.append(output)
 
     return outputs
 

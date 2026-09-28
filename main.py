@@ -110,7 +110,21 @@ def _read_query_files(study_dir, prefix, date_start=None, date_end=None):
         raise FileNotFoundError(
             f"No {prefix} query CSV files found in {study_dir / 'QUERY'}"
         )
-    frames = [pd.read_csv(path) for path in paths]
+    frames = []
+    for path in paths:
+        try:
+            frame = pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            print(f"Skipping empty {prefix} query: {path}")
+            continue
+        if frame.empty:
+            print(f"Skipping empty {prefix} query: {path}")
+            continue
+        frames.append(frame)
+    if not frames:
+        raise FileNotFoundError(
+            f"All {prefix} query CSV files are empty in {study_dir / 'QUERY'}"
+        )
     result = pd.concat(frames, ignore_index=True)
     if "Name" not in result.columns:
         raise ValueError(f"{prefix} query files must contain a 'Name' column")
@@ -183,6 +197,16 @@ def _remove_processed(
             2 if sensor == "Sentinel-2" else 3
         ][:8]
         date = f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+        # A merged scene is the canonical processed cache.  If its date is
+        # already present, do not download the raw scenes again, even when an
+        # older/incomplete band manifest prevents the detailed cache check.
+        if merged_dir.is_dir() and any(
+            child.is_dir() and token in child.name
+            for child in merged_dir.iterdir()
+        ):
+            print(f"Skipping download of {sensor} date already in MERGED: {date}")
+            keep.loc[indexes] = False
+            continue
         scene_id = _prepared_scene_id(
             group,
             sensor,
@@ -203,6 +227,115 @@ def _remove_processed(
     skipped = len(products) - int(keep.sum())
     if skipped:
         print(f"Skipping download of {skipped} cached {sensor} products")
+    return products[keep].reset_index(drop=True)
+
+
+def _remove_merged_dates(products, study_dir, sensor):
+    """Remove scenes whose acquisition date already has a MERGED scene folder."""
+    if products.empty:
+        return products
+    names = products["Name"].astype(str)
+    if sensor == "Sentinel-2":
+        groups = names.str.split("_").str[2].str[:8]
+    else:
+        groups = names.str.split("_").str[0] + "|" + names.str.split("_").str[3].str[:8]
+
+    keep = pd.Series(True, index=products.index)
+    merged_root = Path(study_dir) / "MERGED"
+    skipped = 0
+    for key, indexes in products.groupby(groups).groups.items():
+        token = key.split("|")[-1]
+        platform = None if sensor == "Sentinel-2" else key.split("|", 1)[0]
+        merged_dir = _sensor_directory(merged_root, sensor, platform)
+        if not merged_dir.is_dir():
+            continue
+        date_index = 2 if sensor == "Sentinel-2" else 3
+        if any(
+            child.is_dir()
+            and len(child.name.split("_")) > date_index
+            and child.name.split("_")[date_index][:8] == token
+            for child in merged_dir.iterdir()
+        ):
+            keep.loc[indexes] = False
+            skipped += len(indexes)
+            date = f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+            print(f"Skipping {sensor} download for date already in MERGED: {date}")
+    if skipped:
+        print(f"Skipped {skipped} {sensor} scene(s) already represented in MERGED")
+    return products[keep].reset_index(drop=True)
+
+
+def _remove_snowflakes_dates(products, study_dir, sensor):
+    """Skip dates that already have a completed SnowFLAKES raster."""
+    if products.empty:
+        return products
+    names = products["Name"].astype(str)
+    if sensor == "Sentinel-2":
+        groups = names.str.split("_").str[2].str[:8]
+    else:
+        groups = names.str.split("_").str[0] + "|" + names.str.split("_").str[3].str[:8]
+
+    keep = pd.Series(True, index=products.index)
+    root = Path(study_dir) / "SnowFLAKES"
+    skipped = 0
+    for key, indexes in products.groupby(groups).groups.items():
+        token = key.split("|")[-1]
+        platform = None if sensor == "Sentinel-2" else key.split("|", 1)[0]
+        sensor_root = _sensor_directory(root, sensor, platform)
+        if not sensor_root.is_dir():
+            continue
+        date_index = 2 if sensor == "Sentinel-2" else 3
+        completed = any(
+            path.is_file()
+            and path.name.endswith("_SnowFLAKES.tif")
+            and len(path.parent.name.split("_")) > date_index
+            and path.parent.name.split("_")[date_index][:8] == token
+            for path in sensor_root.rglob("*_SnowFLAKES.tif")
+        )
+        if completed:
+            keep.loc[indexes] = False
+            skipped += len(indexes)
+            date = f"{token[:4]}-{token[4:6]}-{token[6:8]}"
+            print(f"Skipping {sensor} date already completed in SnowFLAKES: {date}")
+    if skipped:
+        print(f"Skipped {skipped} {sensor} scene(s) with existing SnowFLAKES output")
+    return products[keep].reset_index(drop=True)
+
+
+def _remove_logged_scenes(products, study_dir, sensor):
+    """Skip scenes recorded as invalid in SnowFLAKES log files."""
+    if products.empty:
+        return products
+    logged = set()
+    for filename in ("00_skip_cloud_masks.log", "00_scenes_to_skip.log"):
+        paths = [Path(study_dir) / filename]
+        paths.extend(Path(study_dir).rglob(filename))
+        for path in set(paths):
+            if not path.is_file():
+                continue
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                value = line.strip().split("\t")[-1].removesuffix(".SAFE")
+                if value:
+                    logged.add(Path(value).name)
+    if not logged:
+        return products
+
+    names = products["Name"].astype(str).map(
+        lambda value: Path(value).name.removesuffix(".SAFE")
+    )
+    date_index = 2 if sensor == "Sentinel-2" else 3
+    dates = names.str.split("_").str[date_index].str[:8]
+    logged_dates = {
+        item.split("_")[date_index][:8]
+        for item in logged
+        if len(item.split("_")) > date_index and "merged" in item.split("_")
+    }
+    keep = ~names.isin(logged)
+    if logged_dates:
+        keep &= ~dates.isin(logged_dates)
+    skipped = int((~keep).sum())
+    if skipped:
+        print(f"Skipping {skipped} {sensor} scene(s) listed in SnowFLAKES logs")
     return products[keep].reset_index(drop=True)
 
 
@@ -626,7 +759,6 @@ def _save_composites(
 
     scene_dir = Path(output_dir) / scene_id
     scene_dir.mkdir(parents=True, exist_ok=True)
-    overwrite = bool(config.get("overwrite", False))
     if sensor == "Sentinel-2":
         rgb_bands = ["B04", "B03", "B02"]
         false_color_bands = ["B11", "B8A", "B03"]
@@ -658,7 +790,10 @@ def _save_composites(
                 f"missing bands: {', '.join(missing)}"
             )
         path = scene_dir / f"{filename}.tif"
-        if path.exists() and not overwrite:
+        # Composites are persistent first-pass products.  Never replace them
+        # during a later SnowFLAKES-only run, even if the general overwrite
+        # option is enabled.
+        if path.exists():
             print(f"  {label.capitalize()} composite exists, skipping: {path}")
             continue
         print(
@@ -992,6 +1127,9 @@ def run(config_path):
     crop = bool(_value(config, "CROP", "crop", False))
     save = bool(_value(config, "SAVE", "save", False))
     run_snowflakes_enabled = bool(config.get("run_snowflakes", True))
+    composites_requested = _save_rgb_enabled(config) or bool(
+        _value(config, "SAVE_FALSE_COLOR", "save_false_color", True)
+    )
     # RAW + uncropped + no-save/no-SnowFLAKES is an intentional download-only
     # mode: archives are downloaded and no in-memory processing is attempted.
     download_only = (
@@ -999,6 +1137,7 @@ def run(config_path):
         and not crop
         and not save
         and not run_snowflakes_enabled
+        and not composites_requested
     )
     processing_requested = raw_sentinel or raw_landsat or sentinel_stac or landsat_stac
     if (
@@ -1054,9 +1193,31 @@ def run(config_path):
         if satellite.startswith("landsat") or satellite == "both"
         else pd.DataFrame(columns=["Name"])
     )
+    # Do this before selecting download/STAC products so completed dates are
+    # skipped by the whole workflow, not only by the raw downloader.
+    sentinel2 = _remove_snowflakes_dates(sentinel2, study_dir, "Sentinel-2")
+    landsat = _remove_snowflakes_dates(landsat, study_dir, "Landsat")
+    sentinel2 = _remove_logged_scenes(sentinel2, study_dir, "Sentinel-2")
+    landsat = _remove_logged_scenes(landsat, study_dir, "Landsat")
     if raw_sentinel or raw_landsat:
         sentinel_download_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
         landsat_download_products = landsat if raw_landsat else landsat.iloc[0:0]
+        # A completed SnowFLAKES raster is the strongest cache marker: skip
+        # the entire date before any download or resampling work.
+        sentinel_download_products = _remove_snowflakes_dates(
+            sentinel_download_products, study_dir, "Sentinel-2"
+        )
+        landsat_download_products = _remove_snowflakes_dates(
+            landsat_download_products, study_dir, "Landsat"
+        )
+        # Apply the MERGED date cache before any mode-specific filtering (for
+        # example RGB generation), so cached dates are never downloaded again.
+        sentinel_download_products = _remove_merged_dates(
+            sentinel_download_products, study_dir, "Sentinel-2"
+        )
+        landsat_download_products = _remove_merged_dates(
+            landsat_download_products, study_dir, "Landsat"
+        )
         if crop:
             if _save_rgb_enabled(config) and not sentinel_download_products.empty:
                 sentinel2_downloads = sentinel_download_products

@@ -22,11 +22,11 @@ from SnowFLAKES.utilities import (
     get_uncertainty,
     scene_valid_mask,
     scene_no_data_value,
+    classify_ice
 )
 
 from SnowFLAKES.training_collection import (
-    collect_trainings,
-    get_pixels_ice,
+    collect_trainings
 )
 
 from SnowFLAKES.SCF_functions import (
@@ -217,7 +217,7 @@ def run_snowflakes(config, data, scene_id):
         
     
     # post-processing map cleaning
-    remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder)
+    remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder, auxiliary_folder)
     
     # add uncertainty layer
     if unc:
@@ -228,23 +228,21 @@ def run_snowflakes(config, data, scene_id):
         
         if snow_around_glacier(wd, scene_id):
      
-            snow_mask, ice_mask = get_pixels_ice(scene_id, data, config)
+            classify_ice(scene_id, data, config)
             
-            results_glacier = run_snow_ice_classification(
-                data=data,
-                snow_mask=snow_mask,
-                ice_mask=ice_mask,
-                output_folder=None,
-                max_samples_per_class=10000,
-                prediction_mask=None,
-            )
+            # results_glacier = run_snow_ice_classification(
+            #     data=data,
+            #     snow_mask=snow_mask,
+            #     ice_mask=ice_mask,
+            #     output_folder=None,
+            #     max_samples_per_class=10000,
+            #     prediction_mask=None,
+            # )
             
-            mask_raster_with_glacier(scene_id, data, config, results_glacier)
+            # mask_raster_with_glacier(scene_id, data, config, results_glacier)
 
             
-        # else:
-            
-        #     get_blue_ice(wd, data, scene_id)
+
             
 
   

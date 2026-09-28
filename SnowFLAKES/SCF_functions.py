@@ -38,13 +38,13 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     hillshade = np.cos(np.deg2rad(solar_incidence_angle))
     
-    shadow = load_map(curr_aux_folder, '*shad_idx.tif')
+    # shadow = load_map(curr_aux_folder, '*shad_idx.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     
     X = all_bands_image[:, mask].T
 
     hillshade_feat = hillshade[mask].reshape(-1, 1)
-    shadow_feat = shadow[mask].reshape(-1, 1)
+    # shadow_feat = shadow[mask].reshape(-1, 1)
     diff_B_NIR_feat = diff_B_NIR[mask].reshape(-1, 1)
 
 
@@ -52,7 +52,7 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     return np.hstack((
         X,
         hillshade_feat,
-        shadow_feat,
+        # shadow_feat,
         diff_B_NIR_feat
     ))
 

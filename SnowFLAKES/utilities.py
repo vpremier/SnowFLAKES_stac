@@ -439,45 +439,6 @@ def define_datetime(scene_id, config):
 
 
 
-def get_hemisphere(raster_path):
-    """Determine the hemisphere covered by a raster.
-
-    Parameters
-    ----------
-    raster_path : str or os.PathLike
-        Path to a georeferenced raster.
-
-    Returns
-    -------
-    {"N", "S", "E"}
-        ``N`` for the Northern Hemisphere, ``S`` for the Southern Hemisphere,
-        or ``E`` if the raster crosses the equator.
-
-    Raises
-    ------
-    ValueError
-        If the raster has no coordinate reference system.
-    """
-    with rasterio.open(raster_path) as raster:
-        if raster.crs is None:
-            raise ValueError(f"Raster has no CRS: {raster_path}")
-
-        _, bottom, _, top = transform_bounds(
-            raster.crs,
-            "EPSG:4326",
-            raster.bounds.left,
-            raster.bounds.bottom,
-            raster.bounds.right,
-            raster.bounds.top
-        )
-
-    if bottom >= 0 and top > 0:
-        return "N"
-    if top <= 0 and bottom < 0:
-        return "S"
-    return "E"
-
-
 
 
 
@@ -564,34 +525,6 @@ def find_closest_valid_scf(working_folder, date):
             print(f"⚠️ Error reading {shp_path}: {e}")
 
     return None
-            
-            
-            
-def is_month_in_range(month, start_month, end_month):
-    """
-    Check if a given month (1-12) is in the range [start_month, end_month],
-    supporting ranges that wrap around the year (e.g. October to April).
-    """
-    if start_month <= end_month:
-        return start_month <= month <= end_month
-    else:
-        return month >= start_month or month <= end_month
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -675,46 +608,6 @@ def open_image(image_path, ncdf_layer='fsc'):
 
 
 
-def get_blue_ice(wd, data, scene_id):
-
-    scene_folder = create_folder(wd, scene_id)   
-
-    # auxiliary folder with common features (dem, slope, etc..)
-    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
-    
-    # Scene's auxiliary folder
-    curr_aux_folder = create_folder(scene_folder, "auxiliary")
-    
-    # load information for current scene
-    sensor = get_sensor(scene_id)
-    bands = define_bands(data, sensor)
-    
-    bands = define_bands(data, sensor)
-    
-    swir = bands["SWIR"]
-
-
-    scf_map, FSC_SVM_map_path = load_map(scene_folder, '*SnowFLAKES.tif', return_path=True)
-    diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
-    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
-    
-    
-    blue_ice = np.logical_and.reduce((glacier_mask == 1, 
-                                    shadow_mask == 0, 
-                                    cloud_mask == 0,
-                                    scf_map > 0, 
-                                    diff_B_NIR > 0.15,
-                                    swir < 0.05))
-    
-    scf_map[blue_ice] = 215
-
-    save_tif(scf_map, FSC_SVM_map_path, FSC_SVM_map_path, dtype=rasterio.uint8)
-
-
-
-
 
 def snow_around_glacier(wd, scene_id):
 
@@ -755,7 +648,7 @@ def snow_around_glacier(wd, scene_id):
 
 
 
-def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
+def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder, auxiliary_folder):
     
     # load information for current scene
     sensor = get_sensor(scene_id)
@@ -766,7 +659,7 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
         scf_data = scf_src.read(1)  # Reading first band
      
     shadow_mask, shadow_path = load_map(curr_aux_folder, '*shadow_mask.tif', return_path=True)
-    # distance_idx = load_map(curr_aux_folder, '*distance.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
 
     
@@ -778,7 +671,8 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
                                                diff_B_NIR < 0.06, 
                                                shadow_mask == 1, 
                                                scf_data > 0, 
-                                               scf_data < 50))
+                                               scf_data < 50,
+                                               glacier_mask ==0))
 
     # SCF_map[np.logical_and.reduce((SCF_map > 0, SCF_map <= 100, distance_idx == 255))] = 0
 
@@ -788,11 +682,13 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
 
     condition1 = np.logical_and.reduce((swir > 0.2,
                                 scf_data < 50,
-                                shadow_mask == 0))
+                                shadow_mask == 0,
+                                glacier_mask ==0))
     
     condition2 = np.logical_and.reduce((green < 0.15,
                                 scf_data < 50,
-                                shadow_mask == 0))
+                                shadow_mask == 0,
+                                glacier_mask ==0))
     
     scf_data[pixels_to_correct] = 0
     scf_data[condition1 | condition2] = 0
@@ -800,6 +696,60 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder):
     save_tif(scf_data, shadow_path, FSC_SVM_map_path, dtype=rasterio.uint8)
 
     
+
+
+
+def classify_ice(scene_id, data, config):
+    
+    
+    # Create output directory for the scene
+    wd = config['output_directory']
+    scene_folder = create_folder(wd, scene_id)   
+
+    # auxiliary folder with common features (dem, slope, etc..)
+    auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
+
+    # Scene's auxiliary folder
+    curr_aux_folder = create_folder(scene_folder, "auxiliary")
+
+        
+        
+    # Load masks and other necessary data
+    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
+    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
+    glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
+    shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
+    NDSI = load_map(curr_aux_folder, '*NDSI.tif')
+
+
+
+    SCF, SCF_path = load_map(scene_folder, '*SnowFLAKES.tif', return_path=True)
+        
+    # validity mask: a binary dilation is applied by default (avoid training 
+    # collection near water bodies, clouds, etc)
+    validMask = scene_valid_mask(data, config)
+
+    curr_scene_valid = build_valid_scene(~validMask,
+                                         cloud_mask == 1,
+                                         cloud_mask == 2,
+                                         water_mask == 1)
+
+
+
+    mask_potential_ice = np.logical_and.reduce((glacier_mask==1, 
+                                      shadow_mask == 0,
+                                      NDSI > 0.4, 
+                                      curr_scene_valid,
+                                      SCF <90))
+    
+    mask_shadow = np.logical_and.reduce((glacier_mask==1, 
+                                      shadow_mask == 1))
+    
+    SCF[mask_potential_ice] = 215
+    SCF[mask_shadow] = 205
+    
+    save_tif(SCF, SCF_path, SCF_path, dtype=rasterio.uint8)
+
 
 
 
