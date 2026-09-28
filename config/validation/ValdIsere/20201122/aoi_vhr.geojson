@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "ValdIsere_20201122_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "ValdIsere",
+        "date": "20201122"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              7.013191888095664,
+              45.36249189183488
+            ],
+            [
+              7.063726494514717,
+              45.36336007601364
+            ],
+            [
+              7.060538202515446,
+              45.45655989790886
+            ],
+            [
+              7.0099205172617145,
+              45.455688903461706
+            ],
+            [
+              7.013191888095664,
+              45.36249189183488
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

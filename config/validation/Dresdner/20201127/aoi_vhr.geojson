@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "Dresdner_20201127_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Dresdner",
+        "date": "20201127"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.09532596930547,
+              46.97844852316282
+            ],
+            [
+              11.205953426785616,
+              46.97636974559834
+            ],
+            [
+              11.208703578801499,
+              47.043090843954445
+            ],
+            [
+              11.097938455583131,
+              47.045174448277336
+            ],
+            [
+              11.09532596930547,
+              46.97844852316282
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

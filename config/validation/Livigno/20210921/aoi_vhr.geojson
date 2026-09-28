@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "Livigno_20210921_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Livigno",
+        "date": "20210921"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.093204585132268,
+              46.41862725636013
+            ],
+            [
+              10.166216970542115,
+              46.41862725636013
+            ],
+            [
+              10.166216970542115,
+              46.466691871309166
+            ],
+            [
+              10.093204585132268,
+              46.466691871309166
+            ],
+            [
+              10.093204585132268,
+              46.41862725636013
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

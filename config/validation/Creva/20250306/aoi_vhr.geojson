@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "Creva_20250306_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Creva",
+        "date": "20250306"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              7.14980357181808,
+              45.819615548359316
+            ],
+            [
+              7.169575588872624,
+              45.819934100824426
+            ],
+            [
+              7.169270168650703,
+              45.82924948088585
+            ],
+            [
+              7.149494857049675,
+              45.8289308254742
+            ],
+            [
+              7.14980357181808,
+              45.819615548359316
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

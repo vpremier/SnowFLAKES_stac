@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "Leutasch_20201127_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Leutasch",
+        "date": "20201127"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.099477586806591,
+              47.38530406049722
+            ],
+            [
+              11.21174738425534,
+              47.383191929240134
+            ],
+            [
+              11.21345749135467,
+              47.42401292601789
+            ],
+            [
+              11.101101047522953,
+              47.42612805962271
+            ],
+            [
+              11.099477586806591,
+              47.38530406049722
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

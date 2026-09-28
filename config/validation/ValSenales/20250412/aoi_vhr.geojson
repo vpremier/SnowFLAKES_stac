@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "ValSenales_20250412_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "ValSenales",
+        "date": "20250412"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.736995754019082,
+              46.753478656018075
+            ],
+            [
+              10.756228891263811,
+              46.753185035047025
+            ],
+            [
+              10.756548621508037,
+              46.76302178056713
+            ],
+            [
+              10.737311987091443,
+              46.76331550188978
+            ],
+            [
+              10.736995754019082,
+              46.753478656018075
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

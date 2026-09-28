@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "Cervinia_20240704_vhr_footprint",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "site": "Cervinia",
+        "date": "20240704"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              7.659182987648864,
+              45.920962861536054
+            ],
+            [
+              7.691285924951921,
+              45.921335080513416
+            ],
+            [
+              7.690631616199605,
+              45.94913919190664
+            ],
+            [
+              7.658512640201883,
+              45.94876661373549
+            ],
+            [
+              7.659182987648864,
+              45.920962861536054
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
