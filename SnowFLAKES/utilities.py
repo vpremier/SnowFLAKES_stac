@@ -400,7 +400,11 @@ def define_datetime(scene_id, config):
         Acquisition date in ``YYYYMMDD`` format.
     """
 
-    scene_name = os.path.basename(os.fspath(scene_id).rstrip(os.sep))
+    # Merged Landsat IDs replace the path/row component with ``merged``.
+    # Prefer the original product ID supplied by the loader for metadata
+    # lookup, while retaining the merged ID for output naming.
+    lookup_scene_id = config.get("_source_scene_id", scene_id)
+    scene_name = os.path.basename(os.fspath(lookup_scene_id).rstrip(os.sep))
     sensor = get_sensor(scene_name)
     parts = scene_name.split('_')
 
