@@ -1,0 +1,60 @@
+{
+  "config": "/home/vpremier/Documents/git/SnowFLAKES_stac/config/config_mendoza_new.json",
+  "date": "2016-07-25",
+  "download_sentinel": "STAC-API",
+  "download_landsat": "usgs-m2m",
+  "started_utc": "2026-09-29T08:19:11.048782+00:00",
+  "phase_totals_seconds": {
+    "download": 45.49900784296915,
+    "save_bands": 0.21454434300540015,
+    "prepare_merged_raw": 1.5882870350033045,
+    "save_composites": 0.08723563398234546,
+    "auxiliary_preparation": 74.40695354703348,
+    "snowflakes": 74.42084626900032,
+    "workflow_total": 121.96354047500063
+  },
+  "snowflakes_breakdown_seconds": {
+    "glacier_check": 0.0,
+    "model_training": 0.0,
+    "scf_postprocessing": 0.0,
+    "scf_prediction": 0.0,
+    "training_collection": 0.0
+  },
+  "events": [
+    {
+      "phase": "download",
+      "duration_seconds": 45.49900784296915,
+      "started_utc": "2026-09-29T08:20:10.250947+00:00"
+    },
+    {
+      "phase": "save_bands",
+      "duration_seconds": 0.21454434300540015,
+      "started_utc": "2026-09-29T08:20:11.843690+00:00"
+    },
+    {
+      "phase": "prepare_merged_raw",
+      "duration_seconds": 1.5882870350033045,
+      "started_utc": "2026-09-29T08:20:11.843709+00:00"
+    },
+    {
+      "phase": "save_composites",
+      "duration_seconds": 0.08723563398234546,
+      "started_utc": "2026-09-29T08:20:11.930964+00:00"
+    },
+    {
+      "phase": "auxiliary_preparation",
+      "duration_seconds": 74.40695354703348,
+      "started_utc": "2026-09-29T08:21:26.351801+00:00"
+    },
+    {
+      "phase": "snowflakes",
+      "duration_seconds": 74.42084626900032,
+      "started_utc": "2026-09-29T08:21:26.351845+00:00"
+    },
+    {
+      "phase": "workflow_total",
+      "duration_seconds": 121.96354047500063,
+      "started_utc": "2026-09-29T08:21:26.687582+00:00"
+    }
+  ]
+}

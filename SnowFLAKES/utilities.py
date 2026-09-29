@@ -6,6 +6,7 @@ Created on Mon Sep 16 18:03:27 2024
 @author: rbarella
 """
 import os
+import tarfile
 from osgeo import gdal, osr
 from pathlib import Path
 from scipy.ndimage import binary_dilation
@@ -18,6 +19,45 @@ from datetime import datetime
 import geopandas as gpd
 
 from loading.load_stac_usgs import get_scene_center_time
+
+
+def _scene_center_time_from_raw_archive(scene_name, date, config):
+    """Read Landsat scene-center time from the first matching M2M archive."""
+    working = config.get("working_directory")
+    if working is None:
+        output = config.get("output_directory")
+        working = str(Path(output).parent) if output else None
+    if not working:
+        return None
+
+    sensor = scene_name.split("_", 1)[0]
+    raw_root = Path(working) / "RAW" / "Landsat"
+    if not raw_root.is_dir():
+        return None
+    archives = sorted(raw_root.rglob(f"{sensor}_*_{date}_*.tar"))
+    if not archives:
+        return None
+
+    with tarfile.open(archives[0]) as archive:
+        member = next(
+            (item for item in archive.getmembers()
+             if item.name.upper().endswith("_MTL.TXT")),
+            None,
+        )
+        if member is None:
+            return None
+        stream = archive.extractfile(member)
+        if stream is None:
+            return None
+        text = stream.read().decode("utf-8", errors="replace")
+
+    for line in text.splitlines():
+        if line.strip().startswith("SCENE_CENTER_TIME") and "=" in line:
+            value = line.split("=", 1)[1].strip().strip('"').rstrip("Z")
+            return datetime.strptime(
+                f"{date} {value.split('.')[0]}", "%Y%m%d %H:%M:%S"
+            )
+    return None
 
 
 
@@ -400,11 +440,7 @@ def define_datetime(scene_id, config):
         Acquisition date in ``YYYYMMDD`` format.
     """
 
-    # Merged Landsat IDs replace the path/row component with ``merged``.
-    # Prefer the original product ID supplied by the loader for metadata
-    # lookup, while retaining the merged ID for output naming.
-    lookup_scene_id = config.get("_source_scene_id", scene_id)
-    scene_name = os.path.basename(os.fspath(lookup_scene_id).rstrip(os.sep))
+    scene_name = os.path.basename(os.fspath(scene_id).rstrip(os.sep))
     sensor = get_sensor(scene_name)
     parts = scene_name.split('_')
 
@@ -422,7 +458,24 @@ def define_datetime(scene_id, config):
 
         elif sensor in ("L4", "L5", "L7", "L8"):
             date = parts[3]
+            archive_time = _scene_center_time_from_raw_archive(
+                scene_name, date, config
+            )
+            if archive_time is not None:
+                return archive_time, date
             query_date = datetime.strptime(date, '%Y%m%d').strftime('%Y-%m-%d')
+            platform_by_prefix = {
+                "LT04": "LANDSAT_4",
+                "LT05": "LANDSAT_5",
+                "LE07": "LANDSAT_7",
+                "LC08": "LANDSAT_8",
+                "LC09": "LANDSAT_9",
+            }
+            platform = platform_by_prefix.get(parts[0].upper())
+            if platform is None:
+                raise ValueError(
+                    f"Unsupported Landsat platform prefix in scene: {scene_id!r}"
+                )
             date_time = get_scene_center_time(
                 query_date,
                 extent_target=config["resampling_params"]['extent_target'],
@@ -431,7 +484,7 @@ def define_datetime(scene_id, config):
                 max_cc=config['max_cloudcover'],
                 filter_by_geometry=True,
                 shp=config['shapefile'],
-                platform=config["satellite"].upper().replace("-", "_"),
+                platform=platform,
                 idList=[]
             )
         else:

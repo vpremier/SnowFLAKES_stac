@@ -881,8 +881,7 @@ def _load_stac_rgb10(config, date):
 
 
 def _run_or_collect(
-    config, sensor, date, data, scene_id, output_dir, collected, rgb_data=None,
-    source_scene_id=None,
+    config, sensor, date, data, scene_id, output_dir, collected, rgb_data=None
 ):
     """Consume one array immediately, or retain it for a library caller."""
     _save_composites(
@@ -893,8 +892,6 @@ def _run_or_collect(
 
         scene_config = config.copy()
         scene_config["output_directory"] = str(output_dir)
-        if source_scene_id is not None:
-            scene_config["_source_scene_id"] = source_scene_id
         run_snowflakes(scene_config, data, scene_id)
     else:
         collected.append((sensor, date, scene_id, data))
@@ -904,10 +901,6 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
     """Load cropped date mosaics and consume one DataArray at a time."""
     snowflakes_dir = _snowflakes_output_directory(study_dir, "Sentinel-2")
     for date in _dates(sentinel2, "Sentinel-2"):
-        date_products = sentinel2[
-            sentinel2["Name"].astype(str).str.split("_").str[2].str[:8]
-            == date.replace("-", "")
-        ]
         data, scene_id = _load_raw_date(
             config, "Sentinel-2", sentinel2, date, True, save
         )
@@ -929,7 +922,6 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
                 snowflakes_dir,
                 collected,
                 rgb_data=rgb_data,
-                source_scene_id=str(date_products.iloc[0]["Name"]).removesuffix(".SAFE"),
             )
             if config.get("run_snowflakes", True):
                 del data
@@ -963,7 +955,6 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
                     scene_id,
                     snowflakes_dir,
                     collected,
-                    source_scene_id=str(sensor_products.iloc[0]["Name"]).removesuffix(".SAFE"),
                 )
                 if config.get("run_snowflakes", True):
                     del data
@@ -1059,7 +1050,6 @@ def _process_raw_tiles(config, study_dir, sentinel2, landsat, save, collected):
                             snowflakes_dir,
                             collected,
                             rgb_data=rgb_data,
-                            source_scene_id=str(selected.iloc[0]["Name"]).removesuffix(".SAFE"),
                         )
                         if config.get("run_snowflakes", True):
                             del data
@@ -1306,10 +1296,6 @@ def run(config_path):
                 products=stac_sentinel_products,
             )
             if data is not None:
-                date_products = stac_sentinel_products[
-                    stac_sentinel_products["Name"].astype(str).str.split("_").str[2].str[:8]
-                    == date.replace("-", "")
-                ]
                 rgb_data = None
                 if _rgb_uses_analysis_data(config, "Sentinel-2"):
                     print("Reusing 10 m analysis DataArray for RGB; no second STAC load")
@@ -1325,7 +1311,6 @@ def run(config_path):
                     snowflakes_dir,
                     arrays,
                     rgb_data=rgb_data,
-                    source_scene_id=str(date_products.iloc[0]["Name"]).removesuffix(".SAFE"),
                 )
                 if config.get("run_snowflakes", True):
                     del data
@@ -1365,7 +1350,6 @@ def run(config_path):
                         scene_id,
                         snowflakes_dir,
                         arrays,
-                        source_scene_id=str(sensor_products.iloc[0]["Name"]).removesuffix(".SAFE"),
                     )
                     if config.get("run_snowflakes", True):
                         del data

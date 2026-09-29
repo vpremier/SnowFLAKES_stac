@@ -8,7 +8,7 @@
   "max_cloudcover": 90,
   "DOWNLOAD_SENTINEL": "STAC-API",
   "sentinel2_s3_profile": "cdse",
-  "DOWNLOAD_LANDSAT": "usgs-m2m",
+  "DOWNLOAD_LANDSAT": "STAC-API",
   "CROP": true,
   "SAVE": true,
   "resampling_params": {
