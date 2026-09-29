@@ -476,6 +476,10 @@ def define_datetime(scene_id, config):
                 raise ValueError(
                     f"Unsupported Landsat platform prefix in scene: {scene_id!r}"
                 )
+            configured_tiles = config.get("landsat_tile_list") or []
+            if isinstance(configured_tiles, str):
+                configured_tiles = configured_tiles.split(",")
+            pathrow = configured_tiles[0] if configured_tiles else None
             date_time = get_scene_center_time(
                 query_date,
                 extent_target=config["resampling_params"]['extent_target'],
@@ -485,7 +489,8 @@ def define_datetime(scene_id, config):
                 filter_by_geometry=True,
                 shp=config['shapefile'],
                 platform=platform,
-                idList=[]
+                idList=[],
+                pathrow=pathrow,
             )
         else:
             raise ValueError(f"Unsupported scene identifier: {scene_id!r}")

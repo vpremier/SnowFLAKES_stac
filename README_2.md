@@ -1,37 +1,9 @@
-# SnowFLAKES query and loading workflow
 
-The workflow is started with one JSON configuration:
 
-```bash
-./main.sh path/to/config.json
-```
-
-The Bash script calls the query stage and then the loading stage:
-
-```bash
-python3 "${SCRIPT_DIR}/data_download/query_available.py" \
-    --config "${CONFIG_PATH}"
-python3 "${SCRIPT_DIR}/main.py" "${CONFIG_PATH}"
-```
-
-## Query configuration
-
-The query configuration should contain:
-
-```json
-{
-  "study_area": "Mendoza",
-  "working_directory": "/data/SnowFLAKES",
-  "shapefile": "/data/AOI/Mendoza.geojson",
-  "date_start": "2023-01-01",
-  "date_end": "2023-06-01",
-  "max_cloudcover": 80,
-  "satellite": "both",
   "DOWNLOAD_SENTINEL": "Google",
   "skip_sentinel2_tiles": ["T19HDE"],
   "skip_landsat_pathrows": ["232084"]
-}
-```
+
 
 The mandatory inputs are the AOI (`shapefile`), `date_start`, `date_end`,
 `working_directory`, and `satellite`. `study_area` defaults to the AOI filename

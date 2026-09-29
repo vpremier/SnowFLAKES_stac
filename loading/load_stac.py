@@ -247,7 +247,11 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
         )
 
         data = data.mean(dim="time", skipna=True)
-        load_with_retry(data, max_retries=20, wait_seconds=2)
+        
+        if collection == "cop-dem-glo-30-dged-cog":
+            data = data.compute(scheduler="single-threaded")
+        else:
+            load_with_retry(data, max_retries=20, wait_seconds=2)
             
     #  === Extract info_src from xarray ===
     transform = Affine(
@@ -607,13 +611,27 @@ def convert_sentinel2_bands(outdir,
     
     
     if exclude_tiles:
-        exclude_tiles = [f"MGRS-{t}" for t in exclude_tiles]
-        
+        excluded_tiles = {
+            str(tile).strip().upper().removeprefix("MGRS-")
+            for tile in exclude_tiles
+        }
         filtered_items = [
             item for item in items
-            if item['properties'].get('grid:code') not in exclude_tiles
+            if (
+                str(item.get("properties", {}).get("grid:code", ""))
+                .upper().removeprefix("MGRS-")
+                not in excluded_tiles
+                and (
+                    len(str(item.get("id", "")).split("_")) < 6
+                    or str(item["id"]).split("_")[5].upper()
+                    not in excluded_tiles
+                )
+            )
         ]
-        
+        print(
+            f"Excluded {len(items) - len(filtered_items)} Sentinel-2 STAC item(s) "
+            f"for tile(s): {', '.join(sorted(excluded_tiles))}"
+        )
         items = filtered_items
         print(f"Number of items after exclusion: {len(items)}")
 

@@ -24,6 +24,7 @@ import rasterio as rio
 from osgeo import gdal
 
 from loading.utils_stac import *
+from loading.load_stac import load_with_retry
 # from utils_stac import *
 
 
@@ -87,8 +88,16 @@ def use_s3_assets(items):
 
 
 def get_MTL_file(query_item):
-    session = boto3.Session(profile_name="default")
-    s3_client = session.client('s3')
+    # Use an explicit USGS session.  This metadata request can happen after a
+    # CDSE loader has configured global AWS_* variables, so inheriting the
+    # process region would incorrectly produce endpoints such as
+    # ``s3.default.amazonaws.com``.
+    session = boto3.Session(profile_name="default", region_name="us-west-2")
+    s3_client = session.client(
+        "s3",
+        region_name="us-west-2",
+        endpoint_url="https://s3.us-west-2.amazonaws.com",
+    )
     object_key  = query_item['assets']['MTL.json']['alternate']['s3']['href']
 
     # Split the S3 path to extract the bucket name and object key
@@ -185,12 +194,21 @@ def get_query_items(date, img4ext = None, extent_target=None, resolution=None,
 def get_scene_center_time(date, img4ext = None, extent_target=None, 
                           resolution=None, epsg_target=None, max_cc = 90, 
                           filter_by_geometry = True, shp=None, 
-                          platform = 'LANDSAT_8', idList = []):
+                          platform = 'LANDSAT_8', idList = [], pathrow=None):
     
     items = get_query_items(date, img4ext = img4ext, extent_target=extent_target, 
                             resolution=resolution, epsg_target=epsg_target, 
                             max_cc = max_cc, filter_by_geometry = filter_by_geometry, 
                             shp=shp, platform = platform, idList = idList)
+    if pathrow is not None:
+        pathrow = str(pathrow).strip().zfill(6)
+        items = [
+            item for item in items
+            if len(str(item.get("id", "")).split("_")) > 2
+            and str(item["id"]).split("_")[2].zfill(6) == pathrow
+        ]
+    if not items:
+        raise ValueError(f"No USGS STAC item found for Landsat path/row {pathrow}")
     
     MTL_info = get_MTL_file(items[0]) 
     
@@ -213,7 +231,8 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                             na_value = "NaN", calibration=True, ow=False,
                             max_cc = 90, platform = 'LANDSAT_8', idList = [], 
                             filter_by_geometry = True,
-                            save = True, shp=None, exclude_tiles=None):   
+                            save = True, shp=None, exclude_tiles=None,
+                            include_tiles=None):
     
     # out directory
     os.makedirs(outdir, exist_ok=True)
@@ -233,7 +252,48 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                             resolution=resolution, epsg_target=epsg_target, 
                             max_cc = max_cc, filter_by_geometry = filter_by_geometry, 
                             shp=shp, platform = platform, idList = idList)
-    
+
+    if exclude_tiles:
+        excluded = {str(tile).strip() for tile in exclude_tiles}
+        before = len(items)
+        items = [
+            item for item in items
+            if len(str(item.get("id", "")).split("_")) > 2
+            and str(item.get("id", "")).split("_")[2] not in excluded
+        ]
+        print(
+            f"Excluded {before - len(items)} Landsat STAC item(s) "
+            f"for path/row(s): {', '.join(sorted(excluded))}"
+        )
+
+    if include_tiles:
+        if isinstance(include_tiles, str):
+            include_tiles = include_tiles.split(",")
+        included = {str(tile).strip().zfill(6) for tile in include_tiles}
+
+        def item_pathrow(item):
+            item_id = str(item.get("id", ""))
+            parts = item_id.split("_")
+            if len(parts) > 2 and parts[2].isdigit():
+                return parts[2].zfill(6)
+            properties = item.get("properties", {})
+            path = properties.get("landsat:wrs_path")
+            row = properties.get("landsat:wrs_row")
+            if path is not None and row is not None:
+                return f"{int(path):03d}{int(row):03d}"
+            return None
+
+        before = len(items)
+        items = [
+            item for item in items
+            if item_pathrow(item) in included
+        ]
+        print(
+            f"Selected {len(items)} Landsat STAC item(s) from "
+            f"path/row list: {', '.join(sorted(included))} "
+            f"(filtered {before - len(items)})"
+        )
+
     start = time.time()
 
 
@@ -391,7 +451,12 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
         
                 data.loc[dict(band=band_name)] = result
         
-    data = data.where(data > 0)     
+    data = data.where(data > 0)
+
+    # Materialize the complete Landsat DataArray before returning it.  When
+    # save=False, leaving this lazy would defer remote STAC reads until
+    # OmniCloudMask or SnowFLAKES accesses ``.values`` later.
+    load_with_retry(data, max_retries=20, wait_seconds=2)
 
         
     # Iterate through bands

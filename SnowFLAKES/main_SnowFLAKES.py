@@ -47,6 +47,9 @@ def run_snowflakes(config, data, scene_id):
     # Create output directory for the scene
     wd = config['output_directory']
     scene_folder = create_folder(wd, scene_id)   
+    
+    # Extract date and time from the folder name
+    date_time, date = define_datetime(scene_id, config)
 
     # auxiliary folder with common features (dem, slope, etc..)
     auxiliary_folder = create_folder(wd, "01_TEST_auxiliary_folder")
@@ -68,8 +71,6 @@ def run_snowflakes(config, data, scene_id):
     # whether to classify glaciers or not
     classify_glaciers = config['classify_glaciers']
 
-    # Extract date and time from the folder name
-    date_time, date = define_datetime(scene_id, config)
 
     # Compute the scene-level validity mask once; downstream stages reuse it.
     scene_valid_mask(data, config)

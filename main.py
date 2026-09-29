@@ -628,6 +628,8 @@ def _load_stac_date(
         "shp": config["shapefile"],
         "exclude_tiles": config.get("exclude_tiles"),
     }
+    if sensor != "Sentinel-2":
+        common["include_tiles"] = config.get("landsat_tile_list")
     if sensor == "Sentinel-2":
         from loading import load_stac
 
@@ -1193,6 +1195,24 @@ def run(config_path):
         if satellite.startswith("landsat") or satellite == "both"
         else pd.DataFrame(columns=["Name"])
     )
+    # ``landsat_tile_list`` is an inclusion list.  Apply it to the query
+    # products before either M2M downloading or Landsat STAC loading.
+    configured_landsat_tiles = config.get("landsat_tile_list") or []
+    if isinstance(configured_landsat_tiles, str):
+        configured_landsat_tiles = configured_landsat_tiles.split(",")
+    landsat_tiles = {
+        str(tile).strip()
+        for tile in configured_landsat_tiles
+        if str(tile).strip()
+    }
+    if landsat_tiles and not landsat.empty:
+        pathrows = landsat["Name"].astype(str).str.split("_").str[2]
+        before = len(landsat)
+        landsat = landsat[pathrows.isin(landsat_tiles)].reset_index(drop=True)
+        print(
+            f"Selected {len(landsat)} of {before} Landsat scene(s) for "
+            f"path/row list: {', '.join(sorted(landsat_tiles))}"
+        )
     # Do this before selecting download/STAC products so completed dates are
     # skipped by the whole workflow, not only by the raw downloader.
     sentinel2 = _remove_snowflakes_dates(sentinel2, study_dir, "Sentinel-2")
