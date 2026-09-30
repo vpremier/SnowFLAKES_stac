@@ -8,19 +8,6 @@
 
 
 
-
-for CSVs compatible with `download_cdse()`.
-
-OData and Landsat queries require these variables in `.env` (repository root or
-beside the configuration):
-
-```dotenv
-CDSE_USERNAME=your_cdse_username
-CDSE_PASSWORD=your_cdse_password
-ERS_USERNAME=your_usgs_username
-ERS_TOKEN=your_usgs_token
-```
-
 ## Loading configuration
 
 The loading stage uses:

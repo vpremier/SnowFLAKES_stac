@@ -82,6 +82,7 @@ def use_s3_assets(items):
         for key, asset in item["assets"].items():
             if "alternate" in asset and "s3" in asset["alternate"]:
                 asset["href"] = asset["alternate"]["s3"]["href"]
+                
     return items
 
 
@@ -462,9 +463,13 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     # Iterate through bands
     if save:
         for band in bands:
-        
+            band_token = (
+                "B6_VCID_1"
+                if platform == "LANDSAT_7" and band == 6
+                else f"B{band}"
+            )
             out_path = os.path.join(outdir, f"{merged_image_id}", 
-                                    f"{merged_image_id}_B{band}_{suffix}.tif")
+                                    f"{merged_image_id}_{band_token}_{suffix}.tif")
             
             if os.path.exists(out_path) and not ow:
                 print(f"Skipping {out_path} (already exists)")

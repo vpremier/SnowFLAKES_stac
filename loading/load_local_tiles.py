@@ -168,10 +168,33 @@ def _prepared_band_spec(scene_id):
         return [(band, (band,)) for band in SENTINEL2_BANDS]
     if sensor not in LANDSAT_BANDS:
         return []
-    return [
-        (name, (name, f"B{number}"))
-        for number, name in LANDSAT_BANDS[sensor].items()
-    ]
+    result = []
+    for number, name in LANDSAT_BANDS[sensor].items():
+        canonical = (
+            "B6_VCID_1"
+            if sensor == "LE07" and number == 6
+            else f"B{number}"
+        )
+        # Accept legacy semantic names and the former B6 token while making
+        # the sensor-specific identifier the canonical filename.
+        legacy = [name, f"B{number}"]
+        if canonical not in legacy:
+            legacy.insert(0, canonical)
+        result.append((name, tuple(dict.fromkeys(legacy))))
+    return result
+
+
+def canonical_landsat_band_token(scene_id, band_name):
+    """Return the canonical Landsat filename token for a DataArray band."""
+    sensor = str(scene_id).split("_", 1)[0]
+    if sensor not in LANDSAT_BANDS:
+        return str(band_name)
+    for number, name in LANDSAT_BANDS[sensor].items():
+        if name == str(band_name):
+            if sensor == "LE07" and number == 6:
+                return "B6_VCID_1"
+            return f"B{number}"
+    return str(band_name)
 
 
 def prepared_bands_are_complete(output_dir, scene_id):
@@ -378,10 +401,25 @@ def _read_mtl(archive):
 def _landsat_member(archive, band):
     suffix = f"_B{band}.TIF"
     with tarfile.open(archive) as tar:
-        member = next(
-            item.name for item in tar.getmembers()
-            if item.name.upper().endswith(suffix)
-        )
+        names = [item.name for item in tar.getmembers()]
+        matches = [name for name in names if name.upper().endswith(suffix)]
+        # Landsat-7 thermal band 6 is distributed as two gain settings,
+        # B6_VCID_1 and B6_VCID_2, rather than as B6.TIF.  VCID-1 is the
+        # primary/high-gain asset and is also the one selected by the MTL
+        # calibration logic below.
+        if not matches and band == 6:
+            for vcid in ("_VCID_1.TIF", "_VCID_2.TIF"):
+                matches = [
+                    name for name in names
+                    if name.upper().endswith(f"_B6{vcid}")
+                ]
+                if matches:
+                    break
+        if not matches:
+            raise FileNotFoundError(
+                f"Band B{band} is missing from Landsat archive {archive}"
+            )
+        member = matches[0]
     return f"/vsitar/{os.path.abspath(archive)}/{member}"
 
 

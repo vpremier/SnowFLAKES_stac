@@ -36,6 +36,7 @@ from loading.download_sentinel2_s2dl import download_s2dl
 from loading.load_local_tiles import (
     load_landsat_tiles,
     load_prepared_bands,
+    canonical_landsat_band_token,
     load_sentinel2_tiles,
     prepared_bands_are_complete,
     prepared_grid_matches,
@@ -430,11 +431,16 @@ def _save_bands(data, output_dir, scene_id):
     transform = data.rio.transform()
     crs = data.rio.crs
     for band in data.coords["band"].values:
-        path = output_dir / f"{scene_id}_{band}_toa.tif"
+        band_token = (
+            canonical_landsat_band_token(scene_id, band)
+            if str(scene_id).split("_", 1)[0] in {"LT05", "LE07", "LC08", "LC09"}
+            else str(band)
+        )
+        path = output_dir / f"{scene_id}_{band_token}_toa.tif"
         if path.exists():
             print(f"  Prepared band already exists, skipping: {path.name}")
             continue
-        print(f"  Saving prepared band {band}: {path}")
+        print(f"  Saving prepared band {band} as {band_token}: {path}")
         values = data.sel(band=band).squeeze().values.astype("float32")
         with rasterio.open(
             path,

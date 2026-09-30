@@ -13,7 +13,7 @@ import shutil
 import time
 
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
-from data_download.main import run_query_download
+from data_download.query_available import run_queries
 
 from loading import (
     load_stac, 
@@ -51,33 +51,65 @@ def run_workflow(date_start, date_end, config_path):
     # bbox = get_shape_extent(shp, epsg=32719, outres =500)
     
     
-    # differentiate for Sentinel-2 and Landsat
-    if config["satellite"] == "Sentinel-2":
-        config["query_sentinel2"] = True
-        config["download_sentinel2"] = False
-        config["download_landsat"] = False
-        config["query_landsat"] = False
+    satellite = str(config.get("satellite", "")).strip().lower()
+    if satellite not in {"sentinel-2", "sentinel2", "landsat", "both"}:
+        raise ValueError(
+            "satellite must be Sentinel-2, Landsat, or both"
+        )
+    config["output_directory"] = os.path.join(
+        config["working_directory"],
+        config.get("study_area") or os.path.splitext(
+            os.path.basename(config["shapefile"])
+        )[0],
+    )
+    
+    
+    # Run the modern data query directly.  Keep the resulting frames in the
+    # same single DataFrame used by the debugging loop below.
+    satellite_key = satellite.replace("_", "-")
+    if satellite_key in {"sentinel-2", "sentinel2"}:
+        query_satellite = "sentinel2"
+    elif satellite_key in {"landsat", "both"}:
+        query_satellite = satellite_key
+    else:
+        raise ValueError("satellite must be Sentinel-2, Landsat, or both")
 
-    elif config["satellite"].startswith("Landsat"):
-        config["query_sentinel2"] = False
-        config["download_sentinel2"] = False
-        config["download_landsat"] = False
-        config["query_landsat"] = True
-    
+    sentinel_source = str(
+        config.get("DOWNLOAD_SENTINEL", "Google")
+    ).strip().lower().replace("_", "-")
+    if sentinel_source in {"stac", "stac-api", "cdse-stac-api"}:
+        sentinel_source = "odata"
+    elif sentinel_source not in {"google", "odata", "s3"}:
+        sentinel_source = "google"
 
-    # Write back
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-    
-    print("Config updated")
-    
-    
-    # Run the data query ------------------------------------------------------
-    run_query_download(config_path)
-    
-    # Look for the data in our folder
+    query_paths = run_queries(
+        study_area=config.get("study_area") or os.path.splitext(
+            os.path.basename(config["shapefile"])
+        )[0],
+        working_directory=config["working_directory"],
+        aoi=config["shapefile"],
+        date_start=config["date_start"],
+        date_end=config["date_end"],
+        max_cloudcover=float(config.get("max_cloudcover", 90)),
+        satellite=query_satellite,
+        skip_sentinel2_tiles=config.get("exclude_tiles") or [],
+        download_sentinel=sentinel_source,
+    )
+
     outdir = config["output_directory"]
-    data_df = pd.read_csv(os.path.join(outdir, 'query.csv'))
+    frames = []
+    for query_path in query_paths:
+        try:
+            frame = pd.read_csv(query_path)
+        except pd.errors.EmptyDataError:
+            continue
+        if not frame.empty:
+            frames.append(frame)
+    data_df = (
+        pd.concat(frames, ignore_index=True)
+        if frames
+        else pd.DataFrame(columns=["Name"])
+    )
     
     # sceneList = glob.glob(outdir + os.sep + 'L*')
     # for scene in sceneList:
@@ -95,7 +127,7 @@ def run_workflow(date_start, date_end, config_path):
     
     files = [f.split('.')[0] for f in data_df['Name'].to_list()]
     
-    if not config['simple_class']:
+    if not config.get('simple_class', False):
         remove_glaciers(outdir)
     
     dates_to_process = get_dates_to_process(files, config)    
@@ -110,15 +142,27 @@ def run_workflow(date_start, date_end, config_path):
         # Run the STAC loading
         for i, date in enumerate(dates_to_process):
             print(date)
+            date_token = str(date).replace("-", "")
+            date_names = [name for name in files if date_token in name]
+            date_sensor = (
+                "Sentinel-2"
+                if any(name.startswith("S2") for name in date_names)
+                else "Landsat"
+            )
         
             try:
                 
-                if config["satellite"] == "Sentinel-2":
+                if date_sensor == "Sentinel-2":
                     # Select the Sentinel-2 backend from the configuration.  Keep
                     # the CDSE STAC API as the fallback for older configurations
                     # that do not yet define ``download_mode``.
-                    download_mode = (str(config.get("download_mode", "cdse stac api"))
+                    download_mode = (str(config.get(
+                        "DOWNLOAD_SENTINEL",
+                        config.get("download_mode", "cdse stac api")
+                    ))
                                      .strip().lower().replace("_", " "))
+                    if download_mode in {"stac-api", "stac api", "odata", "s3"}:
+                        download_mode = "cdse stac api"
                     sentinel2_kwargs = {
                         "outdir": outdir,
                         "date": date,
@@ -148,17 +192,28 @@ def run_workflow(date_start, date_end, config_path):
                             "'sentinelhub' or 'cdse stac api'."
                         )
                     
-                elif config["satellite"].startswith("Landsat"):
+                elif date_sensor == "Landsat":
                     # Landsat: USGS STAC
                     load_stac_usgs.setup_usgs_credentials()
 
+                    platform_code = next(
+                        (name.split("_", 1)[0] for name in date_names
+                         if name.startswith(("LT05_", "LE07_", "LC08_", "LC09_"))),
+                        "LC08",
+                    )
+                    platform_name = {
+                        "LT05": "LANDSAT_5",
+                        "LE07": "LANDSAT_7",
+                        "LC08": "LANDSAT_8",
+                        "LC09": "LANDSAT_9",
+                    }[platform_code]
                     data, scene_id = load_stac_usgs.convert_landsat_bands(outdir, 
                                                                           date, 
                                                                           resolution=resolution, 
                                                                           extent_target=extent_target, 
                                                                           epsg_target=epsg_target,
                                                                           save = False,
-                                                                          platform = config["satellite"].upper().replace("-", "_"),
+                                                                          platform = platform_name,
                                                                           shp=config['shapefile'],
                                                                           exclude_tiles=config['exclude_tiles'])
                     
@@ -192,7 +247,7 @@ def run_workflow(date_start, date_end, config_path):
                 
                 
                 # save RGB for visualization
-                if config["satellite"] == "Sentinel-2":
+                if date_sensor == "Sentinel-2":
                     save_false_color(os.path.join(outdir, scene_id), ["B11", "B8A", "B03"], data, "fcc")
 
                     # Optional visualization-only RGB load. Keep the analysis
@@ -223,7 +278,7 @@ def run_workflow(date_start, date_end, config_path):
                             print(f"Skipping existing {rgb_path}")
 
                     
-                elif config["satellite"].startswith("Landsat"):
+                elif date_sensor == "Landsat":
                     save_false_color(os.path.join(outdir, scene_id), ["swir16", "nir08", "green"], data)
 
                 
@@ -271,7 +326,7 @@ if __name__ == "__main__":
 
 
     # shape of the AOI
-    config_path = './config/config_azufre.json'
+    config_path = './config/config_mendoza_new.json'
 
 
     
