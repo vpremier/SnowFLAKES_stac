@@ -1,3 +1,5 @@
+#%%
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -8,6 +10,7 @@ Created on Thu Sep 17 10:02:49 2026
 import math
 import hydra
 from omegaconf import DictConfig, OmegaConf
+
 import openeo
 import shapely
 import json
@@ -32,6 +35,7 @@ def elevation_mask(region, conn: openeo.Connection, cfg:DictConfig):
 
     return elevation.merge_cubes(percentile10).reduce_dimension(dimension="bands", reducer=lambda x: x[0] < x[1] - 200)
 
+#%%
 
 
 def slope_aspect(aoi, connection, cfg):
@@ -68,58 +72,64 @@ def cloud_water_mask(region, time_period, conn: openeo.Connection, cfg:DictConfi
 
     return cloud_mask | water_mask
 
-
+#%%
 
 def shadow_mask(s2_cube, region):
     """Add the scene-wide composite shadow mask as a new band.
     """
 
-    def normalize(band):
-        """Min-max normalize each time slice over both spatial dimensions."""
-        band_min = band.aggregate_spatial(
-            geometries=region,
-            reducer=lambda data: openeo_min(data, ignore_nodata=True)
-        ).vector_to_raster(target=band)
-        band_max = band.aggregate_spatial(
-            geometries=region,
-            reducer=lambda data: openeo_max(data, ignore_nodata=True)
-        ).vector_to_raster(target=band)
-        band_range = band_max - band_min
+    # Bands that need spatial min-max normalization. Aggregating them together
+    # in a single ``aggregate_spatial`` call (per statistic) is much faster than
+    # doing it band-by-band.
+    norm_band_names = ["idx6", "SI", "NDVI", "EVI", "B08"]
+    norm_bands = s2_cube.filter_bands(norm_band_names)
 
-        # Adding one only for a zero-width range reproduces the local
-        # ``zeros_like`` branch without an eager Python/NumPy conditional.
-        safe_range = band_range + (band_range == 0)
-        return (band - band_min) / safe_range
+    band_min = norm_bands.aggregate_spatial(
+        geometries=region,
+        reducer=lambda data: openeo_min(data, ignore_nodata=True),
+    ).vector_to_raster(target=norm_bands)
+    band_max = norm_bands.aggregate_spatial(
+        geometries=region,
+        reducer=lambda data: openeo_max(data, ignore_nodata=True),
+    ).vector_to_raster(target=norm_bands)
+    band_range = band_max - band_min
+    # Adding one only for a zero-width range reproduces the local
+    # ``zeros_like`` branch without an eager Python/NumPy conditional.
+    safe_range = band_range + (band_range == 0)
+    normed = (norm_bands - band_min) / safe_range
 
-    def select_band(name):
+    def select_band(cube, name):
         # ``DataCube.band`` enables a special client-side band-math mode that
         # cannot be combined with the aggregated statistic cubes above.
-        return s2_cube.filter_bands([name]).reduce_dimension(
+        return cube.filter_bands([name]).reduce_dimension(
             dimension="bands", reducer="first"
         )
 
-    nir = select_band("B08")
-    ndvi = select_band("NDVI")
-    sia = select_band("local_solar_incidence_angle")
-    idx6 = select_band("idx6")
-    shad_idx = select_band("SI")
-    evi = select_band("EVI")
+    nir_n = select_band(normed, "B08")
+    ndvi_n = select_band(normed, "NDVI")
+    idx6_n = select_band(normed, "idx6")
+    shad_idx_n = select_band(normed, "SI")
+    evi_n = select_band(normed, "EVI")
+    sia = select_band(s2_cube, "local_solar_incidence_angle")
 
     shadow_score = (
-        (normalize(idx6) + normalize(shad_idx))
-        / (normalize(ndvi) + normalize(evi) + normalize(nir) + 1e-6)
+        (idx6_n + shad_idx_n)
+        / (ndvi_n + evi_n + nir_n + 1e-6)
     )
 
     threshold = shadow_score.aggregate_spatial(
         geometries=region,
         reducer=lambda data: quantiles(
             data, probabilities=[0.85], ignore_nodata=True
-        )[0]
+        )
     ).vector_to_raster(target=shadow_score)
 
     curr_angle_valid = (sia >= 70) & (sia < 180)
     self_shadow = sia >= 90
-    spectral_shadow = shadow_score > threshold
+    # Comparing two cubes with ``>`` triggers a ``merge_cubes`` with a ``gt``
+    # overlap resolver, which the geopyspark backend does not support. Merging
+    # via ``subtract`` (supported) and then comparing to a scalar sidesteps this.
+    spectral_shadow = (shadow_score - threshold) > 0
     shadow = (spectral_shadow & curr_angle_valid) | self_shadow
 
     shadow = shadow.process_with_node(shadow.result_node(), metadata=sia.metadata)
@@ -220,7 +230,9 @@ def snowflake_inputs_cube(aoi, time_period, connection, cfg):
 
     return with_shadow_mask
 
+#%%
 
+#%%
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def run_openeo(cfg : DictConfig) -> None:
@@ -269,4 +281,8 @@ def snow_cover_fraction_cube(aoi,time_period , c, cfg ):
 
     
 if "__main__" == __name__:
+    import sys
+    # Strip Jupyter kernel args (e.g. --f=...kernel.json) so hydra's argparse
+    # doesn't choke when this file is executed inside an Interactive Window.
+    sys.argv = [sys.argv[0]]
     run_openeo()
