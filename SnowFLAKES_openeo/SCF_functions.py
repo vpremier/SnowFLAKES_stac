@@ -230,7 +230,7 @@ def SCF_dist_SV(data, scene_id, config, svm_model_filename, Nprocesses=8, overwr
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:
@@ -339,7 +339,7 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:
@@ -391,7 +391,6 @@ def mask_raster_with_glacier(scene_id, data, config, results_glacier):
 
     print(f"Modified raster saved at: {output_path}")
     return output_path
-
 
 
 

@@ -473,7 +473,7 @@ def get_pixels_ice(scene_id, data, config):
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:
@@ -629,7 +629,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     date_time, date = define_datetime(scene_id, config)
     
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:
@@ -913,7 +913,6 @@ def glacier_xgboost(model_path, data, no_data_mask, curr_aux_folder,
         
         
     
-
 
 
 

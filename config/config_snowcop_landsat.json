@@ -1,36 +1,25 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/AOI/Maipo.geojson",
-  "output_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area06/Landsat/L1-LE07-new",
-  "download_mode": "sentinelhub",
-  "remove_auxiliary": false,
-  "satellite": "Landsat-7",
-  "uncertainty": true,
   "date_start": "2024-03-16",
   "date_end": "2024-03-31",
-  "query_landsat": true,
-  "query_sentinel2": false,
-  "download_landsat": false,
-  "download_sentinel2": false,
+  "satellite": "Landsat-7",
   "max_cloudcover": 90,
   "landsat_satellite": [],
-  "s2_tile": null,
   "landsat_tile_list": [],
-  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
     "resolution": 50,
-    "no_data_value": "nan",
     "extent_target": [
       366000,
       6215000,
       428500,
       6340000
     ],
-    "epsg_target": 32719
+    "epsg_target": 32719,
+    "no_data_value": "nan"
   },
-  "overwrite": false,
-  "no_data_value": "nan",
+  "uncertainty": true,
+  "remove_auxiliary": false,
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
-  "exclude_tiles": null,
-  "simple_class": true
+  "overwrite": false
 }

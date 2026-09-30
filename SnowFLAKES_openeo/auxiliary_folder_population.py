@@ -605,7 +605,7 @@ def create_auxiliary_information(scene_id, data, config):
     date_time, date = define_datetime(scene_id, config)
 
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:
@@ -724,7 +724,6 @@ def create_auxiliary_information(scene_id, data, config):
     adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
     return True
-
 
 
 

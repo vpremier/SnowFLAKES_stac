@@ -70,7 +70,7 @@ def run_snowflakes(config, data, scene_id):
     date_time, date = define_datetime(scene_id, config)
 
     # No data value
-    no_data_value = config['no_data_value']
+    no_data_value = config['resampling_params']['no_data_value']
     if no_data_value is None or 'nan' in str(no_data_value).lower():
         no_data_value = np.nan
     else:

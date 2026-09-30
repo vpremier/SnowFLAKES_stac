@@ -233,7 +233,9 @@ def scene_valid_mask(data, config):
         if cached is not None:
             return cached
 
-    no_data_value = normalize_no_data_value(config.get("no_data_value"))
+    no_data_value = normalize_no_data_value(
+        config["resampling_params"]["no_data_value"]
+    )
     mask = valid_mask(data, no_data_value=no_data_value)
     config["_snowflakes_mask_data_id"] = data_id
     config["_snowflakes_valid_mask"] = mask
@@ -245,7 +247,7 @@ def scene_no_data_value(config):
     """Return the normalized nodata value used by the cached scene mask."""
     if "_snowflakes_no_data_value" not in config:
         config["_snowflakes_no_data_value"] = normalize_no_data_value(
-            config.get("no_data_value")
+            config["resampling_params"]["no_data_value"]
         )
     return config["_snowflakes_no_data_value"]
 

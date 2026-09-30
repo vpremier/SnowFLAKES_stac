@@ -1,37 +1,26 @@
 {
   "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/rofental_shp/rofental.shp",
-  "output_directory": "/mnt/CEPH_PROJECTS/FRAM3S/Kathi/daily_SCA_downscaling/Rofental_S3/Landsat9",
-  "download_mode": "cdse",
-  "remove_auxiliary": false,
-  "satellite": "Landsat-9",
   "date_start": "2021-05-07",
   "date_end": "2021-07-06",
-  "query_landsat": true,
-  "query_sentinel2": false,
-  "download_landsat": false,
-  "download_sentinel2": false,
+  "satellite": "Landsat-9",
   "max_cloudcover": 90,
   "landsat_satellite": [],
-  "s2_tile": null,
   "landsat_tile_list": [],
-  "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
     "resolution": 50,
-    "no_data_value": "nan",
     "extent_target": [
       630800,
       5180500,
       646800,
       5195500
     ],
-    "epsg_target": 25832
+    "epsg_target": 25832,
+    "no_data_value": "nan"
   },
-  "overwrite": false,
-  "no_data_value": "nan",
+  "uncertainty": true,
+  "remove_auxiliary": false,
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
-  "exclude_tiles": null,
-  "simple_class": true,
   "find_closest_model": true,
-  "uncertainty": true
+  "overwrite": false
 }
