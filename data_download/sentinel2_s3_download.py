@@ -22,7 +22,13 @@ def _product_id_and_tile(name):
 def _credentials(config):
     access = config.get("sentinel2_s3_access_key") or os.getenv("CDSE_S3_ACCESS_KEY")
     secret = config.get("sentinel2_s3_secret_key") or os.getenv("CDSE_S3_SECRET_KEY")
-    profile = config.get("sentinel2_s3_profile") or os.getenv("CDSE_S3_PROFILE")
+    # CDSE S3 always uses the dedicated boto3 profile unless explicitly
+    # overridden.  Do not silently fall back to the AWS ``default`` profile.
+    profile = (
+        config.get("sentinel2_s3_profile")
+        or os.getenv("CDSE_S3_PROFILE")
+        or "cdse"
+    )
     return access, secret, profile
 
 
@@ -80,6 +86,12 @@ def download_sentinel2_s3(products, outdir, config=None, return_status=False):
     if access and secret:
         client_kwargs.update(
             aws_access_key_id=access, aws_secret_access_key=secret
+        )
+    elif session.get_credentials() is None:
+        raise ValueError(
+            "No CDSE S3 credentials found. Configure the 'cdse' profile in "
+            "~/.aws/credentials or set CDSE_S3_ACCESS_KEY and "
+            "CDSE_S3_SECRET_KEY."
         )
     s3 = session.resource("s3", **client_kwargs)
 

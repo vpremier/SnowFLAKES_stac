@@ -24,6 +24,12 @@ import rasterio as rio
 from osgeo import gdal
 
 from loading.utils_stac import *
+
+
+def _numeric_nodata(value):
+    if value is None or "nan" in str(value).lower():
+        return np.nan
+    return float(value)
 from loading.load_stac import load_with_retry
 # from utils_stac import *
 
@@ -234,6 +240,7 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                             filter_by_geometry = True,
                             save = True, shp=None, exclude_tiles=None,
                             include_tiles=None):
+    na_value = _numeric_nodata(na_value)
     
     # out directory
     os.makedirs(outdir, exist_ok=True)
@@ -363,12 +370,14 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
            epsg=epsg_target,
            resolution=resolution,
            resampling=reproj_type,
+           fill_value=na_value,
            assets=list(bands.values()),
            xy_coords="center"
         )
     
         # Replace 0 with NaN
-        data = data.where(data != 0, np.nan)
+        data = data.where((data != 0) & (data != na_value), np.nan)
+        data.attrs["no_data_value"] = na_value
         
         # Group by day and compute mean
         data = data.groupby("time.day").mean(dim="time", skipna=True)
@@ -486,7 +495,7 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                 'dtype': 'float32',
                 'crs': dst_crs,
                 'transform': transform,
-                'nodata': np.nan,
+                'nodata': data.attrs.get('no_data_value', np.nan),
             }
             
             with rio.open(out_path, 'w', **profile) as dst:

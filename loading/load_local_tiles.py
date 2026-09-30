@@ -42,6 +42,12 @@ LANDSAT_BANDS = {
 }
 
 
+def _numeric_nodata(value):
+    if value is None or "nan" in str(value).lower():
+        return np.nan
+    return float(value)
+
+
 def _target_grid(extent, resolution):
     """Return the transform and shape for the configured output grid."""
     xmin, ymin, xmax, ymax = extent
@@ -94,9 +100,10 @@ def _union_extent(paths, epsg, resolution):
 
 
 def _read_on_grid(path, epsg, transform, height, width,
-                  resampling=Resampling.bilinear):
+                  resampling=Resampling.bilinear, no_data_value=np.nan):
     """Read one raster and reproject it using bilinear resampling by default."""
-    destination = np.full((height, width), np.nan, dtype="float32")
+    no_data_value = _numeric_nodata(no_data_value)
+    destination = np.full((height, width), no_data_value, dtype="float32")
     with rasterio.open(path) as source:
         reproject(
             source=rasterio.band(source, 1),
@@ -106,9 +113,11 @@ def _read_on_grid(path, epsg, transform, height, width,
             src_nodata=source.nodata or 0,
             dst_transform=transform,
             dst_crs=f"EPSG:{epsg}",
-            dst_nodata=np.nan,
+            dst_nodata=no_data_value,
             resampling=resampling,
         )
+    if not np.isnan(no_data_value):
+        destination[destination == no_data_value] = np.nan
     return destination
 
 
@@ -315,7 +324,8 @@ def _sentinel2_scene_dir(outdir, tile, product_id):
 
 
 def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
-                         exclude_tiles=None, merge=True, bands=None):
+                         exclude_tiles=None, merge=True, bands=None,
+                         no_data_value=np.nan):
     """Load S2DL products for one date and merge their MGRS tiles."""
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     selected = products[
@@ -364,7 +374,8 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
             band_path = _sentinel2_band_path(scene_dir, band)
             print(f"    Tile {tile}, image {product_id}")
             values = _read_on_grid(
-                band_path, epsg, transform, height, width
+                band_path, epsg, transform, height, width,
+                no_data_value=no_data_value,
             )
             baseline = int(parts[3].removeprefix("N"))
             offset = -1000 if baseline >= 400 else 0
@@ -468,7 +479,7 @@ def _calibrate_landsat(values, band, sensor, metadata):
 
 
 def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
-                       exclude_tiles=None, merge=True):
+                       exclude_tiles=None, merge=True, no_data_value=np.nan):
     """Load downloaded USGS tar archives for one date and merge WRS tiles."""
     date_token = pd.Timestamp(date).strftime("%Y%m%d")
     names = products["Name"].astype(str)
@@ -524,6 +535,7 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
                 transform,
                 height,
                 width,
+                no_data_value=no_data_value,
             )
             mosaic = _combine_arrays(mosaic, values, "mean")
         # Match the STAC Landsat path: reduce overlapping raw values first,

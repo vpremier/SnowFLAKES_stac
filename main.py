@@ -13,7 +13,7 @@ are written.
 import argparse
 import gc
 import json
-import os
+import numpy as np
 import shutil
 import sys
 import tarfile
@@ -67,6 +67,39 @@ def _download_flag(value, allowed, name):
         choices = ", ".join(sorted(allowed | {"false"}))
         raise ValueError(f"{name} must be one of: {choices}")
     return normalized
+
+
+def _overwrite_mode(config):
+    """Normalize the single staged-overwrite configuration value."""
+    value = config.get("overwrite", False)
+    if value is True:
+        return "query"
+    if value is False or value is None:
+        return "none"
+    mode = str(value).strip().lower().replace("_", "-")
+    aliases = {
+        "false": "none", "none": "none", "off": "none", "0": "none",
+        "query": "query", "crop": "crop", "rgb": "rgb",
+        "snowflakes": "snowflakes", "snow-flakes": "snowflakes",
+    }
+    if mode not in aliases:
+        raise ValueError(
+            "overwrite must be false, QUERY, CROP, RGB, or SnowFLAKES"
+        )
+    return aliases[mode]
+
+
+def _overwrite_at_least(config, stage):
+    order = {"none": 0, "snowflakes": 1, "rgb": 2, "crop": 3, "query": 4}
+    return order[_overwrite_mode(config)] >= order[stage]
+
+
+def _resampling_no_data_value(config):
+    """Return the nodata value configured for resampling outputs."""
+    value = config["resampling_params"]["no_data_value"]
+    if value is None or "nan" in str(value).lower():
+        return float("nan")
+    return float(value)
 
 
 def _satellite_value(config):
@@ -191,9 +224,12 @@ def _remove_processed(
     resolution=None,
     epsg=None,
     extent=None,
+    force=False,
 ):
     """Exclude product groups having a complete cropped prepared cache."""
     if products.empty:
+        return products
+    if force:
         return products
     names = products["Name"].astype(str)
     if sensor == "Sentinel-2":
@@ -396,10 +432,12 @@ def _prepared_scene_id(products, sensor, date, merge, exclude_tiles=None):
 
 
 def _remove_cached_tiles(
-    products, study_dir, sensor, resolution=None, epsg=None
+    products, study_dir, sensor, resolution=None, epsg=None, force=False
 ):
     """Exclude uncropped products having a complete per-tile cache."""
     if products.empty:
+        return products
+    if force:
         return products
     keep = []
     for _, row in products.iterrows():
@@ -423,7 +461,9 @@ def _remove_cached_tiles(
     return products[pd.Series(keep, index=products.index)].reset_index(drop=True)
 
 
-def _save_bands(data, output_dir, scene_id):
+def _save_bands(
+    data, output_dir, scene_id, overwrite=False, no_data_value=np.nan
+):
     import rasterio
 
     output_dir = Path(output_dir) / scene_id
@@ -437,11 +477,13 @@ def _save_bands(data, output_dir, scene_id):
             else str(band)
         )
         path = output_dir / f"{scene_id}_{band_token}_toa.tif"
-        if path.exists():
+        if path.exists() and not overwrite:
             print(f"  Prepared band already exists, skipping: {path.name}")
             continue
         print(f"  Saving prepared band {band} as {band_token}: {path}")
         values = data.sel(band=band).squeeze().values.astype("float32")
+        if not np.isnan(no_data_value):
+            values = np.where(np.isfinite(values), values, no_data_value)
         with rasterio.open(
             path,
             "w",
@@ -452,7 +494,7 @@ def _save_bands(data, output_dir, scene_id):
             dtype="float32",
             crs=crs,
             transform=transform,
-            nodata=float("nan"),
+            nodata=no_data_value,
         ) as destination:
             destination.write(values, 1)
 
@@ -638,10 +680,10 @@ def _load_stac_date(
             sensor,
             date,
             merge=True,
-            exclude_tiles=config.get("exclude_tiles"),
+            exclude_tiles=None,
         )
         if scene_id is not None:
-            if prepared_grid_matches(
+            if not _overwrite_at_least(config, "crop") and prepared_grid_matches(
                 prepared_root,
                 scene_id,
                 params["resolution"],
@@ -659,11 +701,15 @@ def _load_stac_date(
         "extent_target": params["extent_target"],
         "epsg_target": params["epsg_target"],
         "save": save,
+        "ow": _overwrite_at_least(config, "crop"),
+        "na_value": _resampling_no_data_value(config),
         "shp": config["shapefile"],
-        "exclude_tiles": config.get("exclude_tiles"),
+        "exclude_tiles": None,
     }
     if sensor != "Sentinel-2":
         common["include_tiles"] = config.get("landsat_tile_list")
+    else:
+        common["include_tiles"] = config.get("sentinel_tile_list")
     if sensor == "Sentinel-2":
         from loading import load_stac
 
@@ -710,15 +756,19 @@ def _load_raw_date(
         sensor,
         date,
         merge,
-        exclude_tiles=config.get("exclude_tiles"),
+        exclude_tiles=None,
     )
     target_extent = params.get("extent_target") if crop else None
-    if prepared_scene_id is not None and prepared_grid_matches(
+    if (
+        not _overwrite_at_least(config, "crop")
+        and prepared_scene_id is not None
+        and prepared_grid_matches(
         prepared_dir,
         prepared_scene_id,
         params.get("resolution"),
         params.get("epsg_target"),
         target_extent,
+        )
     ):
         cached = load_prepared_bands(
             prepared_dir, prepared_scene_id, date
@@ -744,8 +794,9 @@ def _load_raw_date(
             extent,
             resolution,
             epsg,
-            config.get("exclude_tiles"),
+            None,
             merge=merge,
+            no_data_value=_resampling_no_data_value(config),
         )
     else:
         raw_dir = _working_directory(config) / "RAW"
@@ -756,11 +807,18 @@ def _load_raw_date(
             extent,
             resolution,
             epsg,
-            config.get("exclude_tiles"),
+            None,
             merge=merge,
+            no_data_value=_resampling_no_data_value(config),
         )
     if save and data is not None:
-        _save_bands(data, prepared_dir, scene_id)
+        _save_bands(
+            data,
+            prepared_dir,
+            scene_id,
+            overwrite=_overwrite_at_least(config, "crop"),
+            no_data_value=_resampling_no_data_value(config),
+        )
     return data, scene_id
 
 
@@ -813,7 +871,8 @@ def _save_composites(
     )
     composites = []
     if save_rgb:
-        composites.append(("RGB", rgb_bands, "rgb_10m"))
+        rgb_filename = "rgb_10m" if sensor == "Sentinel-2" else "rgb_30m"
+        composites.append(("RGB", rgb_bands, rgb_filename))
     if save_fcc:
         composites.append(("false-color", false_color_bands, "fcc"))
 
@@ -829,7 +888,24 @@ def _save_composites(
         # Composites are persistent first-pass products.  Never replace them
         # during a later SnowFLAKES-only run, even if the general overwrite
         # option is enabled.
-        if path.exists():
+        existing_matches_grid = True
+        if path.exists() and label == "RGB":
+            try:
+                import rasterio
+
+                expected = 10 if sensor == "Sentinel-2" else 30
+                with rasterio.open(path) as source:
+                    existing_matches_grid = np.allclose(
+                        (abs(source.transform.a), abs(source.transform.e)),
+                        (expected, expected),
+                    )
+            except (OSError, ValueError, TypeError):
+                existing_matches_grid = False
+        if (
+            path.exists()
+            and existing_matches_grid
+            and not _overwrite_at_least(config, "rgb")
+        ):
             print(f"  {label.capitalize()} composite exists, skipping: {path}")
             continue
         print(
@@ -837,7 +913,7 @@ def _save_composites(
             f"{', '.join(bands)}"
         )
         composite_data = (
-            rgb_data if filename == "rgb_10m" and rgb_data is not None else data
+            rgb_data if label == "RGB" and rgb_data is not None else data
         )
         save_false_color(str(scene_dir), bands, composite_data, filename)
 
@@ -853,12 +929,33 @@ def _save_rgb_enabled(config):
     )
 
 
-def _rgb_cache_exists(config, output_dir, scene_id):
-    return (
+def _rgb_cache_exists(config, output_dir, scene_id, sensor=None):
+    filename = "rgb_10m" if sensor in (None, "Sentinel-2") else "rgb_30m"
+    path = Path(output_dir) / scene_id / f"{filename}.tif"
+    if not (
         _save_rgb_enabled(config)
-        and not bool(config.get("overwrite", False))
-        and (Path(output_dir) / scene_id / "rgb_10m.tif").is_file()
-    )
+        and not _overwrite_at_least(config, "rgb")
+        and path.is_file()
+    ):
+        return False
+    # Do not treat a stale/misnamed composite as a valid cache.  This is
+    # important for Landsat, whose RGB product must be on the native 30 m
+    # grid even when the analysis grid is configured at 50 m.
+    try:
+        import rasterio
+
+        expected = 10 if sensor in (None, "Sentinel-2") else 30
+        with rasterio.open(path) as source:
+            actual = (abs(source.transform.a), abs(source.transform.e))
+        if not np.allclose(actual, (expected, expected)):
+            print(
+                f"Ignoring cached {filename} with pixel size {actual}; "
+                f"expected {expected} m: {path}"
+            )
+            return False
+    except (OSError, ValueError, TypeError):
+        return False
+    return True
 
 
 def _rgb_uses_analysis_data(config, sensor):
@@ -866,6 +963,33 @@ def _rgb_uses_analysis_data(config, sensor):
     return (
         sensor == "Sentinel-2"
         and config.get("resampling_params", {}).get("resolution") == 10
+    )
+
+
+def _load_landsat_rgb30(
+    config, products, date, crop, merge=True, stac=False, platform=None
+):
+    """Load Landsat RGB bands on the native 30 m grid for visualization."""
+    if not _save_rgb_enabled(config):
+        return None, None
+    rgb_config = config.copy()
+    rgb_config["resampling_params"] = dict(config.get("resampling_params", {}))
+    rgb_config["resampling_params"]["resolution"] = 30
+    rgb_config["SAVE"] = False
+    rgb_config["save"] = False
+    if stac:
+        print(f"Loading Landsat RGB bands at 30 m from STAC for {date}")
+        return _load_stac_date(
+            rgb_config,
+            "Landsat",
+            date,
+            False,
+            platform=platform,
+            products=products,
+        )
+    print(f"Loading Landsat RGB bands at 30 m from raw data for {date}")
+    return _load_raw_date(
+        rgb_config, "Landsat", products, date, crop, False, merge=merge
     )
 
 
@@ -888,9 +1012,10 @@ def _load_raw_rgb10(config, products, date, crop, merge=True, save_dir=None):
         extent,
         10,
         params["epsg_target"],
-        config.get("exclude_tiles"),
+        None,
         merge=merge,
         bands=["B04", "B03", "B02"],
+        no_data_value=_resampling_no_data_value(config),
     )
 
 
@@ -911,8 +1036,10 @@ def _load_stac_rgb10(config, date):
         epsg_target=params["epsg_target"],
         save=False,
         shp=config["shapefile"],
-        exclude_tiles=config.get("exclude_tiles"),
+        exclude_tiles=None,
+        include_tiles=config.get("sentinel_tile_list"),
         bands=["B04", "B03", "B02"],
+        na_value=_resampling_no_data_value(config),
     )
 
 
@@ -928,6 +1055,10 @@ def _run_or_collect(
 
         scene_config = config.copy()
         scene_config["output_directory"] = str(output_dir)
+        scene_config["overwrite"] = _overwrite_at_least(config, "crop")
+        scene_config["_overwrite_snowflakes"] = _overwrite_at_least(
+            config, "snowflakes"
+        )
         run_snowflakes(scene_config, data, scene_id)
     else:
         collected.append((sensor, date, scene_id, data))
@@ -945,7 +1076,9 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
             if _rgb_uses_analysis_data(config, "Sentinel-2"):
                 print("Reusing 10 m analysis DataArray for RGB; no second load")
                 rgb_data = data
-            elif not _rgb_cache_exists(config, snowflakes_dir, scene_id):
+            elif not _rgb_cache_exists(
+                config, snowflakes_dir, scene_id, "Sentinel-2"
+            ):
                 rgb_data, _ = _load_raw_rgb10(
                     config, sentinel2, date, True, merge=True
                 )
@@ -983,6 +1116,13 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
                 config, "Landsat", sensor_products, date, True, save
             )
             if data is not None:
+                rgb_data = None
+                if not _rgb_cache_exists(
+                    config, snowflakes_dir, scene_id, "Landsat"
+                ):
+                    rgb_data, _ = _load_landsat_rgb30(
+                        config, sensor_products, date, True, merge=True
+                    )
                 _run_or_collect(
                     config,
                     "Landsat",
@@ -991,9 +1131,12 @@ def _process_cropped_raw(config, study_dir, sentinel2, landsat, save, collected)
                     scene_id,
                     snowflakes_dir,
                     collected,
+                    rgb_data=rgb_data,
                 )
                 if config.get("run_snowflakes", True):
                     del data
+                    if rgb_data is not None:
+                        del rgb_data
                     gc.collect()
 
 
@@ -1067,16 +1210,25 @@ def _process_raw_tiles(config, study_dir, sentinel2, landsat, save, collected):
                                 "no second load"
                             )
                             rgb_data = data
-                        elif sensor == "Sentinel-2" and not _rgb_cache_exists(
-                            config, snowflakes_dir, scene_id
+                        elif not _rgb_cache_exists(
+                            config, snowflakes_dir, scene_id, sensor
                         ):
-                            rgb_data, _ = _load_raw_rgb10(
-                                config,
-                                selected,
-                                date,
-                                False,
-                                merge=False,
-                            )
+                            if sensor == "Sentinel-2":
+                                rgb_data, _ = _load_raw_rgb10(
+                                    config,
+                                    selected,
+                                    date,
+                                    False,
+                                    merge=False,
+                                )
+                            else:
+                                rgb_data, _ = _load_landsat_rgb30(
+                                    config,
+                                    selected,
+                                    date,
+                                    False,
+                                    merge=False,
+                                )
                         _run_or_collect(
                             config,
                             sensor,
@@ -1099,6 +1251,8 @@ def run(config_path):
     load_dotenv(Path(config_path).resolve().parent / ".env")
     with open(config_path, "r", encoding="utf-8") as file:
         config = json.load(file)
+    overwrite_mode = _overwrite_mode(config)
+    print(f"Overwrite mode: {overwrite_mode}")
 
     legacy_mode = str(
         _value(config, "DOWNLOAD_MODE", "download_mode", "STAC-API")
@@ -1229,6 +1383,26 @@ def run(config_path):
         if satellite in {"landsat", "both"}
         else pd.DataFrame(columns=["Name"])
     )
+    configured_sentinel_tiles = config.get("sentinel_tile_list") or []
+    if configured_sentinel_tiles and not sentinel2.empty:
+        if isinstance(configured_sentinel_tiles, str):
+            configured_sentinel_tiles = configured_sentinel_tiles.split(",")
+        selected_sentinel_tiles = {
+            str(tile).strip().upper().replace("_", "")
+            for tile in configured_sentinel_tiles
+            if str(tile).strip()
+        }
+        sentinel_tiles = sentinel2["tile"].astype(str).str.upper().str.replace(
+            "_", "", regex=False
+        )
+        before = len(sentinel2)
+        sentinel2 = sentinel2[
+            sentinel_tiles.isin(selected_sentinel_tiles)
+        ].reset_index(drop=True)
+        print(
+            f"Selected {len(sentinel2)} of {before} Sentinel-2 scene(s) "
+            f"for tile list: {', '.join(sorted(selected_sentinel_tiles))}"
+        )
     # ``landsat_tile_list`` is an inclusion list.  Apply it to the query
     # products before either M2M downloading or Landsat STAC loading.
     configured_landsat_tiles = config.get("landsat_tile_list") or []
@@ -1304,19 +1478,21 @@ def run(config_path):
                     sentinel_download_products,
                     study_dir,
                     "Sentinel-2",
-                    exclude_tiles=config.get("exclude_tiles"),
+                    exclude_tiles=None,
                     resolution=params["resolution"],
                     epsg=params["epsg_target"],
                     extent=params["extent_target"],
+                    force=_overwrite_at_least(config, "crop"),
                 )
             landsat_downloads = _remove_processed(
                 landsat_download_products,
                 study_dir,
                 "Landsat",
-                exclude_tiles=config.get("exclude_tiles"),
+                exclude_tiles=None,
                 resolution=params["resolution"],
                 epsg=params["epsg_target"],
                 extent=params["extent_target"],
+                force=_overwrite_at_least(config, "crop"),
             )
         else:
             if _save_rgb_enabled(config) and not sentinel_download_products.empty:
@@ -1328,6 +1504,7 @@ def run(config_path):
                     "Sentinel-2",
                     resolution=params["resolution"],
                     epsg=params["epsg_target"],
+                    force=_overwrite_at_least(config, "crop"),
                 )
             landsat_downloads = _remove_cached_tiles(
                 landsat_download_products,
@@ -1335,6 +1512,7 @@ def run(config_path):
                 "Landsat",
                 resolution=params["resolution"],
                 epsg=params["epsg_target"],
+                force=_overwrite_at_least(config, "crop"),
             )
         invalid_sentinel, invalid_landsat = _download_raw(
             config,
@@ -1378,7 +1556,9 @@ def run(config_path):
                 if _rgb_uses_analysis_data(config, "Sentinel-2"):
                     print("Reusing 10 m analysis DataArray for RGB; no second STAC load")
                     rgb_data = data
-                elif not _rgb_cache_exists(config, snowflakes_dir, scene_id):
+                elif not _rgb_cache_exists(
+                    config, snowflakes_dir, scene_id, "Sentinel-2"
+                ):
                     rgb_data, _ = _load_stac_rgb10(config, date)
                 _run_or_collect(
                     config,
@@ -1420,6 +1600,19 @@ def run(config_path):
                     products=sensor_products,
                 )
                 if data is not None:
+                    rgb_data = None
+                    if not _rgb_cache_exists(
+                        config, snowflakes_dir, scene_id, "Landsat"
+                    ):
+                        rgb_data, _ = _load_landsat_rgb30(
+                            config,
+                            sensor_products,
+                            date,
+                            True,
+                            merge=True,
+                            stac=True,
+                            platform=sensor_code,
+                        )
                     _run_or_collect(
                         config,
                         "Landsat",
@@ -1428,9 +1621,12 @@ def run(config_path):
                         scene_id,
                         snowflakes_dir,
                         arrays,
+                        rgb_data=rgb_data,
                     )
                     if config.get("run_snowflakes", True):
                         del data
+                        if rgb_data is not None:
+                            del rgb_data
                         gc.collect()
     if raw_sentinel or raw_landsat:
         raw_sentinel_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]

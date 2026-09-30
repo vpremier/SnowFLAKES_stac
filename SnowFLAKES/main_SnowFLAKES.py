@@ -63,7 +63,7 @@ def run_snowflakes(config, data, scene_id):
     closest_models_file = create_log(wd, '00_closest_models_used')
     
     # overwrite
-    ow = config['overwrite']
+    ow = config.get('_overwrite_snowflakes', config['overwrite'])
     
     # uncertainty
     unc = config['uncertainty']

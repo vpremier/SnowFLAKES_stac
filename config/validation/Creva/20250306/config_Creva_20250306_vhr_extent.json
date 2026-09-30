@@ -13,6 +13,7 @@
   "SAVE": true,
   "resampling_params": {
     "resolution": 20,
+    "no_data_value": "nan",
     "extent_target": [
       356260,
       5075660,

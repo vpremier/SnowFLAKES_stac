@@ -115,21 +115,64 @@ def _normalise_landsat_satellites(values):
 def _filter_sentinel2(products, skip_tiles):
     if products.empty or not skip_tiles:
         return products
-    return products[~products["tile"].isin(skip_tiles)].reset_index(drop=True)
+    print(
+        "Filtering Sentinel-2, excluding tile(s): "
+        + ", ".join(sorted(skip_tiles))
+    )
+    filtered = products[~products["tile"].isin(skip_tiles)].reset_index(drop=True)
+    print(f"  Kept {len(filtered)} of {len(products)} Sentinel-2 scene(s)")
+    return filtered
+
+
+def _include_sentinel2(products, tiles):
+    if products.empty or not tiles:
+        return products
+    print(
+        "Filtering Sentinel-2 for tile(s): "
+        + ", ".join(sorted(tiles))
+    )
+    filtered = products[products["tile"].isin(tiles)].reset_index(drop=True)
+    print(f"  Kept {len(filtered)} of {len(products)} Sentinel-2 scene(s)")
+    return filtered
 
 
 def _filter_landsat(products, skip_pathrows):
     if products.empty or not skip_pathrows:
         return products
+    print(
+        "Filtering Landsat path/row(s), excluding: "
+        + ", ".join(sorted(skip_pathrows))
+    )
     pathrows = products["Name"].astype(str).str.split("_").str[2]
-    return products[~pathrows.isin(skip_pathrows)].reset_index(drop=True)
+    filtered = products[~pathrows.isin(skip_pathrows)].reset_index(drop=True)
+    print(f"  Kept {len(filtered)} of {len(products)} Landsat scene(s)")
+    return filtered
+
+
+def _include_landsat(products, pathrows):
+    if products.empty or not pathrows:
+        return products
+    print(
+        "Filtering Landsat for path/row(s): "
+        + ", ".join(sorted(pathrows))
+    )
+    available = products["Name"].astype(str).str.split("_").str[2]
+    filtered = products[available.isin(pathrows)].reset_index(drop=True)
+    print(f"  Kept {len(filtered)} of {len(products)} Landsat scene(s)")
+    return filtered
 
 
 def _filter_landsat_satellites(products, satellites):
     if products.empty or not satellites:
         return products
+    print(
+        "Filtering Landsat for mission(s): "
+        + ", ".join(sorted(satellites))
+    )
     missions = products["Name"].astype(str).str.split("_").str[0]
-    return products[missions.isin(satellites)].reset_index(drop=True)
+    filtered = products[missions.isin(satellites)].reset_index(drop=True)
+    print(f"  Kept {len(filtered)} of {len(products)} Landsat scene(s)")
+    return filtered
 
 
 def _csv_path(query_dir, satellite, date_start, date_end):
@@ -184,20 +227,38 @@ def query_period(
     max_cloudcover,
     satellite,
     skip_sentinel2_tiles=None,
+    include_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
+    include_landsat_pathrows=None,
     landsat_satellites=None,
     download_sentinel="google",
+    overwrite=False,
 ):
     """Query one period, skipping each CSV that already exists."""
     outputs = []
     skip_sentinel2_tiles = skip_sentinel2_tiles or set()
+    include_sentinel2_tiles = include_sentinel2_tiles or set()
     skip_landsat_pathrows = skip_landsat_pathrows or set()
+    include_landsat_pathrows = include_landsat_pathrows or set()
     landsat_satellites = landsat_satellites or list(LANDSAT_CODES)
 
     if satellite in ("sentinel2", "both"):
         output = _csv_path(query_dir, "Sentinel2", date_start, date_end)
-        if _existing_sentinel2_query_is_compatible(output, download_sentinel):
+        if not overwrite and _existing_sentinel2_query_is_compatible(output, download_sentinel):
             print(f"Skipping existing query: {output}")
+            if include_sentinel2_tiles:
+                try:
+                    cached = pd.read_csv(output)
+                    cached = _include_sentinel2(
+                        cached, include_sentinel2_tiles
+                    )
+                    cached.to_csv(output, index=False)
+                    print(
+                        f"Filtered cached Sentinel-2 query to "
+                        f"{len(cached)} scene(s): {output}"
+                    )
+                except pd.errors.EmptyDataError:
+                    pass
             outputs.append(output)
         else:
             if download_sentinel == "google":
@@ -229,13 +290,14 @@ def query_period(
                     "DOWNLOAD_SENTINEL must be Google, OData, or S3 for queries"
                 )
             products = _filter_sentinel2(products, skip_sentinel2_tiles)
+            products = _include_sentinel2(products, include_sentinel2_tiles)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Sentinel-2 scenes: {output}")
             outputs.append(output)
 
     if satellite in ("landsat", "both"):
         output = _csv_path(query_dir, "Landsat", date_start, date_end)
-        if output.exists():
+        if output.exists() and not overwrite:
             print(f"Skipping existing query: {output}")
             if landsat_satellites:
                 try:
@@ -248,6 +310,15 @@ def query_period(
                         f"Filtered cached Landsat query to "
                         f"{len(cached)} scene(s): {output}"
                     )
+                except pd.errors.EmptyDataError:
+                    pass
+            if include_landsat_pathrows:
+                try:
+                    cached = pd.read_csv(output)
+                    cached = _include_landsat(
+                        cached, include_landsat_pathrows
+                    )
+                    cached.to_csv(output, index=False)
                 except pd.errors.EmptyDataError:
                     pass
             outputs.append(output)
@@ -273,6 +344,9 @@ def query_period(
             products = _filter_landsat_satellites(
                 products, landsat_satellites
             )
+            products = _include_landsat(
+                products, include_landsat_pathrows
+            )
             products = _filter_landsat(products, skip_landsat_pathrows)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Landsat scenes: {output}")
@@ -290,9 +364,12 @@ def run_queries(
     max_cloudcover=90,
     satellite=None,
     skip_sentinel2_tiles=None,
+    include_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
+    include_landsat_pathrows=None,
     landsat_satellites=None,
     download_sentinel="google",
+    overwrite=False,
 ):
     """Create monthly query CSV files beneath ``<work>/<study>/QUERY``."""
     aoi = Path(aoi)
@@ -317,7 +394,11 @@ def run_queries(
     query_dir.mkdir(parents=True, exist_ok=True)
     periods = month_ranges(date_start, date_end)
     skip_sentinel2_tiles = _normalise_sentinel_tiles(skip_sentinel2_tiles)
+    include_sentinel2_tiles = _normalise_sentinel_tiles(include_sentinel2_tiles)
     skip_landsat_pathrows = _normalise_landsat_tiles(skip_landsat_pathrows)
+    include_landsat_pathrows = _normalise_landsat_tiles(
+        include_landsat_pathrows
+    )
     landsat_satellites = _normalise_landsat_satellites(landsat_satellites or [])
     landsat_satellites = landsat_satellites or list(LANDSAT_CODES)
 
@@ -332,9 +413,12 @@ def run_queries(
                 max_cloudcover,
                 satellite,
                 skip_sentinel2_tiles,
+                include_sentinel2_tiles,
                 skip_landsat_pathrows,
+                include_landsat_pathrows,
                 landsat_satellites,
                 download_sentinel,
+                overwrite,
             )
         )
     return outputs
@@ -448,17 +532,19 @@ def _run_from_config(config_path):
             config,
             "skip_sentinel2_tiles",
             "s2_tile_skip",
-            "exclude_tiles",
             default=[],
         ),
+        include_sentinel2_tiles=config.get("sentinel_tile_list") or [],
         skip_landsat_pathrows=_config_value(
             config,
             "skip_landsat_pathrows",
             "landsat_tile_skip",
             default=[],
         ),
+        include_landsat_pathrows=config.get("landsat_tile_list") or [],
         landsat_satellites=config.get("landsat_satellite") or [],
         download_sentinel=_configured_sentinel_source(config),
+        overwrite=str(config.get("overwrite", "")).strip().lower() == "query",
     )
 
 

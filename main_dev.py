@@ -48,6 +48,7 @@ def run_workflow(date_start, date_end, config_path):
     resolution = config["resampling_params"]["resolution"]
     extent_target = config["resampling_params"]["extent_target"]
     epsg_target = config["resampling_params"]["epsg_target"]
+    no_data_value = config["resampling_params"]["no_data_value"]
     # bbox = get_shape_extent(shp, epsg=32719, outres =500)
     
     
@@ -92,9 +93,11 @@ def run_workflow(date_start, date_end, config_path):
         date_end=config["date_end"],
         max_cloudcover=float(config.get("max_cloudcover", 90)),
         satellite=query_satellite,
-        skip_sentinel2_tiles=config.get("exclude_tiles") or [],
+        include_sentinel2_tiles=config.get("sentinel_tile_list") or [],
+        include_landsat_pathrows=config.get("landsat_tile_list") or [],
         landsat_satellites=config.get("landsat_satellite") or [],
         download_sentinel=sentinel_source,
+        overwrite=str(config.get("overwrite", "")).strip().lower() == "query",
     )
 
     outdir = config["output_directory"]
@@ -128,8 +131,6 @@ def run_workflow(date_start, date_end, config_path):
     
     files = [f.split('.')[0] for f in data_df['Name'].to_list()]
     
-    if not config.get('simple_class', False):
-        remove_glaciers(outdir)
     
     dates_to_process = get_dates_to_process(files, config)    
                                 
@@ -172,7 +173,9 @@ def run_workflow(date_start, date_end, config_path):
                         "epsg_target": epsg_target,
                         "save": False,
                         "shp": config["shapefile"],
-                        "exclude_tiles": config["exclude_tiles"],
+                        "exclude_tiles": None,
+                        "include_tiles": config.get("sentinel_tile_list"),
+                        "na_value": no_data_value,
                     }
 
                     if download_mode == "sentinelhub":
@@ -216,7 +219,8 @@ def run_workflow(date_start, date_end, config_path):
                                                                           save = False,
                                                                           platform = platform_name,
                                                                           shp=config['shapefile'],
-                                                                          exclude_tiles=config['exclude_tiles'])
+                                                                          exclude_tiles=None,
+                                                                          na_value=no_data_value)
                     
                 
                 if scene_id is None:

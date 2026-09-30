@@ -31,6 +31,12 @@ from loading.utils_stac import *
 # from utils_stac import *
 
 
+def _numeric_nodata(value):
+    if value is None or "nan" in str(value).lower():
+        return np.nan
+    return float(value)
+
+
 
 # clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01
 # clms_urban-atlas_street-tree-layer_europe_V005ha_vector_static_v01
@@ -85,7 +91,7 @@ def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="to
             "dtype": "float32",
             "crs": crs,
             "transform": transform,
-            "nodata": np.nan,
+            "nodata": data.attrs.get("no_data_value", np.nan),
         }
         with rio.open(out_path, "w", **profile) as destination:
             destination.write(band_data, 1)
@@ -428,9 +434,10 @@ def convert_sentinel2_bands(outdir,
                             max_cc = 90,
                             idList = [],
                             filter_by_geometry = True,
-                            save = True,
+                            save = True, 
                             shp=None,
                             exclude_tiles=None,
+                            include_tiles=None,
                             bands=None):
     """
     Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
@@ -500,6 +507,7 @@ def convert_sentinel2_bands(outdir,
     """
     
     
+    na_value = _numeric_nodata(na_value)
     # out directory
     os.makedirs(outdir, exist_ok=True)
 
@@ -635,6 +643,31 @@ def convert_sentinel2_bands(outdir,
         items = filtered_items
         print(f"Number of items after exclusion: {len(items)}")
 
+    if include_tiles:
+        included_tiles = {
+            str(tile).strip().upper().removeprefix("MGRS-")
+            for tile in include_tiles
+        }
+        filtered_items = [
+            item for item in items
+            if (
+                str(item.get("properties", {}).get("grid:code", ""))
+                .upper().removeprefix("MGRS-") in included_tiles
+                or (
+                    len(str(item.get("id", "")).split("_")) >= 6
+                    and str(item["id"]).split("_")[5].upper() in included_tiles
+                )
+            )
+        ]
+        print(
+            f"Filtering Sentinel-2 STAC items for tile(s): "
+            f"{', '.join(sorted(included_tiles))}"
+        )
+        print(
+            f"Kept {len(filtered_items)} of {len(items)} Sentinel-2 STAC item(s)"
+        )
+        items = filtered_items
+
 
     if len(items) == 0:
 
@@ -683,6 +716,7 @@ def convert_sentinel2_bands(outdir,
             resolution=resolution,
             assets=bands,
             resampling=reproj_type,
+            fill_value=na_value,
             xy_coords="center",
             gdal_env=stackstac.DEFAULT_GDAL_ENV.updated(
                  {
@@ -696,7 +730,8 @@ def convert_sentinel2_bands(outdir,
              )
     
         # Replace 0 with NaN
-        data = data.where(data != 0, np.nan)
+        data = data.where((data != 0) & (data != na_value), np.nan)
+        data.attrs["no_data_value"] = na_value
         
         # Group by day and compute mean
         data = data.groupby("time.day").max(dim="time", skipna=True)

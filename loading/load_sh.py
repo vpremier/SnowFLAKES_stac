@@ -28,6 +28,12 @@ from sentinelhub import (
 )
 import pystac_client
 from loading.sh_datacube import load
+
+
+def _numeric_nodata(value):
+    if value is None or "nan" in str(value).lower():
+        return np.nan
+    return float(value)
 from shapely.geometry import mapping
 
 from loading.utils_stac import (open_image, get_bbox_wgs84)
@@ -183,7 +189,7 @@ def convert_sentinel2_bands(outdir,
                             shp=None,
                             exclude_tiles=None,
                             bands=None):
-  
+    na_value = _numeric_nodata(na_value)
     
     
     # out directory
@@ -419,7 +425,7 @@ def convert_sentinel2_bands(outdir,
                 shape=(target_height, target_width),
                 transform=target_transform,
                 resampling=reproj_type,
-                nodata=np.nan,
+                nodata=na_value,
             )
 
             expected_bounds = (xmin, ymin, xmax, ymax)
@@ -484,7 +490,7 @@ def convert_sentinel2_bands(outdir,
                 'dtype': 'float32',
                 'crs': dst_crs,
                 'transform': transform,
-                'nodata': np.nan,
+                'nodata': data.attrs.get('no_data_value', na_value),
             }
             
             with rio.open(out_path, 'w', **profile) as dst:

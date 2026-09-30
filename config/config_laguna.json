@@ -18,6 +18,7 @@
   "s2List_path": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test/download_sentinel2.csv",
   "resampling_params": {
     "resolution": 20,
+    "no_data_value": "nan",
     "extent_target": [
       393500,
       6271000,
