@@ -1247,6 +1247,30 @@ def run(config_path):
             f"Selected {len(landsat)} of {before} Landsat scene(s) for "
             f"path/row list: {', '.join(sorted(landsat_tiles))}"
         )
+    configured_missions = config.get("landsat_satellite") or []
+    if configured_missions and not landsat.empty:
+        mission_aliases = {
+            "lt05": "LT05", "landsat-5": "LT05", "landsat5": "LT05",
+            "le07": "LE07", "landsat-7": "LE07", "landsat7": "LE07",
+            "lc08": "LC08", "landsat-8": "LC08", "landsat8": "LC08",
+            "lc09": "LC09", "landsat-9": "LC09", "landsat9": "LC09",
+        }
+        selected_missions = {
+            mission_aliases.get(str(value).strip().lower())
+            for value in (configured_missions if isinstance(configured_missions, list) else str(configured_missions).split(","))
+        }
+        if None in selected_missions:
+            raise ValueError(
+                "landsat_satellite must contain LT05, LE07, LC08, LC09 "
+                "or Landsat-5 through Landsat-9"
+            )
+        before = len(landsat)
+        missions = landsat["Name"].astype(str).str.split("_").str[0]
+        landsat = landsat[missions.isin(selected_missions)].reset_index(drop=True)
+        print(
+            f"Selected {len(landsat)} of {before} Landsat scene(s) for "
+            f"missions: {', '.join(sorted(selected_missions))}"
+        )
     # Do this before selecting download/STAC products so completed dates are
     # skipped by the whole workflow, not only by the raw downloader.
     sentinel2 = _remove_snowflakes_dates(sentinel2, study_dir, "Sentinel-2")

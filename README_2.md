@@ -8,28 +8,14 @@
 
 
 
-## Loading configuration
-
-The loading stage uses:
-
-```json
-{
-  "DOWNLOAD_SENTINEL": "STAC-API",
-  "DOWNLOAD_LANDSAT": "STAC-API",
   "CROP": true,
   "SAVE": true,
   "run_snowflakes": true
-}
-```
 
-`DOWNLOAD_SENTINEL` accepts `OData`, `S3`, `Google`, `STAC-API`, or `false`.
-`DOWNLOAD_LANDSAT` accepts `STAC-API`, `USGS-M2M`, or `false`:
 
-- `STAC-API` loads the corresponding sensor through its STAC API;
-- `OData`, `S3`, `Google`, and `USGS-M2M` download products into `RAW` and
-  locally load them;
-- `false` disables downloading for that sensor and allows processing existing
-  local products.
+
+
+
 
 `CROP` must be `true` for `STAC-API`. In `RAW` mode, `CROP=true` uses the
 configured target extent, while `CROP=false` processes every downloaded tile

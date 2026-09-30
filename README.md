@@ -162,26 +162,22 @@ These parameters define the spatial, temporal, and satellite-data filters used i
 | **`date_end`** | End date of the query period. | `YYYY-MM-DD` |
 | **`satellite`** | Satellite mission to query. | `"Sentinel-2"`, `"Landsat"` or`"both"`|
 | **`max_cloudcover`** | Maximum cloud cover allowed for each scene, based on the scene metadata. | Percentage value |
+| **`landsat_satellite`** |  Optional filter for one or more specific Landsat satellites. Use an empty list to query all supported Landsat missions. | Empty list (`[]`) or a list of satellite identifiers, e.g. [`"LC08"`]
 
 
-The query creates the following directory:
-
-```text
-<working_directory>/<study_area>/QUERY/
-```
-
-The query results are stored as CSV files following this naming convention:
+The query creates a `QUERY` directory beneath the working directory and study
+area:
 
 ```text
-<satellite>_<date_start>_<date_end>.csv
+<working_directory>/
+└── <study_area>/
+    └── QUERY/
+        ├── Sentinel2_2023-01-01_2023-02-01.csv
+        ├── Sentinel2_2023-02-01_2023-03-01.csv
+        ├── Landsat_2023-01-01_2023-02-01.csv
+        └── Landsat_2023-02-01_2023-03-01.csv
 ```
 
-For example:
-
-```text
-Sentinel2_2023-01-01_2023-02-01.csv
-Landsat_2023-01-01_2023-02-01.csv
-```
 
 The **`date_end` is exclusive**: results include acquisitions from `date_start` up to, but not including, `date_end`.
 
@@ -191,10 +187,34 @@ For time ranges longer than one month, the query is automatically divided into c
 
 
 ### Download settings
-"DOWNLOAD_SENTINEL": the download mode of the Sentinel-2 data. Allowed values are false (no download), "Google" (Google loud API), "S3" (CDSE S3)
-and "OData" (CDSE) + STAC-API. It is suggested to use the STAC-API mode for small areas and S3 for larger areas
-DOWNLOAD_LANDSAT the download mode of the Landsat data. Allowed is false, m2m-usgs and STAC-API
+The following parameters control how Sentinel-2 and Landsat products are accessed.
+
+| Parameter | Accepted values |
+|---|---|
+| **`DOWNLOAD_SENTINEL`** | `"STAC-API"`, `"OData"`, `"S3"`, `"Google"`, or `false` |
+| **`DOWNLOAD_LANDSAT`** | `"STAC-API"`, `"USGS-M2M"`, or `false` |
+
+> In JSON, `false` is a Boolean value and must not be enclosed in quotation marks.
+
+### Access modes
+
+| Mode | Sensor | Behaviour |
+|---|---|---|
+| **`STAC-API`** | Sentinel-2 or Landsat | Queries the relevant STAC catalogue and loads the required bands directly from remote object storage. |
+| **`OData`** | Sentinel-2 | Queries and downloads complete products from the Copernicus Data Space Ecosystem using its OData service. |
+| **`S3`** | Sentinel-2 | Downloads products directly from the CDSE S3 object-storage service. |
+| **`Google`** | Sentinel-2 | Searches for S2DL-compatible products in the public Google Cloud Sentinel-2 archive and downloads them locally. No credentials are required. |
+| **`USGS-M2M`** | Landsat | Downloads complete Landsat products using the USGS Machine-to-Machine API. |
+| **`false`** | Sentinel-2 or Landsat | Disables downloading for the corresponding sensor. Products already available locally can still be processed. |
+
+Products retrieved using **`OData`**, **`S3`**, **`Google`**, or **`USGS-M2M`** are saved in the `RAW` directory and subsequently loaded from the local filesystem.
 
 
-for S2DL-compatible Google products, or:
 
+
+
+
+Tile exclusion lists are optional:
+
+- Sentinel-2 values are MGRS tiles, for example `T19HDE`;
+- Landsat values are WRS-2 path/rows, for example `232084`.

@@ -93,6 +93,7 @@ def run_workflow(date_start, date_end, config_path):
         max_cloudcover=float(config.get("max_cloudcover", 90)),
         satellite=query_satellite,
         skip_sentinel2_tiles=config.get("exclude_tiles") or [],
+        landsat_satellites=config.get("landsat_satellite") or [],
         download_sentinel=sentinel_source,
     )
 

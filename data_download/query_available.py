@@ -53,6 +53,12 @@ except ImportError:
 
 
 LANDSAT_CODES = ("LT05", "LE07", "LC08", "LC09")
+LANDSAT_ALIASES = {
+    "lt05": "LT05", "landsat-5": "LT05", "landsat5": "LT05",
+    "le07": "LE07", "landsat-7": "LE07", "landsat7": "LE07",
+    "lc08": "LC08", "landsat-8": "LC08", "landsat8": "LC08",
+    "lc09": "LC09", "landsat-9": "LC09", "landsat9": "LC09",
+}
 
 
 def month_ranges(date_start, date_end):
@@ -92,6 +98,20 @@ def _normalise_landsat_tiles(values):
     return {str(value).strip() for value in _split_values(values)}
 
 
+def _normalise_landsat_satellites(values):
+    result = []
+    for value in _split_values(values):
+        code = LANDSAT_ALIASES.get(str(value).strip().lower())
+        if code is None:
+            raise ValueError(
+                f"Invalid Landsat satellite {value!r}. Expected LT05, LE07, "
+                "LC08, LC09 or Landsat-5 through Landsat-9."
+            )
+        if code not in result:
+            result.append(code)
+    return result
+
+
 def _filter_sentinel2(products, skip_tiles):
     if products.empty or not skip_tiles:
         return products
@@ -103,6 +123,13 @@ def _filter_landsat(products, skip_pathrows):
         return products
     pathrows = products["Name"].astype(str).str.split("_").str[2]
     return products[~pathrows.isin(skip_pathrows)].reset_index(drop=True)
+
+
+def _filter_landsat_satellites(products, satellites):
+    if products.empty or not satellites:
+        return products
+    missions = products["Name"].astype(str).str.split("_").str[0]
+    return products[missions.isin(satellites)].reset_index(drop=True)
 
 
 def _csv_path(query_dir, satellite, date_start, date_end):
@@ -158,12 +185,14 @@ def query_period(
     satellite,
     skip_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
+    landsat_satellites=None,
     download_sentinel="google",
 ):
     """Query one period, skipping each CSV that already exists."""
     outputs = []
     skip_sentinel2_tiles = skip_sentinel2_tiles or set()
     skip_landsat_pathrows = skip_landsat_pathrows or set()
+    landsat_satellites = landsat_satellites or list(LANDSAT_CODES)
 
     if satellite in ("sentinel2", "both"):
         output = _csv_path(query_dir, "Sentinel2", date_start, date_end)
@@ -208,6 +237,19 @@ def query_period(
         output = _csv_path(query_dir, "Landsat", date_start, date_end)
         if output.exists():
             print(f"Skipping existing query: {output}")
+            if landsat_satellites:
+                try:
+                    cached = pd.read_csv(output)
+                    cached = _filter_landsat_satellites(
+                        cached, landsat_satellites
+                    )
+                    cached.to_csv(output, index=False)
+                    print(
+                        f"Filtered cached Landsat query to "
+                        f"{len(cached)} scene(s): {output}"
+                    )
+                except pd.errors.EmptyDataError:
+                    pass
             outputs.append(output)
         else:
             username, token = ers_credentials()
@@ -225,9 +267,12 @@ def query_period(
                 token,
                 shp=aoi,
                 max_cc=max_cloudcover,
-                sat=list(LANDSAT_CODES),
+                sat=list(landsat_satellites),
             )
             products = products.rename(columns={"displayId": "Name"})
+            products = _filter_landsat_satellites(
+                products, landsat_satellites
+            )
             products = _filter_landsat(products, skip_landsat_pathrows)
             products.to_csv(output, index=False)
             print(f"Saved {len(products)} Landsat scenes: {output}")
@@ -246,6 +291,7 @@ def run_queries(
     satellite=None,
     skip_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
+    landsat_satellites=None,
     download_sentinel="google",
 ):
     """Create monthly query CSV files beneath ``<work>/<study>/QUERY``."""
@@ -272,6 +318,8 @@ def run_queries(
     periods = month_ranges(date_start, date_end)
     skip_sentinel2_tiles = _normalise_sentinel_tiles(skip_sentinel2_tiles)
     skip_landsat_pathrows = _normalise_landsat_tiles(skip_landsat_pathrows)
+    landsat_satellites = _normalise_landsat_satellites(landsat_satellites or [])
+    landsat_satellites = landsat_satellites or list(LANDSAT_CODES)
 
     outputs = []
     for period_start, period_end in periods:
@@ -285,6 +333,7 @@ def run_queries(
                 satellite,
                 skip_sentinel2_tiles,
                 skip_landsat_pathrows,
+                landsat_satellites,
                 download_sentinel,
             )
         )
@@ -408,6 +457,7 @@ def _run_from_config(config_path):
             "landsat_tile_skip",
             default=[],
         ),
+        landsat_satellites=config.get("landsat_satellite") or [],
         download_sentinel=_configured_sentinel_source(config),
     )
 
