@@ -69,64 +69,62 @@ odc-stac
 ```
 
 ---
+## 🛠️ Set up your credentials
 
-## 🛠️ Set Up Your Credentials
+SnowFLAKES accesses:
 
-Access and load Sentinel-2 data from the **CDSE** and Landsat data from the **USGS**. In the first case, a CDSE account is needed. Furthermore, S3 CDSE credentials also need to be set up (see https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials) when using the CDSE STAC-API based data access. In the second case, for the conventional download mode, the user needs an Earth Explorer (https://earthexplorer.usgs.gov/) account together with a M2M Application Token (please follow the instruction  herehttps://www.usgs.gov/media/files/m2m-application-token-documentation). If the USGS STAC-API based access is used, the USGS STAC catalogue is accessed and an AWS Requester Pays account is needed. Prepare your AWS configuration and credentials before running the workflow.
+- **Sentinel-2** data through the Copernicus Data Space Ecosystem (CDSE).
+- **Landsat** data through the USGS.
 
-### Install AWS CLI
-
-```bash
-sudo apt update
-sudo apt install awscli
-```
-
-### Configure AWS Credentials
-
-Run:
+The required credentials can be stored in a single file. Create an `.aws` directory in your home directory and add a file named `credentials`:
 
 ```bash
-aws configure
+mkdir -p ~/.aws
+touch ~/.aws/credentials
+chmod 600 ~/.aws/credentials
 ```
 
-You will be prompted to enter your AWS Requester Pays credentials:
+The resulting file path is:
 
 ```text
-AWS Access Key ID [None]: ****************
-AWS Secret Access Key [None]: ********************
-Default region name [eu-central-1]:
-Default output format [text]:
+~/.aws/credentials
 ```
 
-For more information, see the USGS tutorial:
+Configure the following profiles:
 
-https://code.usgs.gov/eros-user-services/accessing_landsat_data/tutorials/introduction-to-landsat-cloud-access-direct-requester-pays/-/blob/main/Intro_to_Landsat_Direct_Requester_Pays_v2.ipynb
+- **`cdse`** for Copernicus Sentinel-2 access.
+- **`usgs-landsat`** for USGS Landsat access.
 
-### Configure Both USGS and CDSE Credentials
 
-Set up credentials for:
-
-- **USGS account** (default profile)
-- **Copernicus Data Space Ecosystem (CDSE)** account (`cdse` profile)
-
-Your `~/.aws/credentials` file should look like:
+Your credentials file should have the following structure:
 
 ```ini
-[default]
-aws_access_key_id = ********************
-aws_secret_access_key = ********************
-
 [cdse]
 CDSE_USERNAME = ********************
 CDSE_PASSWORD = ********************
 AWS_ACCESS_KEY_ID = ********************
 AWS_SECRET_ACCESS_KEY = ********************
+
+[usgs-landsat]
+ERS_USERNAME = ********************
+ERS_TOKEN = ********************
+aws_access_key_id = ********************
+aws_secret_access_key = ********************
+
 ```
 
+### USGS Landsat credentials
 
-The `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` values for the `cdse` profile can be generated from:
+The credentials required for Landsat depend on the selected data-access method. The conventional Landsat download mode requires:
 
-https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials
+- A [USGS EarthExplorer account](https://earthexplorer.usgs.gov/).
+- An M2M Application Token (`ERS_TOKEN`) (follow the [USGS M2M Application Token documentation](https://www.usgs.gov/media/files/m2m-application-token-documentation)). 
+
+Access through the USGS STAC API requires an AWS account configured for **Requester Pays**. Follow the [USGS Landsat Direct Access tutorial](https://code.usgs.gov/eros-user-services/accessing_landsat_data/tutorials/introduction-to-landsat-cloud-access-direct-requester-pays/-/blob/main/Intro_to_Landsat_Direct_Requester_Pays_v2.ipynb) and add `aws_access_key_id` and `aws_secret_access_key`.
+
+### CDSE Sentinel-2 credentials
+
+Sentinel-2 access requires a CDSE account. Add your account credentials to the `cdse` profile. When using STAC API–based access to data stored on the CDSE S3 service, S3 credentials are also required. Generate them through the [CDSE S3 Key Manager](https://eodata-s3keysmanager.dataspace.copernicus.eu/panel/s3-credentials) and add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to the profile.
 
 
 ---
@@ -162,9 +160,41 @@ These parameters define the spatial, temporal, and satellite-data filters used i
 | **`shapefile`** | Path to the vector file defining the Area of Interest (AOI). Supported formats include Shapefile and GeoJSON. Any coordinate reference system (CRS) is accepted. | File path |
 | **`date_start`** | Start date of the query period. | `YYYY-MM-DD` |
 | **`date_end`** | End date of the query period. | `YYYY-MM-DD` |
-| **`satellite`** | Satellite mission to query. | `"Sentinel-2"` or `"Landsat"` |
+| **`satellite`** | Satellite mission to query. | `"Sentinel-2"`, `"Landsat"` or`"both"`|
 | **`max_cloudcover`** | Maximum cloud cover allowed for each scene, based on the scene metadata. | Percentage value |
 
 
+The query creates the following directory:
 
+```text
+<working_directory>/<study_area>/QUERY/
+```
+
+The query results are stored as CSV files following this naming convention:
+
+```text
+<satellite>_<date_start>_<date_end>.csv
+```
+
+For example:
+
+```text
+Sentinel2_2023-01-01_2023-02-01.csv
+Landsat_2023-01-01_2023-02-01.csv
+```
+
+The **`date_end` is exclusive**: results include acquisitions from `date_start` up to, but not including, `date_end`.
+
+For time ranges longer than one month, the query is automatically divided into consecutive intervals of no more than one month. This ensures compliance with the maximum number of items allowed per query.
+
+> **Note:** Existing CSV files are reused to avoid repeating completed queries. To run the queries again and retrieve updated results, delete the corresponding CSV files from the `QUERY` directory.
+
+
+### Download settings
+"DOWNLOAD_SENTINEL": the download mode of the Sentinel-2 data. Allowed values are false (no download), "Google" (Google loud API), "S3" (CDSE S3)
+and "OData" (CDSE) + STAC-API. It is suggested to use the STAC-API mode for small areas and S3 for larger areas
+DOWNLOAD_LANDSAT the download mode of the Landsat data. Allowed is false, m2m-usgs and STAC-API
+
+
+for S2DL-compatible Google products, or:
 

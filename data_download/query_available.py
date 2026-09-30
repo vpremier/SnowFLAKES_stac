@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from data_download.landsat_query_download import query_landsat
+from data_download.credentials import cdse_credentials, ers_credentials
 from data_download.sentinel2_query_download import query_cdse
 from data_download.sentinel2_google_query import (
     normalize_tile,
@@ -178,13 +179,13 @@ def query_period(
                     max_cc=max_cloudcover,
                 )
             elif download_sentinel in {"odata", "s3"}:
-                username = os.getenv("CDSE_USERNAME")
-                password = os.getenv("CDSE_PASSWORD")
+                username, password = cdse_credentials()
                 if not username or not password:
                     raise ValueError(
-                        "CDSE_USERNAME and CDSE_PASSWORD are required "
-                        "for Sentinel-2 OData queries. Expected them in "
-                        f"{PROJECT_ROOT / '.env'} or beside the config file."
+                        "CDSE credentials are required for Sentinel-2 OData "
+                        "queries. Add cdse_username/cdse_password to the "
+                        "selected ~/.aws/credentials profile or set the "
+                        "CDSE_USERNAME/CDSE_PASSWORD environment variables."
                     )
                 products = query_cdse(
                     date_start,
@@ -209,13 +210,13 @@ def query_period(
             print(f"Skipping existing query: {output}")
             outputs.append(output)
         else:
-            username = os.getenv("ERS_USERNAME")
-            token = os.getenv("ERS_TOKEN")
+            username, token = ers_credentials()
             if not username or not token:
                 raise ValueError(
-                    "ERS_USERNAME and ERS_TOKEN are required for Landsat "
-                    f"queries. Expected them in {PROJECT_ROOT / '.env'} or "
-                    "beside the config file."
+                        "USGS credentials are required for Landsat queries. "
+                        "Add ers_username/ers_token to the selected "
+                        "~/.aws/credentials profile or set "
+                        "ERS_USERNAME/ERS_TOKEN environment variables."
                 )
             products = query_landsat(
                 date_start,
@@ -242,7 +243,7 @@ def run_queries(
     date_start,
     date_end,
     max_cloudcover=90,
-    satellite="both",
+    satellite=None,
     skip_sentinel2_tiles=None,
     skip_landsat_pathrows=None,
     download_sentinel="google",
@@ -255,17 +256,11 @@ def run_queries(
         "sentinel-2": "sentinel2",
         "sentinel2": "sentinel2",
         "landsat": "landsat",
-        "landsat-5": "landsat",
-        "landsat-7": "landsat",
-        "landsat-8": "landsat",
-        "landsat-9": "landsat",
         "both": "both",
     }
-    satellite = satellite_aliases.get(str(satellite).lower())
+    satellite = satellite_aliases.get(str(satellite).strip().lower())
     if satellite not in {"sentinel2", "landsat", "both"}:
-        raise ValueError(
-            "satellite must be Sentinel-2, Landsat, or both"
-        )
+        raise ValueError("satellite must be 'Sentinel-2', 'Landsat', or 'both'")
     if not 0 <= max_cloudcover <= 100:
         raise ValueError("max_cloudcover must be between 0 and 100")
     download_sentinel = str(download_sentinel).lower()
@@ -374,13 +369,23 @@ def _run_from_config(config_path):
                 "'output_directory'"
             )
 
-    satellite = str(config.get("satellite", "both"))
-    if satellite.lower().startswith("sentinel"):
+    satellite_value = config.get("satellite")
+    if satellite_value is None:
+        raise ValueError(
+            "'satellite' is required and must be 'Sentinel-2', 'Landsat', or 'both'"
+        )
+    satellite_key = str(satellite_value).strip().lower().replace("_", "-")
+    if satellite_key in {"sentinel-2", "sentinel2"}:
         satellite = "sentinel2"
-    elif satellite.lower().startswith("landsat"):
+    elif satellite_key == "landsat":
         satellite = "landsat"
-    else:
+    elif satellite_key == "both":
         satellite = "both"
+    else:
+        raise ValueError(
+            f"Invalid satellite {satellite_value!r}. "
+            "Expected 'Sentinel-2', 'Landsat', or 'both'."
+        )
 
     return run_queries(
         study_area=study_area,

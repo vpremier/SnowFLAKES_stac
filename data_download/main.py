@@ -15,6 +15,7 @@ load_dotenv()
 from data_download.landsat_query_download import *
 from data_download.sentinel2_query_download import *
 from data_download.utils import *
+from data_download.credentials import cdse_credentials, ers_credentials
 
 def run_query_download(config_path):
     
@@ -58,8 +59,7 @@ def run_query_download(config_path):
 
         results = query_landsat(date_start, 
                                 date_end, 
-                                os.getenv("ERS_USERNAME"), 
-                                os.getenv("ERS_TOKEN"), 
+                                *ers_credentials(), 
                                 shp = shp, 
                                 max_cc=max_cc,
                                 sat = landsat_satellite)
@@ -71,8 +71,7 @@ def run_query_download(config_path):
 
         s2List = query_cdse(date_start, 
                             date_end, 
-                            os.getenv("CDSE_USERNAME"), 
-                            os.getenv("CDSE_PASSWORD"), 
+                            *cdse_credentials(), 
                             shp=shp,
                             max_cc = max_cc, 
                             tile=s2_tile, 
@@ -82,8 +81,7 @@ def run_query_download(config_path):
     
     if landsat_download:
                 
-        download_landsat(results, outdir, os.getenv("ERS_USERNAME"), 
-                            os.getenv("ERS_TOKEN"), 
+        download_landsat(results, outdir, *ers_credentials(), 
                             pathrowList = landsat_tile_list, 
                             tierList = ['T1'])
     
@@ -93,7 +91,7 @@ def run_query_download(config_path):
             
             s2List = pd.read_csv(config["s2List_path"])
             
-        download_cdse(s2List, outdir, os.getenv("CDSE_USERNAME"), os.getenv("CDSE_PASSWORD"))
+        download_cdse(s2List, outdir, *cdse_credentials())
         
     
 
@@ -118,4 +116,3 @@ if __name__ == "__main__":
         
         print("\nThe download run succefully.")
         print(f"Execution time: {elapsed_min} minutes and {elapsed_sec} seconds")
-

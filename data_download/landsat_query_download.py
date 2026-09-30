@@ -527,6 +527,7 @@ if __name__ == "__main__":
     """
     from dotenv import load_dotenv
     load_dotenv()
+    from data_download.credentials import ers_credentials
 
     # dates for the query/download
     date_start = '2015-06-01'
@@ -541,15 +542,14 @@ if __name__ == "__main__":
     
     results = query_landsat(date_start, 
                             date_end, 
-                            os.getenv("ERS_USERNAME"), 
-                            os.getenv("ERS_TOKEN"), 
+                            *ers_credentials(), 
                             shp = shp, 
                             max_cc=50)
     
     start = time.time()
     
-    download_landsat(results, outdir, os.getenv("ERS_USERNAME"), 
-                        os.getenv("ERS_TOKEN"), pathrowList = ['192027'], tierList = ['T1'])
+    download_landsat(results, outdir, *ers_credentials(),
+                        pathrowList = ['192027'], tierList = ['T1'])
     
     end = time.time()
     print(f"Download time: {end - start:.2f} seconds")

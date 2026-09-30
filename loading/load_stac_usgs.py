@@ -29,7 +29,7 @@ from loading.load_stac import load_with_retry
 
 
 def setup_usgs_credentials():
-    session = boto3.Session(profile_name="default")
+    session = boto3.Session(profile_name="usgs-landsat")
     creds = session.get_credentials().get_frozen_credentials()
 
     # Remove settings belonging to CDSE.
@@ -92,7 +92,7 @@ def get_MTL_file(query_item):
     # CDSE loader has configured global AWS_* variables, so inheriting the
     # process region would incorrectly produce endpoints such as
     # ``s3.default.amazonaws.com``.
-    session = boto3.Session(profile_name="default", region_name="us-west-2")
+    session = boto3.Session(profile_name="usgs-landsat", region_name="us-west-2")
     s3_client = session.client(
         "s3",
         region_name="us-west-2",

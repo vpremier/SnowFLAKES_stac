@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from dotenv import load_dotenv
 
 from data_download.landsat_query_download import download_landsat
+from data_download.credentials import cdse_credentials, ers_credentials
 from data_download.sentinel2_query_download import download_cdse
 from data_download.sentinel2_s3_download import download_sentinel2_s3
 from loading.download_sentinel2_s2dl import download_s2dl
@@ -65,6 +66,27 @@ def _download_flag(value, allowed, name):
         choices = ", ".join(sorted(allowed | {"false"}))
         raise ValueError(f"{name} must be one of: {choices}")
     return normalized
+
+
+def _satellite_value(config):
+    """Return the selected sensor, rejecting unsupported values."""
+    value = config.get("satellite")
+    if value is None:
+        raise ValueError(
+            "'satellite' is required and must be 'Sentinel-2', 'Landsat', or 'both'"
+        )
+    normalized = str(value).strip().lower().replace("_", "-")
+    aliases = {
+        "sentinel-2": "sentinel-2",
+        "sentinel2": "sentinel-2",
+        "landsat": "landsat",
+        "both": "both",
+    }
+    if normalized not in aliases:
+        raise ValueError(
+            f"Invalid satellite {value!r}. Expected 'Sentinel-2', 'Landsat', or 'both'."
+        )
+    return aliases[normalized]
 
 
 def _working_directory(config):
@@ -527,10 +549,13 @@ def _download_raw(
             except Exception as error:
                 print(f"Sentinel-2 S3 download failed: {error}; validating scenes and continuing")
         elif source == "odata":
-            username = os.getenv("CDSE_USERNAME")
-            password = os.getenv("CDSE_PASSWORD")
+            username, password = cdse_credentials()
             if not username or not password:
-                raise ValueError("CDSE_USERNAME and CDSE_PASSWORD are required")
+                raise ValueError(
+                    "CDSE credentials are required; add cdse_username and "
+                    "cdse_password to the selected ~/.aws/credentials profile "
+                    "or set CDSE_USERNAME/CDSE_PASSWORD."
+                )
             try:
                 download_cdse(sentinel2, raw_dir, username, password)
                 _extract_sentinel2_archives(raw_dir / "Sentinel-2")
@@ -554,10 +579,13 @@ def _download_raw(
         invalid_sentinel = validate_sentinel(products_to_validate)
 
     if landsat_source not in {False, "false", "none", ""} and landsat is not None and not landsat.empty:
-        username = os.getenv("ERS_USERNAME")
-        token = os.getenv("ERS_TOKEN")
+        username, token = ers_credentials()
         if not username or not token:
-            raise ValueError("ERS_USERNAME and ERS_TOKEN are required")
+            raise ValueError(
+                "USGS credentials are required; add ers_username and ers_token "
+                "to the selected ~/.aws/credentials profile or set "
+                "ERS_USERNAME/ERS_TOKEN."
+            )
         results = landsat.rename(columns={"Name": "displayId"}).copy()
         try:
             download_landsat(
@@ -1109,10 +1137,10 @@ def run(config_path):
     else:
         landsat_download = "usgs-m2m"
 
-    satellite = str(config.get("satellite", "both")).lower()
-    if satellite.startswith("sentinel"):
+    satellite = _satellite_value(config)
+    if satellite == "sentinel-2":
         landsat_download = False
-    elif satellite.startswith("landsat"):
+    elif satellite == "landsat":
         sentinel_download = False
 
     sentinel_stac = sentinel_download == "stac-api"
@@ -1120,10 +1148,10 @@ def run(config_path):
     # A false flag disables downloading but still permits processing products
     # already present under RAW. STAC-API selects the remote processing path.
     raw_sentinel = (
-        not satellite.startswith("landsat") and sentinel_download != "stac-api"
+        satellite != "landsat" and sentinel_download != "stac-api"
     )
     raw_landsat = (
-        not satellite.startswith("sentinel") and landsat_download != "stac-api"
+        satellite != "sentinel-2" and landsat_download != "stac-api"
     )
 
     crop = bool(_value(config, "CROP", "crop", False))
@@ -1182,7 +1210,7 @@ def run(config_path):
             config.get("date_start"),
             config.get("date_end"),
         )
-        if satellite.startswith("sentinel") or satellite == "both"
+        if satellite in {"sentinel-2", "both"}
         else pd.DataFrame(columns=["Name"])
     )
     landsat = (
@@ -1192,7 +1220,7 @@ def run(config_path):
             config.get("date_start"),
             config.get("date_end"),
         )
-        if satellite.startswith("landsat") or satellite == "both"
+        if satellite in {"landsat", "both"}
         else pd.DataFrame(columns=["Name"])
     )
     # ``landsat_tile_list`` is an inclusion list.  Apply it to the query

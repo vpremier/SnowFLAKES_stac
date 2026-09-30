@@ -340,6 +340,7 @@ if __name__ == "__main__":
 
     from dotenv import load_dotenv
     load_dotenv()
+    from data_download.credentials import cdse_credentials
     
     
     # dates for the query/download
@@ -359,8 +360,7 @@ if __name__ == "__main__":
     # it is possible to query also other collection (default is S2MSI1C)
     s2List = query_cdse(date_start, 
                         date_end, 
-                        os.getenv("CDSE_USERNAME"), 
-                        os.getenv("CDSE_PASSWORD"), 
+                        *cdse_credentials(), 
                         data_collection = "S2MSI1C",
                         shp=shp,
                         max_cc = 90, 
@@ -372,7 +372,7 @@ if __name__ == "__main__":
     
     start = time.time()
     
-    download_cdse(s2List, outdir, os.getenv("CDSE_USERNAME"), os.getenv("CDSE_PASSWORD"))  
+    download_cdse(s2List, outdir, *cdse_credentials())  
     
     end = time.time()
     print(f"Download time: {end - start:.2f} seconds")

@@ -1,43 +1,13 @@
 
 
-  "DOWNLOAD_SENTINEL": "Google",
+  
   "skip_sentinel2_tiles": ["T19HDE"],
   "skip_landsat_pathrows": ["232084"]
 
 
-The mandatory inputs are the AOI (`shapefile`), `date_start`, `date_end`,
-`working_directory`, and `satellite`. `study_area` defaults to the AOI filename
-stem. `satellite` can be `Sentinel-2`, a Landsat name such as `Landsat-8`, or
-`both`.
 
-The query creates:
 
-```text
-<working_directory>/<study_area>/QUERY/
-```
 
-with files such as:
-
-```text
-Sentinel2_2023-01-01_2023-02-01.csv
-Landsat_2023-01-01_2023-02-01.csv
-```
-
-`date_end` is exclusive. For intervals longer than one month, the query is
-split into consecutive periods of at most one month. Existing CSV files are
-reused. OData CSV files are reused only when they contain the CDSE `Id` column.
-
-Sentinel-2 can be queried with:
-
-```json
-"DOWNLOAD_SENTINEL": "Google"
-```
-
-for S2DL-compatible Google products, or:
-
-```json
-"DOWNLOAD_SENTINEL": "OData"
-```
 
 for CSVs compatible with `download_cdse()`.
 

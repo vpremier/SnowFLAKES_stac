@@ -28,6 +28,7 @@ import pystac_client
 import requests
 from affine import Affine
 from dotenv import load_dotenv
+from data_download.credentials import cdse_credentials
 from pyproj import CRS
 from pystac_client.stac_api_io import StacApiIO
 from rasterio.enums import Resampling
@@ -341,8 +342,7 @@ def benchmark_safe_download(
     overwrite: bool,
     extract: bool = False,
 ) -> dict:
-    username = os.getenv("CDSE_USERNAME")
-    password = os.getenv("CDSE_PASSWORD")
+    username, password = cdse_credentials()
     if not username or not password:
         raise RuntimeError(
             "CDSE_USERNAME and CDSE_PASSWORD are required for the SAFE download"
@@ -644,8 +644,7 @@ def main() -> None:
         print(f"S2DL total: {report['s2dl']['total_seconds']:.2f} s")
 
     if args.with_odata:
-        username = os.getenv("CDSE_USERNAME")
-        password = os.getenv("CDSE_PASSWORD")
+        username, password = cdse_credentials()
         if not username or not password:
             raise RuntimeError(
                 "CDSE_USERNAME and CDSE_PASSWORD are required for OData download"
