@@ -91,7 +91,7 @@ def _install_timers(records):
         # These functions are imported as aliases by main_SnowFLAKES, so wrap
         # the aliases there to obtain a stage-by-stage SnowFLAKES breakdown.
         snowflakes_stages = {
-            "auxiliary_preparation": "create_auxiliary_information",
+            "auxiliary_preparation_total": "create_auxiliary_information",
             "training_collection": "collect_trainings",
             "model_training": "model_training",
             "scf_prediction": "SCF_dist_SV",
@@ -107,6 +107,24 @@ def _install_timers(records):
                 name,
                 _timed(records, phase, getattr(snowflakes, name)),
             )
+        # These products are shared by all scenes and are prepared only once.
+        # Keep their timings as separate events so they can be reported and
+        # removed from both per-scene auxiliary and workflow totals.
+        from SnowFLAKES import auxiliary_folder_population as auxiliary
+        auxiliary_stages = {
+            "dem_preparation": ("load_cdse_collection", "calc_slope_aspect"),
+            "water_mask_preparation": ("water_identifier",),
+            "glacier_mask_preparation": ("glacier_mask_cutting",),
+        }
+        for phase, names in auxiliary_stages.items():
+            for name in names:
+                key = f"auxiliary::{name}"
+                originals[key] = getattr(auxiliary, name)
+                setattr(
+                    auxiliary,
+                    name,
+                    _timed(records, phase, getattr(auxiliary, name)),
+                )
     except ImportError:
         pass
     try:
@@ -128,6 +146,9 @@ def _restore_timers(workflow, originals):
         elif name.startswith("snowflakes::"):
             import SnowFLAKES.main_SnowFLAKES as snowflakes
             setattr(snowflakes, name.split("::", 1)[1], function)
+        elif name.startswith("auxiliary::"):
+            from SnowFLAKES import auxiliary_folder_population as auxiliary
+            setattr(auxiliary, name.split("::", 1)[1], function)
         elif name == "save_stac_bands":
             from loading import load_stac
             load_stac.save_stac_bands = function
@@ -148,18 +169,59 @@ def _write_results(output_dir, metadata, records, profile_path):
         "scf_postprocessing",
         "glacier_check",
     }
+    one_time_phases = {
+        "dem_preparation",
+        "water_mask_preparation",
+        "glacier_mask_preparation",
+    }
+    one_time_total = sum(by_phase.get(phase, 0.0) for phase in one_time_phases)
     snowflakes_total = sum(by_phase.get(phase, 0.0) for phase in grouped_snowflakes)
     display_totals = {
         phase: value
         for phase, value in by_phase.items()
         if phase not in grouped_snowflakes
+        and phase != "auxiliary_preparation_total"
+        and phase != "workflow_total_including_one_time"
+        and phase != "save_composites"
+        and phase != "save_bands"
+        and phase != "snowflakes"
+        and phase not in one_time_phases
     }
+    auxiliary_total = by_phase.get("auxiliary_preparation_total", 0.0)
+    auxiliary_information = max(auxiliary_total - one_time_total, 0.0)
+    workflow_total = by_phase.get("workflow_total", 0.0)
+    workflow_including_one_time = by_phase.get(
+        "workflow_total_including_one_time", 0.0
+    )
+    if workflow_total or workflow_including_one_time:
+        metadata["workflow_total_including_one_time_seconds"] = (
+            workflow_including_one_time or workflow_total + one_time_total
+        )
+        display_totals["workflow_total"] = workflow_total
     if snowflakes_total:
         display_totals["snowflakes"] = snowflakes_total
+    # Keep the plot readable and deterministic: scene-specific auxiliary work
+    # immediately precedes the aggregated SnowFLAKES stages, with workflow
+    # total shown afterward.
+    ordered_totals = {
+        phase: value
+        for phase, value in display_totals.items()
+        if phase not in {"auxiliary_information", "snowflakes", "workflow_total"}
+    }
+    ordered_totals["auxiliary_information"] = auxiliary_information
+    if snowflakes_total:
+        ordered_totals["snowflakes"] = snowflakes_total
+    if workflow_total or workflow_including_one_time:
+        ordered_totals["workflow_total"] = workflow_total
+    display_totals = ordered_totals
     metadata["phase_totals_seconds"] = display_totals
     metadata["snowflakes_breakdown_seconds"] = {
         phase: by_phase.get(phase, 0.0) for phase in sorted(grouped_snowflakes)
     }
+    metadata["one_time_preparation_seconds"] = {
+        phase: by_phase.get(phase, 0.0) for phase in sorted(one_time_phases)
+    }
+    metadata["one_time_preparation_total_seconds"] = one_time_total
     metadata["events"] = records
     (output_dir / "metrics.json").write_text(
         json.dumps(metadata, indent=2), encoding="utf-8"
@@ -295,8 +357,28 @@ def main():
         finally:
             profiler.disable()
             _restore_timers(workflow_module, originals)
-        records.append({"phase": "workflow_total", "duration_seconds": time.perf_counter() - started,
-                        "started_utc": datetime.now(timezone.utc).isoformat()})
+        workflow_elapsed = time.perf_counter() - started
+        one_time_phases = {
+            "dem_preparation",
+            "water_mask_preparation",
+            "glacier_mask_preparation",
+        }
+        one_time_elapsed = sum(
+            record["duration_seconds"]
+            for record in records
+            if record["phase"] in one_time_phases
+        )
+        timestamp = datetime.now(timezone.utc).isoformat()
+        records.append({
+            "phase": "workflow_total_including_one_time",
+            "duration_seconds": workflow_elapsed,
+            "started_utc": timestamp,
+        })
+        records.append({
+            "phase": "workflow_total",
+            "duration_seconds": max(workflow_elapsed - one_time_elapsed, 0.0),
+            "started_utc": timestamp,
+        })
         profile_path = output_dir / "workflow.prof"
         profiler.dump_stats(str(profile_path))
       else:

@@ -18,6 +18,8 @@ import re
 from datetime import datetime
 import geopandas as gpd
 
+from scipy.ndimage import convolve
+
 from loading.load_stac_usgs import get_scene_center_time
 
 
@@ -765,6 +767,10 @@ def remove_low_scf(scene_id, data, FSC_SVM_map_path, curr_aux_folder, auxiliary_
 
 def classify_ice(scene_id, data, config):
     
+    # load information for current scene
+    sensor = get_sensor(scene_id)
+    bands = define_bands(data, sensor)
+    
     
     # Create output directory for the scene
     wd = config['output_directory']
@@ -784,6 +790,7 @@ def classify_ice(scene_id, data, config):
     glacier_mask = load_map(auxiliary_folder, '*glacier*.tif')
     shadow_mask = load_map(curr_aux_folder, '*shadow_mask.tif')
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
+    nir = bands["NIR"]
 
 
 
@@ -792,27 +799,71 @@ def classify_ice(scene_id, data, config):
     # validity mask: a binary dilation is applied by default (avoid training 
     # collection near water bodies, clouds, etc)
     validMask = scene_valid_mask(data, config)
-
+    
     curr_scene_valid = build_valid_scene(~validMask,
                                          cloud_mask == 1,
                                          cloud_mask == 2,
                                          water_mask == 1)
+    
+    
+    
+    
+    is_glacier = glacier_mask == 1
+    is_shadow = shadow_mask == 1
+    is_valid = curr_scene_valid
+    is_snow = NDSI > 0.4
+    is_low_scf = SCF < 90
+    is_snow_free = SCF == 0
+    is_low_nir = nir < 0.11
+    
+    
+    potential_ice = (
+        is_glacier
+        & ~is_shadow
+        & is_valid
+        & is_snow
+        & is_low_scf
+    )
+    
+    
+    potential_shadow = (
+        is_glacier
+        & ~is_shadow
+        & is_valid
+        & is_snow
+        & is_snow_free
+        & is_low_nir
+    )
+    
+    glacier_shadow = is_glacier & is_shadow
+    
+    SCF_new = SCF.copy()
+    
+    SCF_new[potential_ice] = 215
+    SCF_new[glacier_shadow | potential_shadow] = 205
+    
+    
+    # Select pixels whose value is either 0 or 100
+    is_zero_or_snow = np.isin(SCF, [0, 100])
+    
+    # Kernel containing only the eight surrounding pixels
+    neighbour_kernel = np.ones((3, 3), dtype=np.uint8)
+    neighbour_kernel[1, 1] = 0
+    
+    valid_neighbour_count = convolve(
+        is_zero_or_snow.astype(np.uint8),
+        neighbour_kernel,
+        mode="constant",
+        cval=0,
+    )
+    
+    # Replace 215 when all eight neighbours are either 0 or 100
+    isolated_ice = (SCF == 215) & (valid_neighbour_count == 8)
+    SCF_new[isolated_ice] = SCF[isolated_ice]
 
 
-
-    mask_potential_ice = np.logical_and.reduce((glacier_mask==1, 
-                                      shadow_mask == 0,
-                                      NDSI > 0.4, 
-                                      curr_scene_valid,
-                                      SCF <90))
     
-    mask_shadow = np.logical_and.reduce((glacier_mask==1, 
-                                      shadow_mask == 1))
-    
-    SCF[mask_potential_ice] = 215
-    SCF[mask_shadow] = 205
-    
-    save_tif(SCF, SCF_path, SCF_path, dtype=rasterio.uint8)
+    save_tif(SCF_new, SCF_path, SCF_path, dtype=rasterio.uint8)
 
 
 

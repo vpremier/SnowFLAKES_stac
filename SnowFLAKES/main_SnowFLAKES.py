@@ -227,9 +227,9 @@ def run_snowflakes(config, data, scene_id):
     # check if there is snow around the glacier
     if classify_glaciers == 'yes':
         
-        if snow_around_glacier(wd, scene_id):
+        # if snow_around_glacier(wd, scene_id):
      
-            classify_ice(scene_id, data, config)
+        classify_ice(scene_id, data, config)
             
             # results_glacier = run_snow_ice_classification(
             #     data=data,
