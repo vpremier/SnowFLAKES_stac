@@ -7,7 +7,7 @@
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
   "landsat_satellite": [],
-  "DOWNLOAD_SENTINEL": "OData",
+  "DOWNLOAD_SENTINEL": false,
   "DOWNLOAD_LANDSAT": "usgs-m2m",
   "landsat_tile_list": [],
   "CROP": true,

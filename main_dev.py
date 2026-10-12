@@ -9,7 +9,6 @@ Created on Fri Feb  6 12:02:12 2026
 import json
 import os
 import pandas as pd
-import shutil
 import time
 
 from SnowFLAKES.main_SnowFLAKES import run_snowflakes
@@ -289,18 +288,7 @@ def run_workflow(date_start, date_end, config_path):
                 
                 time.sleep(2)
                 
-                try:
-                    run_snowflakes(config, data, scene_id)
-                finally:
-                    # Auxiliary rasters are intermediate products.  Remove only
-                    # the scene-specific auxiliary directory when requested;
-                    # the scene folder and its final products are preserved.
-                    if config.get("remove_auxiliary", False):
-                        scene_aux_folder = os.path.join(
-                            outdir, scene_id, "auxiliary"
-                        )
-                        if os.path.isdir(scene_aux_folder):
-                            shutil.rmtree(scene_aux_folder)
+                run_snowflakes(config, data, scene_id)
                 
             except Exception as e:
                 print(f"Error processing date {date}: {e}")

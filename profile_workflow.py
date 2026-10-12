@@ -26,6 +26,7 @@ import cProfile
 import csv
 import json
 import pstats
+import re
 import shutil
 import tempfile
 import time
@@ -50,16 +51,45 @@ def _output_dir(config, requested):
     return ROOT / "profiling"
 
 
-def _timed(records, phase, function):
+def _query_cache_covers_date(query_dir, date):
+    """Return true when cached query filenames cover the requested date."""
+    token = date.isoformat()
+    for path in query_dir.glob("*.csv"):
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}", path.name)
+        if token in dates:
+            return True
+        if len(dates) >= 2 and dates[0] <= token < dates[1]:
+            return True
+    return False
+
+
+def _network_bytes():
+    """Return process-visible network counters when psutil is available."""
+    try:
+        import psutil
+
+        counters = psutil.net_io_counters()
+        return int(counters.bytes_sent + counters.bytes_recv)
+    except (ImportError, AttributeError, OSError):
+        return None
+
+
+def _timed(records, phase, function, measure_transfer=False):
     def wrapper(*args, **kwargs):
         started = time.perf_counter()
+        network_before = _network_bytes() if measure_transfer else None
         try:
             return function(*args, **kwargs)
         finally:
+            network_after = _network_bytes() if measure_transfer else None
+            transfer = None
+            if network_before is not None and network_after is not None:
+                transfer = max(network_after - network_before, 0)
             records.append({
                 "phase": phase,
                 "duration_seconds": time.perf_counter() - started,
                 "started_utc": datetime.now(timezone.utc).isoformat(),
+                **({"bytes_transferred": transfer} if transfer is not None else {}),
             })
     wrapper.__name__ = getattr(function, "__name__", phase)
     wrapper.__doc__ = getattr(function, "__doc__", None)
@@ -80,7 +110,16 @@ def _install_timers(records):
     for phase, name in targets.items():
         function = getattr(workflow, name)
         originals[name] = function
-        setattr(workflow, name, _timed(records, phase, function))
+        setattr(
+            workflow,
+            name,
+            _timed(
+                records,
+                phase,
+                function,
+                measure_transfer=phase in {"download", "prepare_merged_stac"},
+            ),
+        )
 
     try:
         import SnowFLAKES.main_SnowFLAKES as snowflakes
@@ -129,9 +168,27 @@ def _install_timers(records):
         pass
     try:
         from loading import load_stac
+        originals["stac_sentinel_search"] = load_stac.search_sentinel2_items
+        load_stac.search_sentinel2_items = _timed(
+            records,
+            "stac_item_search",
+            load_stac.search_sentinel2_items,
+            measure_transfer=True,
+        )
         originals["save_stac_bands"] = load_stac.save_stac_bands
         load_stac.save_stac_bands = _timed(
             records, "save_bands", load_stac.save_stac_bands
+        )
+    except ImportError:
+        pass
+    try:
+        from loading import load_stac_usgs
+        originals["stac_landsat_search"] = load_stac_usgs.get_query_items
+        load_stac_usgs.get_query_items = _timed(
+            records,
+            "stac_item_search",
+            load_stac_usgs.get_query_items,
+            measure_transfer=True,
         )
     except ImportError:
         pass
@@ -152,6 +209,12 @@ def _restore_timers(workflow, originals):
         elif name == "save_stac_bands":
             from loading import load_stac
             load_stac.save_stac_bands = function
+        elif name == "stac_sentinel_search":
+            from loading import load_stac
+            load_stac.search_sentinel2_items = function
+        elif name == "stac_landsat_search":
+            from loading import load_stac_usgs
+            load_stac_usgs.get_query_items = function
         else:
             setattr(workflow, name, function)
 
@@ -222,12 +285,25 @@ def _write_results(output_dir, metadata, records, profile_path):
         phase: by_phase.get(phase, 0.0) for phase in sorted(one_time_phases)
     }
     metadata["one_time_preparation_total_seconds"] = one_time_total
+    metadata["transfer_measurement"] = (
+        "System network byte counters from psutil; interpret as an approximate "
+        "per-run transfer volume when the run is isolated."
+    )
     metadata["events"] = records
     (output_dir / "metrics.json").write_text(
         json.dumps(metadata, indent=2), encoding="utf-8"
     )
     with (output_dir / "metrics.csv").open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["phase", "duration_seconds", "started_utc"])
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=[
+                "phase",
+                "duration_seconds",
+                "started_utc",
+                "bytes_transferred",
+            ],
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(records)
 
@@ -295,7 +371,12 @@ def main():
             or config.get("study_area_name")
             or Path(config["shapefile"]).stem
         )
-        original_study = Path(config.get("output_directory", ""))
+        configured_output = config.get("output_directory")
+        original_study = (
+            Path(configured_output)
+            if configured_output
+            else Path(config["working_directory"]) / study_name
+        )
         if not original_study.is_dir():
             original_study = Path(config["working_directory"]) / study_name
         query_source = original_study / "QUERY"
@@ -319,7 +400,9 @@ def main():
         config["run_snowflakes"] = True
         # Reuse cached queries when available; otherwise create them in the
         # temporary workspace. Query time is not included in the profile.
-        args.no_query = query_source.is_dir()
+        args.no_query = query_source.is_dir() and _query_cache_covers_date(
+            query_source, profile_date
+        )
     records = []
     metadata = {
         "config": str(config_path),

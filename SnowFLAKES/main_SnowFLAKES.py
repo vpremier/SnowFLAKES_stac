@@ -6,6 +6,7 @@ Created on Mon Sep 16 14:59:20 2024
 @author: rbarella
 """
 import os
+import shutil
 import numpy as np
 from datetime import datetime as dt
 import geopandas as gpd
@@ -41,6 +42,19 @@ from SnowFLAKES.ice import run_snow_ice_classification
 
 
 def run_snowflakes(config, data, scene_id):
+    """Process a scene and optionally remove its intermediate auxiliary files."""
+    try:
+        return _run_snowflakes(config, data, scene_id)
+    finally:
+        if config.get("remove_auxiliary", False):
+            scene_aux_folder = os.path.join(
+                config["output_directory"], scene_id, "auxiliary"
+            )
+            if os.path.isdir(scene_aux_folder):
+                shutil.rmtree(scene_aux_folder)
+
+
+def _run_snowflakes(config, data, scene_id):
     
     print(f"Running SnowFLAKES for {scene_id}")
 

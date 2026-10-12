@@ -1,23 +1,26 @@
 {
   "study_area": "tile",
   "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test_SnowFlakes",
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/s2_tile.geojson",
+  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/landsat_tile.geojson",
   "date_start": "2022-04-05",
   "date_end": "2022-04-06",
-  "satellite": "Sentinel-2",
+  "satellite": "Landsat",
   "max_cloudcover": 90,
   "landsat_satellite": [],
   "DOWNLOAD_SENTINEL": "S3",
   "DOWNLOAD_LANDSAT": "STAC-API",
-  "sentinel_tile_list": [
-    "T19HDD"
+  "landsat_tile_list": [
+    "232083"
   ],
   "CROP": true,
   "SAVE": true,
   "resampling_params": {
     "resolution": 50,
     "extent_target": [
-        399960,6290199,509760,6400000],
+    368129,
+    6224028,
+    598618,
+    6434214],
     "epsg_target": 32719,
     "no_data_value": "nan"
   },

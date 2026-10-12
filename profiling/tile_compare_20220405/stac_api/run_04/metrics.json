@@ -1,0 +1,113 @@
+{
+  "config": "/tmp/snowflakes_profile_compare_cwar7pde/config_stac_api.json",
+  "date": "2022-04-05",
+  "download_sentinel": "STAC-API",
+  "download_landsat": "STAC-API",
+  "started_utc": "2026-10-01T17:18:57.830404+00:00",
+  "workflow_total_including_one_time_seconds": 186.2192755229771,
+  "phase_totals_seconds": {
+    "stac_item_search": 6.412148421979509,
+    "prepare_merged_stac": 60.134755976032466,
+    "auxiliary_information": 7.81231542408932,
+    "snowflakes": 49.53196187491994,
+    "workflow_total": 118.46142514899839
+  },
+  "snowflakes_breakdown_seconds": {
+    "glacier_check": 0.0,
+    "model_training": 5.433671358972788,
+    "scf_postprocessing": 0.18137537699658424,
+    "scf_prediction": 4.241746176034212,
+    "training_collection": 39.67516896291636
+  },
+  "one_time_preparation_seconds": {
+    "dem_preparation": 4.762226124876179,
+    "glacier_mask_preparation": 59.415590095100924,
+    "water_mask_preparation": 3.5800341540016234
+  },
+  "one_time_preparation_total_seconds": 67.75785037397873,
+  "transfer_measurement": "System network byte counters from psutil; interpret as an approximate per-run transfer volume when the run is isolated.",
+  "events": [
+    {
+      "phase": "stac_item_search",
+      "duration_seconds": 6.412148421979509,
+      "started_utc": "2026-10-01T17:19:11.510067+00:00",
+      "bytes_transferred": 47714
+    },
+    {
+      "phase": "save_bands",
+      "duration_seconds": 0.43904929095879197,
+      "started_utc": "2026-10-01T17:20:05.083004+00:00"
+    },
+    {
+      "phase": "prepare_merged_stac",
+      "duration_seconds": 60.134755976032466,
+      "started_utc": "2026-10-01T17:20:05.083442+00:00",
+      "bytes_transferred": 736668431
+    },
+    {
+      "phase": "save_composites",
+      "duration_seconds": 0.14905589795671403,
+      "started_utc": "2026-10-01T17:20:05.232635+00:00"
+    },
+    {
+      "phase": "dem_preparation",
+      "duration_seconds": 4.2346792669268325,
+      "started_utc": "2026-10-01T17:20:09.530811+00:00"
+    },
+    {
+      "phase": "dem_preparation",
+      "duration_seconds": 0.5275468579493463,
+      "started_utc": "2026-10-01T17:20:10.058414+00:00"
+    },
+    {
+      "phase": "water_mask_preparation",
+      "duration_seconds": 3.5800341540016234,
+      "started_utc": "2026-10-01T17:20:13.638522+00:00"
+    },
+    {
+      "phase": "glacier_mask_preparation",
+      "duration_seconds": 59.415590095100924,
+      "started_utc": "2026-10-01T17:21:13.054149+00:00"
+    },
+    {
+      "phase": "auxiliary_preparation_total",
+      "duration_seconds": 75.57016579806805,
+      "started_utc": "2026-10-01T17:21:20.849036+00:00"
+    },
+    {
+      "phase": "training_collection",
+      "duration_seconds": 39.67516896291636,
+      "started_utc": "2026-10-01T17:22:00.524249+00:00"
+    },
+    {
+      "phase": "model_training",
+      "duration_seconds": 5.433671358972788,
+      "started_utc": "2026-10-01T17:22:05.969359+00:00"
+    },
+    {
+      "phase": "scf_prediction",
+      "duration_seconds": 4.241746176034212,
+      "started_utc": "2026-10-01T17:22:10.211136+00:00"
+    },
+    {
+      "phase": "scf_postprocessing",
+      "duration_seconds": 0.18137537699658424,
+      "started_utc": "2026-10-01T17:22:10.392546+00:00"
+    },
+    {
+      "phase": "snowflakes",
+      "duration_seconds": 125.45700398110785,
+      "started_utc": "2026-10-01T17:22:10.689723+00:00"
+    },
+    {
+      "phase": "workflow_total_including_one_time",
+      "duration_seconds": 186.2192755229771,
+      "started_utc": "2026-10-01T17:22:11.151887+00:00"
+    },
+    {
+      "phase": "workflow_total",
+      "duration_seconds": 118.46142514899839,
+      "started_utc": "2026-10-01T17:22:11.151887+00:00"
+    }
+  ]
+}

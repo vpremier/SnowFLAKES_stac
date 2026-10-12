@@ -1,0 +1,119 @@
+{
+  "config": "/tmp/snowflakes_profile_compare_kdp1e56i/config_stac_api.json",
+  "date": "2015-11-23",
+  "download_sentinel": "STAC-API",
+  "download_landsat": "usgs-m2m",
+  "started_utc": "2026-10-01T11:53:16.375120+00:00",
+  "workflow_total_including_one_time_seconds": 137.34557325590868,
+  "phase_totals_seconds": {
+    "stac_item_search": 0.6903980120550841,
+    "prepare_merged_stac": 16.400556127075106,
+    "auxiliary_information": 4.479392906068824,
+    "snowflakes": 38.96222883614246,
+    "workflow_total": 70.21609740296844
+  },
+  "snowflakes_breakdown_seconds": {
+    "glacier_check": 0.0,
+    "model_training": 11.936449363012798,
+    "scf_postprocessing": 0.15323791303671896,
+    "scf_prediction": 1.4735020539956167,
+    "training_collection": 25.399039506097324
+  },
+  "one_time_preparation_seconds": {
+    "dem_preparation": 3.241764906910248,
+    "glacier_mask_preparation": 62.92751817696262,
+    "water_mask_preparation": 0.960192769067362
+  },
+  "one_time_preparation_total_seconds": 67.12947585294023,
+  "transfer_measurement": "System network byte counters from psutil; interpret as an approximate per-run transfer volume when the run is isolated.",
+  "events": [
+    {
+      "phase": "stac_item_search",
+      "duration_seconds": 0.3000220530666411,
+      "started_utc": "2026-10-01T11:53:24.892697+00:00",
+      "bytes_transferred": 21181
+    },
+    {
+      "phase": "save_bands",
+      "duration_seconds": 0.3000950940186158,
+      "started_utc": "2026-10-01T11:53:40.833656+00:00"
+    },
+    {
+      "phase": "prepare_merged_stac",
+      "duration_seconds": 16.400556127075106,
+      "started_utc": "2026-10-01T11:53:40.834102+00:00",
+      "bytes_transferred": 164034129
+    },
+    {
+      "phase": "stac_item_search",
+      "duration_seconds": 0.390375958988443,
+      "started_utc": "2026-10-01T11:53:41.379121+00:00",
+      "bytes_transferred": 19976
+    },
+    {
+      "phase": "save_composites",
+      "duration_seconds": 0.2770697199739516,
+      "started_utc": "2026-10-01T11:53:50.203025+00:00"
+    },
+    {
+      "phase": "dem_preparation",
+      "duration_seconds": 2.986871220986359,
+      "started_utc": "2026-10-01T11:53:53.230291+00:00"
+    },
+    {
+      "phase": "dem_preparation",
+      "duration_seconds": 0.2548936859238893,
+      "started_utc": "2026-10-01T11:53:53.485218+00:00"
+    },
+    {
+      "phase": "water_mask_preparation",
+      "duration_seconds": 0.960192769067362,
+      "started_utc": "2026-10-01T11:53:54.445459+00:00"
+    },
+    {
+      "phase": "glacier_mask_preparation",
+      "duration_seconds": 62.92751817696262,
+      "started_utc": "2026-10-01T11:54:57.373007+00:00"
+    },
+    {
+      "phase": "auxiliary_preparation_total",
+      "duration_seconds": 71.60886875900906,
+      "started_utc": "2026-10-01T11:55:01.835801+00:00"
+    },
+    {
+      "phase": "training_collection",
+      "duration_seconds": 25.399039506097324,
+      "started_utc": "2026-10-01T11:55:27.234880+00:00"
+    },
+    {
+      "phase": "model_training",
+      "duration_seconds": 11.936449363012798,
+      "started_utc": "2026-10-01T11:55:39.185440+00:00"
+    },
+    {
+      "phase": "scf_prediction",
+      "duration_seconds": 1.4735020539956167,
+      "started_utc": "2026-10-01T11:55:40.658994+00:00"
+    },
+    {
+      "phase": "scf_postprocessing",
+      "duration_seconds": 0.15323791303671896,
+      "started_utc": "2026-10-01T11:55:40.812258+00:00"
+    },
+    {
+      "phase": "snowflakes",
+      "duration_seconds": 110.83588073402643,
+      "started_utc": "2026-10-01T11:55:41.038977+00:00"
+    },
+    {
+      "phase": "workflow_total_including_one_time",
+      "duration_seconds": 137.34557325590868,
+      "started_utc": "2026-10-01T11:55:41.649722+00:00"
+    },
+    {
+      "phase": "workflow_total",
+      "duration_seconds": 70.21609740296844,
+      "started_utc": "2026-10-01T11:55:41.649722+00:00"
+    }
+  ]
+}

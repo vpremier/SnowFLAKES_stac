@@ -37,6 +37,11 @@ def _numeric_nodata(value):
     return float(value)
 
 
+def search_sentinel2_items(cat, params):
+    """Execute the Sentinel-2 STAC item search for profiling and reuse."""
+    return list(cat.search(**params).items_as_dicts())
+
+
 
 # clms_urban-atlas_land-cover-use_europe_V025ha_vector_static_v01
 # clms_urban-atlas_street-tree-layer_europe_V005ha_vector_static_v01
@@ -614,7 +619,7 @@ def convert_sentinel2_bands(outdir,
 
     start = time.time()
 
-    items = list(cat.search(**params).items_as_dicts())
+    items = search_sentinel2_items(cat, params)
     print(f"Number of STAC items returned: {len(items)}")
     
     
