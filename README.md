@@ -215,6 +215,10 @@ Products retrieved using **`OData`**, **`S3`**, **`Google`**, or **`USGS-M2M`** 
 ```
 Because the `RAW` directory is shared across study areas, downloaded products can be reused for different AOIs without being downloaded again.
 
+Each saved scene under `MERGED` includes a `<scene_id>.vrt` beside its band GeoTIFFs. Open this file in a GIS viewer to visualize all saved TOA bands as one multiband raster. Bands are labelled and sorted by band number, and relative file references let you move the scene folder as a unit. VRTs are also generated when existing prepared bands are loaded from cache; scenes skipped entirely are not modified.
+
+Running `./main.sh path/to/config.json` (or `python main.py path/to/config.json --query`) completes the full workflow one calendar month at a time: query that period, download its required products, then prepare the imagery and run SnowFLAKES in date order before querying the next month. Running `main.py` without `--query` uses existing query CSV files. All tiles acquired on the same date remain together for mosaicking. Existing cache checks and configured date limits still apply; download-only mode downloads each month without running SnowFLAKES.
+
 ### Input-band preparation
 
 The preparation of the input bands is controlled by two Boolean parameters:

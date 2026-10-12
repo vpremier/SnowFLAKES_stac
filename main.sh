@@ -17,17 +17,5 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
-run_query() {
-    echo "[1/2] Querying available satellite scenes"
-    python3 "${SCRIPT_DIR}/data_download/query_available.py" \
-        --config "${CONFIG_PATH}"
-}
-
-run_load() {
-    echo "[2/2] Loading and preparing SnowFLAKES data arrays"
-    python3 "${SCRIPT_DIR}/main.py" \
-        "${CONFIG_PATH}"
-}
-
-run_query
-run_load
+echo "Querying, downloading, and processing one month at a time"
+python3 "${SCRIPT_DIR}/main.py" "${CONFIG_PATH}" --query

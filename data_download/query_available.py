@@ -474,7 +474,11 @@ def _config_value(config, *keys, default=None):
 def _run_from_config(config_path):
     with open(config_path, "r", encoding="utf-8") as file:
         config = json.load(file)
+    return run_from_settings(config)
 
+
+def run_from_settings(config):
+    """Query the configured interval using an in-memory configuration."""
     aoi = _config_value(config, "shapefile", "aoi")
     if not aoi:
         raise ValueError("The config must define 'shapefile' or 'aoi'")

@@ -178,9 +178,7 @@ def _read_query_files(study_dir, prefix, date_start=None, date_end=None):
             continue
         frames.append(frame)
     if not frames:
-        raise FileNotFoundError(
-            f"All {prefix} query CSV files are empty in {study_dir / 'QUERY'}"
-        )
+        return pd.DataFrame(columns=["Name"])
     result = pd.concat(frames, ignore_index=True)
     if "Name" not in result.columns:
         raise ValueError(f"{prefix} query files must contain a 'Name' column")
@@ -214,6 +212,20 @@ def _dates(products, sensor):
         f"{token[:4]}-{token[4:6]}-{token[6:8]}"
         for token in tokens.dropna().unique()
     )
+
+
+def _products_for_date(products, sensor, date):
+    """Select all tiles and missions acquired on one date."""
+    date_index = 2 if sensor == "Sentinel-2" else 3
+    tokens = products["Name"].astype(str).str.split("_").str[date_index].str[:8]
+    return products.loc[tokens == date.replace("-", "")].copy()
+
+
+def _products_for_month(products, sensor, month):
+    """Select all acquisitions in a calendar month (YYYY-MM)."""
+    date_index = 2 if sensor == "Sentinel-2" else 3
+    tokens = products["Name"].astype(str).str.split("_").str[date_index].str[:6]
+    return products.loc[tokens == month.replace("-", "")].copy()
 
 
 def _remove_processed(
@@ -465,6 +477,7 @@ def _save_bands(
     data, output_dir, scene_id, overwrite=False, no_data_value=np.nan
 ):
     import rasterio
+    from loading.visualization import write_scene_vrt
 
     output_dir = Path(output_dir) / scene_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -497,6 +510,7 @@ def _save_bands(
             nodata=no_data_value,
         ) as destination:
             destination.write(values, 1)
+    write_scene_vrt(output_dir.parent, scene_id)
 
 
 def _download_raw(
@@ -667,6 +681,8 @@ def _extract_sentinel2_archives(sentinel_dir):
 def _load_stac_date(
     config, sensor, date, save, platform=None, products=None
 ):
+    from loading.visualization import write_scene_vrt
+
     params = config["resampling_params"]
     platform_code = platform
     if sensor != "Sentinel-2" and platform_code is None and products is not None:
@@ -691,6 +707,7 @@ def _load_stac_date(
                 params["extent_target"],
             ):
                 cached = load_prepared_bands(prepared_root, scene_id, date)
+                write_scene_vrt(prepared_root, scene_id)
                 print(f"Loading prepared bands from cache: {scene_id}")
                 return cached, scene_id
 
@@ -714,7 +731,10 @@ def _load_stac_date(
         from loading import load_stac
 
         load_stac.setup_cdse_credentials()
-        return load_stac.convert_sentinel2_bands(**common)
+        result = load_stac.convert_sentinel2_bands(**common)
+        if save and result is not None and result[0] is not None:
+            write_scene_vrt(prepared_root, result[1])
+        return result
 
     from loading import load_stac_usgs
 
@@ -726,10 +746,13 @@ def _load_stac_date(
         "LC08": "LANDSAT_8",
         "LC09": "LANDSAT_9",
     }.get(platform, platform)
-    return load_stac_usgs.convert_landsat_bands(
+    result = load_stac_usgs.convert_landsat_bands(
         platform=platform,
         **common,
     )
+    if save and result is not None and result[0] is not None:
+        write_scene_vrt(prepared_root, result[1])
+    return result
 
 
 def _load_raw_date(
@@ -742,6 +765,8 @@ def _load_raw_date(
     save_dir=None,
     merge=True,
 ):
+    from loading.visualization import write_scene_vrt
+
     params = config.get("resampling_params", {})
     platform = (
         str(products.iloc[0]["Name"]).split("_")[0]
@@ -773,6 +798,7 @@ def _load_raw_date(
         cached = load_prepared_bands(
             prepared_dir, prepared_scene_id, date
         )
+        write_scene_vrt(prepared_dir, prepared_scene_id)
         print(f"Loading prepared bands from cache: {prepared_scene_id}")
         return cached, prepared_scene_id
 
@@ -1246,11 +1272,13 @@ def _process_raw_tiles(config, study_dir, sentinel2, landsat, save, collected):
                             gc.collect()
 
 
-def run(config_path):
+def run(config_path, *, config_overrides=None):
     load_dotenv(PROJECT_ROOT / ".env")
     load_dotenv(Path(config_path).resolve().parent / ".env")
     with open(config_path, "r", encoding="utf-8") as file:
         config = json.load(file)
+    if config_overrides:
+        config.update(config_overrides)
     overwrite_mode = _overwrite_mode(config)
     print(f"Overwrite mode: {overwrite_mode}")
 
@@ -1451,206 +1479,251 @@ def run(config_path):
     landsat = _remove_snowflakes_dates(landsat, study_dir, "Landsat")
     sentinel2 = _remove_logged_scenes(sentinel2, study_dir, "Sentinel-2")
     landsat = _remove_logged_scenes(landsat, study_dir, "Landsat")
-    if raw_sentinel or raw_landsat:
-        sentinel_download_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
-        landsat_download_products = landsat if raw_landsat else landsat.iloc[0:0]
-        # A completed SnowFLAKES raster is the strongest cache marker: skip
-        # the entire date before any download or resampling work.
-        sentinel_download_products = _remove_snowflakes_dates(
-            sentinel_download_products, study_dir, "Sentinel-2"
-        )
-        landsat_download_products = _remove_snowflakes_dates(
-            landsat_download_products, study_dir, "Landsat"
-        )
-        # Apply the MERGED date cache before any mode-specific filtering (for
-        # example RGB generation), so cached dates are never downloaded again.
-        sentinel_download_products = _remove_merged_dates(
-            sentinel_download_products, study_dir, "Sentinel-2"
-        )
-        landsat_download_products = _remove_merged_dates(
-            landsat_download_products, study_dir, "Landsat"
-        )
-        if crop:
-            if _save_rgb_enabled(config) and not sentinel_download_products.empty:
-                sentinel2_downloads = sentinel_download_products
-            else:
-                sentinel2_downloads = _remove_processed(
-                    sentinel_download_products,
+    # Download and process one calendar month before starting the next.
+    sentinel_query = sentinel2
+    landsat_query = landsat
+    arrays = []
+    months = sorted(
+        {date[:7] for date in _dates(sentinel_query, "Sentinel-2")}
+        | {date[:7] for date in _dates(landsat_query, "Landsat")}
+    )
+    for month in months:
+        print(f"Starting download and processing for {month}")
+        sentinel2 = _products_for_month(sentinel_query, "Sentinel-2", month)
+        landsat = _products_for_month(landsat_query, "Landsat", month)
+        if raw_sentinel or raw_landsat:
+            sentinel_download_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
+            landsat_download_products = landsat if raw_landsat else landsat.iloc[0:0]
+            # A completed SnowFLAKES raster is the strongest cache marker: skip
+            # the entire date before any download or resampling work.
+            sentinel_download_products = _remove_snowflakes_dates(
+                sentinel_download_products, study_dir, "Sentinel-2"
+            )
+            landsat_download_products = _remove_snowflakes_dates(
+                landsat_download_products, study_dir, "Landsat"
+            )
+            # Apply the MERGED date cache before any mode-specific filtering (for
+            # example RGB generation), so cached dates are never downloaded again.
+            sentinel_download_products = _remove_merged_dates(
+                sentinel_download_products, study_dir, "Sentinel-2"
+            )
+            landsat_download_products = _remove_merged_dates(
+                landsat_download_products, study_dir, "Landsat"
+            )
+            if crop:
+                if _save_rgb_enabled(config) and not sentinel_download_products.empty:
+                    sentinel2_downloads = sentinel_download_products
+                else:
+                    sentinel2_downloads = _remove_processed(
+                        sentinel_download_products,
+                        study_dir,
+                        "Sentinel-2",
+                        exclude_tiles=None,
+                        resolution=params["resolution"],
+                        epsg=params["epsg_target"],
+                        extent=params["extent_target"],
+                        force=_overwrite_at_least(config, "crop"),
+                    )
+                landsat_downloads = _remove_processed(
+                    landsat_download_products,
                     study_dir,
-                    "Sentinel-2",
+                    "Landsat",
                     exclude_tiles=None,
                     resolution=params["resolution"],
                     epsg=params["epsg_target"],
                     extent=params["extent_target"],
                     force=_overwrite_at_least(config, "crop"),
                 )
-            landsat_downloads = _remove_processed(
-                landsat_download_products,
-                study_dir,
-                "Landsat",
-                exclude_tiles=None,
-                resolution=params["resolution"],
-                epsg=params["epsg_target"],
-                extent=params["extent_target"],
-                force=_overwrite_at_least(config, "crop"),
-            )
-        else:
-            if _save_rgb_enabled(config) and not sentinel_download_products.empty:
-                sentinel2_downloads = sentinel_download_products
             else:
-                sentinel2_downloads = _remove_cached_tiles(
-                    sentinel_download_products,
+                if _save_rgb_enabled(config) and not sentinel_download_products.empty:
+                    sentinel2_downloads = sentinel_download_products
+                else:
+                    sentinel2_downloads = _remove_cached_tiles(
+                        sentinel_download_products,
+                        study_dir,
+                        "Sentinel-2",
+                        resolution=params["resolution"],
+                        epsg=params["epsg_target"],
+                        force=_overwrite_at_least(config, "crop"),
+                    )
+                landsat_downloads = _remove_cached_tiles(
+                    landsat_download_products,
                     study_dir,
-                    "Sentinel-2",
+                    "Landsat",
                     resolution=params["resolution"],
                     epsg=params["epsg_target"],
                     force=_overwrite_at_least(config, "crop"),
                 )
-            landsat_downloads = _remove_cached_tiles(
-                landsat_download_products,
-                study_dir,
-                "Landsat",
-                resolution=params["resolution"],
-                epsg=params["epsg_target"],
-                force=_overwrite_at_least(config, "crop"),
-            )
-        invalid_sentinel, invalid_landsat = _download_raw(
-            config,
-            study_dir,
-            sentinel2_downloads,
-            landsat_downloads,
-            sentinel_source=sentinel_download,
-            landsat_source=landsat_download,
-        )
-        if invalid_sentinel:
-            sentinel2 = sentinel2[~sentinel2["Name"].isin(invalid_sentinel)].copy()
-        if invalid_landsat:
-            landsat = landsat[~landsat["Name"].isin(invalid_landsat)].copy()
-
-        if download_only:
-            print(
-                "Download step complete; CROP=false, SAVE=false, and "
-                "run_snowflakes=false, so processing stops here."
-            )
-            return []
-
-    # When SnowFLAKES is enabled each DataArray is consumed immediately and
-    # released. If it is disabled, retain the arrays for programmatic callers.
-    arrays = []
-    stac_sentinel_products = sentinel2 if sentinel_stac else sentinel2.iloc[0:0]
-    stac_landsat_products = landsat if landsat_stac else landsat.iloc[0:0]
-    if sentinel_stac or landsat_stac:
-        for date in _dates(stac_sentinel_products, "Sentinel-2"):
-            snowflakes_dir = _snowflakes_output_directory(
-                study_dir, "Sentinel-2"
-            )
-            data, scene_id = _load_stac_date(
+            invalid_sentinel, invalid_landsat = _download_raw(
                 config,
-                "Sentinel-2",
-                date,
-                save,
-                products=stac_sentinel_products,
+                study_dir,
+                sentinel2_downloads,
+                landsat_downloads,
+                sentinel_source=sentinel_download,
+                landsat_source=landsat_download,
             )
-            if data is not None:
-                rgb_data = None
-                if _rgb_uses_analysis_data(config, "Sentinel-2"):
-                    print("Reusing 10 m analysis DataArray for RGB; no second STAC load")
-                    rgb_data = data
-                elif not _rgb_cache_exists(
-                    config, snowflakes_dir, scene_id, "Sentinel-2"
-                ):
-                    rgb_data, _ = _load_stac_rgb10(config, date)
-                _run_or_collect(
-                    config,
-                    "Sentinel-2",
-                    date,
-                    data,
-                    scene_id,
-                    snowflakes_dir,
-                    arrays,
-                    rgb_data=rgb_data,
-                )
-                if config.get("run_snowflakes", True):
-                    del data
-                    if rgb_data is not None:
-                        del rgb_data
-                    gc.collect()
-        for date in _dates(stac_landsat_products, "Landsat"):
-            date_products = stac_landsat_products[
-                stac_landsat_products["Name"].astype(str).str.split("_").str[3].str[:8]
-                == date.replace("-", "")
-            ]
-            for sensor_code in sorted(
-                date_products["Name"].astype(str).str.split("_").str[0].unique()
-            ):
-                snowflakes_dir = _snowflakes_output_directory(
-                    study_dir, "Landsat", platform=sensor_code
-                )
-                sensor_products = date_products[
-                    date_products["Name"]
-                    .astype(str)
-                    .str.startswith(sensor_code + "_")
-                ]
-                data, scene_id = _load_stac_date(
-                    config,
-                    "Landsat",
-                    date,
-                    save,
-                    platform=sensor_code,
-                    products=sensor_products,
-                )
-                if data is not None:
-                    rgb_data = None
-                    if not _rgb_cache_exists(
-                        config, snowflakes_dir, scene_id, "Landsat"
-                    ):
-                        rgb_data, _ = _load_landsat_rgb30(
-                            config,
-                            sensor_products,
-                            date,
-                            True,
-                            merge=True,
-                            stac=True,
-                            platform=sensor_code,
-                        )
-                    _run_or_collect(
-                        config,
-                        "Landsat",
-                        date,
-                        data,
-                        scene_id,
-                        snowflakes_dir,
-                        arrays,
-                        rgb_data=rgb_data,
+            if invalid_sentinel:
+                sentinel2 = sentinel2[~sentinel2["Name"].isin(invalid_sentinel)].copy()
+            if invalid_landsat:
+                landsat = landsat[~landsat["Name"].isin(invalid_landsat)].copy()
+
+            if download_only:
+                continue
+
+        # Process this month's dates in order, keeping same-day tiles together.
+        sentinel_month = sentinel2
+        landsat_month = landsat
+        dates = sorted(
+            set(_dates(sentinel_month, "Sentinel-2"))
+            | set(_dates(landsat_month, "Landsat"))
+        )
+        for acquisition_date in dates:
+            sentinel2 = _products_for_date(sentinel_month, "Sentinel-2", acquisition_date)
+            landsat = _products_for_date(landsat_month, "Landsat", acquisition_date)
+            stac_sentinel_products = sentinel2 if sentinel_stac else sentinel2.iloc[0:0]
+            stac_landsat_products = landsat if landsat_stac else landsat.iloc[0:0]
+            if sentinel_stac or landsat_stac:
+                for date in _dates(stac_sentinel_products, "Sentinel-2"):
+                    snowflakes_dir = _snowflakes_output_directory(
+                        study_dir, "Sentinel-2"
                     )
-                    if config.get("run_snowflakes", True):
-                        del data
-                        if rgb_data is not None:
-                            del rgb_data
-                        gc.collect()
-    if raw_sentinel or raw_landsat:
-        raw_sentinel_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
-        raw_landsat_products = landsat if raw_landsat else landsat.iloc[0:0]
-        if crop:
-            _process_cropped_raw(
-                config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
-            )
-        else:
-            _process_raw_tiles(
-                config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
-            )
+                    data, scene_id = _load_stac_date(
+                        config,
+                        "Sentinel-2",
+                        date,
+                        save,
+                        products=stac_sentinel_products,
+                    )
+                    if data is not None:
+                        rgb_data = None
+                        if _rgb_uses_analysis_data(config, "Sentinel-2"):
+                            print("Reusing 10 m analysis DataArray for RGB; no second STAC load")
+                            rgb_data = data
+                        elif not _rgb_cache_exists(
+                            config, snowflakes_dir, scene_id, "Sentinel-2"
+                        ):
+                            rgb_data, _ = _load_stac_rgb10(config, date)
+                        _run_or_collect(
+                            config,
+                            "Sentinel-2",
+                            date,
+                            data,
+                            scene_id,
+                            snowflakes_dir,
+                            arrays,
+                            rgb_data=rgb_data,
+                        )
+                        if config.get("run_snowflakes", True):
+                            del data
+                            if rgb_data is not None:
+                                del rgb_data
+                            gc.collect()
+                for date in _dates(stac_landsat_products, "Landsat"):
+                    date_products = stac_landsat_products[
+                        stac_landsat_products["Name"].astype(str).str.split("_").str[3].str[:8]
+                        == date.replace("-", "")
+                    ]
+                    for sensor_code in sorted(
+                        date_products["Name"].astype(str).str.split("_").str[0].unique()
+                    ):
+                        snowflakes_dir = _snowflakes_output_directory(
+                            study_dir, "Landsat", platform=sensor_code
+                        )
+                        sensor_products = date_products[
+                            date_products["Name"]
+                            .astype(str)
+                            .str.startswith(sensor_code + "_")
+                        ]
+                        data, scene_id = _load_stac_date(
+                            config,
+                            "Landsat",
+                            date,
+                            save,
+                            platform=sensor_code,
+                            products=sensor_products,
+                        )
+                        if data is not None:
+                            rgb_data = None
+                            if not _rgb_cache_exists(
+                                config, snowflakes_dir, scene_id, "Landsat"
+                            ):
+                                rgb_data, _ = _load_landsat_rgb30(
+                                    config,
+                                    sensor_products,
+                                    date,
+                                    True,
+                                    merge=True,
+                                    stac=True,
+                                    platform=sensor_code,
+                                )
+                            _run_or_collect(
+                                config,
+                                "Landsat",
+                                date,
+                                data,
+                                scene_id,
+                                snowflakes_dir,
+                                arrays,
+                                rgb_data=rgb_data,
+                            )
+                            if config.get("run_snowflakes", True):
+                                del data
+                                if rgb_data is not None:
+                                    del rgb_data
+                                gc.collect()
+            if raw_sentinel or raw_landsat:
+                raw_sentinel_products = sentinel2 if raw_sentinel else sentinel2.iloc[0:0]
+                raw_landsat_products = landsat if raw_landsat else landsat.iloc[0:0]
+                if crop:
+                    _process_cropped_raw(
+                        config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
+                    )
+                else:
+                    _process_raw_tiles(
+                        config, study_dir, raw_sentinel_products, raw_landsat_products, save, arrays
+                    )
+
+    if download_only:
+        print(
+            "Download step complete; CROP=false, SAVE=false, and "
+            "run_snowflakes=false, so processing stops here."
+        )
 
     config["output_directory"] = str(study_dir)
+    return arrays
+
+
+def run_monthly_workflow(config_path):
+    """Finish query, download, and processing before querying the next month."""
+    from data_download.query_available import month_ranges, run_from_settings
+
+    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(Path(config_path).resolve().parent / ".env")
+    with open(config_path, encoding="utf-8") as file:
+        config = json.load(file)
+    arrays = []
+    for start, end in month_ranges(config["date_start"], config["date_end"]):
+        print(f"Querying and processing period [{start}, {end})")
+        period = dict(date_start=start, date_end=end)
+        run_from_settings({**config, **period})
+        arrays.extend(run(config_path, config_overrides=period))
     return arrays
 
 
 def main():
     parser = argparse.ArgumentParser(description="Load query results for SnowFLAKES")
     parser.add_argument("config")
+    parser.add_argument(
+        "--query", action="store_true",
+        help="Query each month immediately before downloading and processing it",
+    )
     args = parser.parse_args()
     load_dotenv(PROJECT_ROOT / ".env")
     load_dotenv(Path(args.config).resolve().parent / ".env")
-    run(args.config)
+    if args.query:
+        run_monthly_workflow(args.config)
+    else:
+        run(args.config)
 
 
 if __name__ == "__main__":
