@@ -1,13 +1,20 @@
 {
+  "study_area": "Aguirre",
+  "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/SWE_processing",
   "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/Dataset_eotraining/aguirre.geojson",
-  "date_start": "2025-02-07",
-  "date_end": "2025-03-31",
+  "date_start": "2015-08-18",
+  "date_end": "2015-08-19",
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
   "landsat_satellite": [],
+  "DOWNLOAD_SENTINEL": "STAC-API",
+  "DOWNLOAD_LANDSAT": "STAC-API",
   "landsat_tile_list": [],
+  "sentinel_tile_list": [],
+  "CROP": true,
+  "SAVE": true,
   "resampling_params": {
-    "resolution": 20,
+    "resolution": 10,
     "extent_target": [
       354000,
       6014000,
@@ -17,10 +24,13 @@
     "epsg_target": 32719,
     "no_data_value": "nan"
   },
+  "save_false_color": true,
+  "save_rgb_10m": true,
+  "run_snowflakes": true,
   "uncertainty": false,
   "remove_auxiliary": false,
   "classify_glaciers": "yes",
   "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
-  "find_closest_model": true,
-  "overwrite": false
+  "find_closest_model": false,
+  "overwrite": true
 }

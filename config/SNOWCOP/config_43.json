@@ -1,7 +1,7 @@
 {
   "study_area": "Area_43",
   "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/SWE_processing",
-  "shapefile": "/mnt/CEPH_PROJECTS/SNOWCOP/Paloma/Area01/extent/area01.shp",
+  "shapefile": "/home/vpremier/Documents/git/dailySCA_harmonization_dev/config/SNOWCOP/aoi/area_43.shp",
   "date_start": "2013-04-01",
   "date_end": "2024-03-31",
   "satellite": "Sentinel-2",
@@ -16,7 +16,7 @@
   "resampling_params": {
     "resolution": 50,
     "extent_target": [
-      375500,			
+      375500,
       6819500,
       427500,
       6878500

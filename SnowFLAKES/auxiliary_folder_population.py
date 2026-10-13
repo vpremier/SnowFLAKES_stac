@@ -732,15 +732,7 @@ def create_auxiliary_information(scene_id, data, config):
                                             auxiliary_folder, 
                                             ~validMask, 
                                             bands)
-    
-    # SCF with threshold methods
-    SCF_thematic_path = thematic_map_classifier(scene_id, data, curr_aux_folder, 
-                                                auxiliary_folder, validMask)
 
-    
-
-    # adiecency map
-    adjacency_index_path = adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, ~validMask)
 
     return True
 
