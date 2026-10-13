@@ -425,20 +425,10 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     """Generate and save a composite terrain and cloud-shadow mask."""
     
     # Load masks and other necessary data
-    # ndvi = load_map(curr_aux_folder, '*NDVI.tif')
-    # idx6 = load_map(curr_aux_folder, '*idx6.tif')
-    # shad_idx = load_map(curr_aux_folder, '*shad_idx.tif')
-    # evi = load_map(curr_aux_folder, '*EVI.tif')
     cloud_mask, path = load_map(curr_aux_folder, '*cloud_Mask.tif', return_path=True)
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
 
-
-
-    # Normalize indices to range [0, 1]
-    # def normalize(arr):
-    #     arr_min, arr_max = np.nanmin(arr), np.nanmax(arr)
-    #     return (arr - arr_min) / (arr_max - arr_min) if arr_max > arr_min else np.zeros_like(arr)
 
     
     # validity mask
@@ -460,26 +450,6 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     CLOSDI = (1 - 1.5*bands["NIR"] -0.1*bands["RED"])*100/(1+3.5*bands["NIR"]+4.9*bands["RED"])
     
     threshold = np.nanpercentile(CLOSDI[mask], 10)
-
-    # plt.hist(CLOSDI[cloud_mask == 3])
-
-    
-    # idx6_norm = normalize(idx6)
-    # shad_idx_norm = normalize(shad_idx)
-    # ndvi_norm = normalize(ndvi)
-    # evi_norm = normalize(evi)
-    # nir_norm = normalize(bands["NIR"])
-
-
-    # # Combine indices to create a composite shadow score
-    # shadow_score = (
-    #     (idx6_norm + shad_idx_norm) /
-    #     (ndvi_norm + evi_norm + nir_norm + 1e-6)
-    # )
-    
-    # shadow_score[~curr_scene_valid] = np.nan
-    
-    # threshold = np.nanpercentile(shadow_score[curr_scene_valid], 85)
     
     # DIFFERENT SHADOWS: i) cloud shadows, ii) self-shadows, and iii) cast-shadows 
     cloud_shadow = cloud_mask == 3
@@ -502,108 +472,6 @@ def generate_shadow_mask(scene_id, curr_aux_folder, auxiliary_folder, no_data_ma
     return shadow_mask_path
 
 
-
-def thematic_map_classifier(scene_id, data, curr_aux_folder, auxiliary_folder,
-                            validMask):
-    """Classify and save a threshold-based thematic snow map."""
-
-
-    # Load masks and other necessary data
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
-    NDSI, NDSI_path = load_map(curr_aux_folder, '*NDSI.tif', return_path=True)
-    NDVI = load_map(curr_aux_folder, '*NDVI.tif')
-    
-    # Set a fixed NDSI threshold (candidate pixels) and a NDVI threshold to avoid vegetation
-    ndsi_threshold = 0.4
-    ndvi_threshold = 0.5
-    
-
-    # Mark invalid pixels as 255 (no-data, clouds, or water)
-    thematic_map = np.zeros_like(NDSI, dtype=np.uint8)
-
-    
-    # Build candidate mask: valid pixels with sufficient NDSI and low NDVI.
-    snow_mask = validMask & (NDSI > ndsi_threshold) & (NDVI < ndvi_threshold)
-    thematic_map[snow_mask] = 100
-
-    # non-valid pixels
-    thematic_map[np.logical_not(validMask)] = 255
-    
-    # Optionally mark cloud and water areas with distinct codes:
-    thematic_map[cloud_mask == 1] = 205  # thick clouds
-    thematic_map[cloud_mask == 2] = 205  # thin clouds
-    thematic_map[water_mask == 1] = 210
-    
-
-    # Define output path
-    output_path = os.path.join(curr_aux_folder, f'{scene_id}_simple_class.tif')
-
-    # save output tif file
-    save_tif(thematic_map, NDSI_path, output_path, dtype=rasterio.uint8)
-
-    return output_path
-
-
-    
-def adjacency_index(scene_id, curr_aux_folder, auxiliary_folder, no_data_mask):
-    """Compute and save an altitude-constrained distance-from-snow index."""
-
-    # Load masks and other necessary data
-    snow_map = load_map(curr_aux_folder, '*simple_class.tif')
-    cloud_mask = load_map(curr_aux_folder, '*cloud_Mask.tif')
-    water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
-    dem, dem_path = load_map(auxiliary_folder, '*DEM.tif', return_path=True)
-
-    # valid mask
-    curr_scene_valid = build_valid_scene(no_data_mask,
-                                         cloud_mask == 1,
-                                         cloud_mask == 2,
-                                         water_mask == 1,
-                                         iterations=0)
-    
-    # Calculate distance from snow_sure
-    distance_from_snow = np.full_like(snow_map, np.nan, dtype=np.float32)
-    snow_sure_pixels = (snow_map == 100)
-    distance_from_snow[curr_scene_valid] = distance_transform_edt(~snow_sure_pixels)[curr_scene_valid]
-    distance_from_snow = np.nan_to_num(distance_from_snow, nan=np.nanmax(distance_from_snow))
-    distance_from_snow_normalized = (distance_from_snow - np.nanmin(distance_from_snow)) / (
-            np.nanmax(distance_from_snow) - np.nanmin(distance_from_snow)
-    )
-    
-    
-    # Set altitude threshold, kind of snowline altitude
-    valid_dem = dem[np.logical_and(curr_scene_valid, snow_map == 100)]
-
-    if valid_dem.size == 0:
-        altitude_mask = np.zeros_like(dem, dtype=bool)
-    else:
-        altitude_min_threshold = np.percentile(valid_dem, 1) - 500
-        altitude_mask = dem >= altitude_min_threshold
-    
-
-    # Combine distance and altitude into index_of_distance
-    index_of_distance = np.zeros_like(snow_map, dtype=np.float32)
-    index_of_distance[curr_scene_valid] = (
-            distance_from_snow_normalized[curr_scene_valid] * altitude_mask[curr_scene_valid]
-    )
-
-    # Convert to uint8 for saving
-    index_of_distance_uint8 = (index_of_distance * 254).astype(np.uint8)  # Scale if needed
-
-    # Set no-data value for areas outside altitude_mask
-    no_data_value = 255  # Choose the no-data value, e.g., 0 or 255
-    index_of_distance_uint8[np.logical_or(~altitude_mask, ~curr_scene_valid)] = no_data_value
-
-    # Save the result as a GeoTIFF
-    output_path = os.path.join(curr_aux_folder, f"{scene_id}_index_of_distance.tif")
-
-    save_tif(index_of_distance_uint8, dem_path, output_path, 
-             nodata=no_data_value, dtype=rasterio.uint8)
-    
-    return output_path
-    
-    
 
 def create_auxiliary_information(scene_id, data, config):
     """Generate the auxiliary rasters required for scene classification."""
@@ -700,18 +568,6 @@ def create_auxiliary_information(scene_id, data, config):
     spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'shad_idx',
                           curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value,
                           validMask=validMask)
-    # spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'normDiff',
-    #                       curr_aux_folder, f"{scene_id}_NormDiffBNIR.tif", no_data_value)
-    # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'normDiff',
-    #                       curr_aux_folder, f"{scene_id}_NormDiffGreenRed.tif", no_data_value)
-    # spectral_idx_computer(data, bands['NIR'], bands['RED'], 'EVI',
-    #                       curr_aux_folder, f"{scene_id}_EVI.tif", no_data_value,
-    #                       validMask=validMask)
-    # spectral_idx_computer(data, bands['GREEN'], bands['RED'], 'idx6',
-    #                       curr_aux_folder, f"{scene_id}_idx6.tif", no_data_value,
-    #                       B3=bands['NIR'], validMask=validMask)
-    # spectral_idx_computer(data, bands['RED'], bands['SWIR'], 'bandRatioGlaciers',
-    #                       curr_aux_folder, f"{scene_id}_bandRatioGlaciers.tif", no_data_value)
     
     
     
