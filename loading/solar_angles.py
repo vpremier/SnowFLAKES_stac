@@ -9,6 +9,11 @@ import numpy as np
 from pyproj import Transformer
 
 
+
+
+
+
+
 def _read_metadata(href, s3_client):
     parsed = urlparse(href)
     if parsed.scheme == "s3":

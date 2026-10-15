@@ -6,13 +6,12 @@ Created on Fri Feb 27 16:03:56 2026
 @author: vpremier
 """
 
-from dotenv import load_dotenv
 import os
 import geopandas as gpd
 import numpy as np
+import re
 from pyproj import CRS
 import time
-import re
 import logging
 import rasterio as rio
 import pystac_client
@@ -26,6 +25,7 @@ from pystac_client.stac_api_io import StacApiIO
 from affine import Affine   
 import boto3
 import stackstac
+
 
 from loading.utils_stac import *
 from loading.solar_angles import save_solar_angles, attach_solar_angles, load_s2_solar_angle_grids
@@ -50,10 +50,6 @@ def search_sentinel2_items(cat, params):
 # cop-dem-glo-30-dged-cog
         
 # collection = "cop-dem-glo-30-dged-cog"
-
-
-# load_stac.py
-
 
 def load_with_retry(data, max_retries=20, wait_seconds=2):
     """Materialize a lazy xarray object with retry/backoff handling."""
@@ -451,6 +447,7 @@ def convert_sentinel2_bands(outdir,
                             shp=None,
                             exclude_tiles=None,
                             include_tiles=None,
+                            collection = "sentinel-2-l1c",
                             bands=None):
     """
     Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
@@ -606,7 +603,7 @@ def convert_sentinel2_bands(outdir,
             geometry = mapping(box(*bbox_of_interest))
         
         params = {
-            "collections": ["sentinel-2-l1c"],
+            "collections": [collection],
             "intersects": geometry,
             "datetime": f"{date}",
             "query": {
@@ -687,12 +684,12 @@ def convert_sentinel2_bands(outdir,
 
         return None, None
     
-    # for Sentinel-2: needs to be changed in case of other sensors
-    # bands = ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", 
-    #          "B10", "B11", "B12", "B8A"]
+
     
-    if bands is None:
+    if bands is None and collection == "sentinel-2-l1c":
         bands = ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B11', 'B12', 'B8A']
+    elif bands is None and collection == "sentinel-2-l2a":
+        bands = ['B01_20m', 'B02_20m', 'B03_20m', 'B04_20m', 'B05_20m', 'B06_20m', 'B07_20m', 'B11_20m', 'B12_20m', 'B8A_20m']
     
 
     # id of the scene 
@@ -750,7 +747,6 @@ def convert_sentinel2_bands(outdir,
         # Group by day and compute mean
         data = data.groupby("time.day").max(dim="time", skipna=True)
         
-
 
     except Exception as e:
         msg = f"Failed to load data for {merged_image_id}: {str(e)}"
@@ -834,7 +830,7 @@ if __name__ == "__main__":
     data, scene_id = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=None, 
                             epsg_target=epsg_target, extent_target=extent_target, reproj_type=Resampling.cubic, 
                             suffix='toa', na_value = "NaN", calibration=True, 
-                            ow=False, save=False)
+                            ow=False, save=False, collection = "sentinel-2-l2a")
 
     # data = data.load()
     end = time.time()

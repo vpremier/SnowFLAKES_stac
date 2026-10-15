@@ -725,12 +725,14 @@ def _load_stac_date(
         "ow": _overwrite_at_least(config, "crop"),
         "na_value": _resampling_no_data_value(config),
         "shp": config["shapefile"],
-        "exclude_tiles": None,
+        "exclude_tiles": None
     }
     if sensor != "Sentinel-2":
         common["include_tiles"] = config.get("landsat_tile_list")
     else:
         common["include_tiles"] = config.get("sentinel_tile_list")
+        common["collection"] = config.get("collection", "sentinel-2-l1c")
+        
     if sensor == "Sentinel-2":
         from loading import load_stac
 

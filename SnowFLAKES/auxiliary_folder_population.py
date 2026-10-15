@@ -356,12 +356,6 @@ def solar_incidence_angle_calculator(data, scene_id, slopePath, aspectPath, curr
 
     # Read slope and aspect from the files
     with rasterio.open(slopePath) as slope_ds, rasterio.open(aspectPath) as aspect_ds:
-        if (slope_ds.shape != aspect_ds.shape or slope_ds.crs != aspect_ds.crs
-                or not slope_ds.transform.almost_equals(aspect_ds.transform)):
-            raise ValueError("Slope and aspect must share the same grid")
-        if (slope_ds.shape != angles[0].shape or slope_ds.crs != data.rio.crs
-                or not slope_ds.transform.almost_equals(data.rio.transform())):
-            raise ValueError("Terrain and solar angles must share the image grid")
         slope = slope_ds.read(1, masked=True).astype(float).filled(np.nan)
         aspect = aspect_ds.read(1, masked=True).astype(float).filled(np.nan)
         profile = slope_ds.profile
