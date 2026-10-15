@@ -314,12 +314,12 @@ if __name__ == "__main__":
     # start = pd.Timestamp("2021-05-01")
     # end = pd.Timestamp("2023-03-31")
     
-    start = pd.Timestamp("2018-01-21")
-    end = pd.Timestamp("2018-01-22")
+    start = pd.Timestamp("2015-08-18")
+    end = pd.Timestamp("2015-08-19")
 
 
     # shape of the AOI
-    config_path = './config/config_mendoza_new.json'
+    config_path = './config/config_aguirre.json'
 
 
     
@@ -341,6 +341,5 @@ if __name__ == "__main__":
         current = next_date
 
     for date_start, date_end in date_pairs:
-        print('ciao')
-        # run_workflow(date_start, date_end, config_path)
+        run_workflow(date_start, date_end, config_path)
         

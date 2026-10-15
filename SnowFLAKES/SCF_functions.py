@@ -38,13 +38,11 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     hillshade = np.cos(np.deg2rad(solar_incidence_angle))
     
-    # shadow = load_map(curr_aux_folder, '*shad_idx.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
     
     X = all_bands_image[:, mask].T
 
     hillshade_feat = hillshade[mask].reshape(-1, 1)
-    # shadow_feat = shadow[mask].reshape(-1, 1)
     diff_B_NIR_feat = diff_B_NIR[mask].reshape(-1, 1)
 
 
@@ -52,7 +50,6 @@ def build_feature_matrix(all_bands_image, mask, curr_aux_folder):
     return np.hstack((
         X,
         hillshade_feat,
-        # shadow_feat,
         diff_B_NIR_feat
     ))
 
@@ -85,17 +82,15 @@ def _save_training_samples_csv(shapefile, shapefile_path, data,
 
     solar_incidence_angle = load_map(curr_aux_folder, '*solar_incidence_angle.tif')
     hillshade = np.cos(np.deg2rad(solar_incidence_angle))
-    shadow = load_map(curr_aux_folder, '*shad_idx.tif')
     diff_B_NIR = load_map(curr_aux_folder, '*diffBNIR.tif')
 
     feature_array = np.hstack((
         all_bands_image[:, rows, cols].T,
         hillshade[rows, cols, None],
-        shadow[rows, cols, None],
         diff_B_NIR[rows, cols, None],
     ))
     feature_names = [str(name) for name in all_bands]
-    feature_names.extend(["hillshade", "shad_idx", "diffBNIR"])
+    feature_names.extend(["hillshade", "diffBNIR"])
     training_df = pd.DataFrame(feature_array, columns=feature_names)
 
     training_df["class"] = samples["value"].map({1: "snow", 2: "snow_free"}).to_numpy()

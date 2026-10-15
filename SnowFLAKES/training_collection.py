@@ -32,10 +32,8 @@ from SnowFLAKES.utilities import (
     scene_valid_mask,
     scene_no_data_value,
     create_folder,
-    define_datetime
 )
 
-from SnowFLAKES.auxiliary_folder_population import get_altitude_azimuth
 
 
 from SnowFLAKES.fit_distribution import fit_distribution_and_median
@@ -401,15 +399,13 @@ def get_pixels_shadow(bands, curr_aux_folder, curr_scene_valid, mask_shadow):
     
     
     
-def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range, sun_altitude):
+def get_pixels_sun(bands, curr_aux_folder, mask_sun, curr_range):
     
     NDSI = load_map(curr_aux_folder, '*NDSI.tif')
     NDWI = load_map(curr_aux_folder, '*NDWI.tif')
 
     green = bands["GREEN"]
     swir = bands["SWIR"]
-
-    distance_idx = load_map(curr_aux_folder, '*distance.tif')
     
     NDSI_thresholds = define_threshold(
         NDSI,
@@ -584,16 +580,12 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     # Scene's auxiliary folder
     curr_aux_folder = create_folder(scene_folder, "auxiliary")
     
-    # Extract date and time from the folder name
-    date_time, date = define_datetime(scene_id, config)
     
     # No data value
     no_data_value = scene_no_data_value(config)
     training_seed = config.get("training_seed", 0)
         
        
-    # get sun altitude
-    sun_altitude, _ = get_altitude_azimuth(data, date_time)
 
     # Load masks and other necessary data
     water_mask = load_map(auxiliary_folder, '*Water_Mask.tif')
@@ -731,7 +723,7 @@ def collect_trainings(data, scene_id, config, total_samples=500):
 
             snow_sun, snowfree_sun = get_pixels_sun(
                 bands, curr_aux_folder, mask_sun,
-                curr_range, sun_altitude
+                curr_range
             )
 
     

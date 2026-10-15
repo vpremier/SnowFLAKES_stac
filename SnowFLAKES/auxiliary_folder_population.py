@@ -15,13 +15,10 @@ import cv2
 import rasterio
 from shapely.geometry import Polygon
 from scipy.ndimage import distance_transform_edt
-from pyproj import Transformer
-from datetime import timezone
 from rasterio.crs import CRS
 from omnicloudmask import predict_from_array
 from scipy.ndimage import binary_dilation
 
-from pysolar.solar import get_altitude, get_azimuth
 
 from rasterio.enums import Resampling
 
@@ -35,7 +32,6 @@ from SnowFLAKES.utilities import (
     scene_no_data_value,
     create_folder,
     define_bands,
-    define_datetime,
     create_log
 )
 
@@ -109,7 +105,6 @@ def spectral_idx_computer(data, B1, B2, idx_name, curr_aux_folder,
 
     calculations = {
         'normDiff': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2),
-        'shad_idx': lambda B1, B2, B3, B4: (B1 - B2) / (B1 + B2) / B1,
         'band_diff': lambda B1, B2, B3, B4: B1 - B2,
         'EVI': lambda B1, B2, B3, B4: 2.5 * (B1 - B2) / (B1 + 2.4 * B2 + 1),
         'NDSIplus': lambda B1, B2, B3, B4: 2 * (B1 + B2 - B3 - B4) / (B1 + B2 + B3 + B4),
@@ -344,51 +339,31 @@ def calc_slope_aspect(dem_path, auxiliary_folder_path, overwrite=False):
 
 
 
-def get_altitude_azimuth(data, date_time):
-    
-    # Extract image metadata
-    resolution = float(abs(data.x[1] - data.x[0]))
+def solar_incidence_angle_calculator(data, scene_id, slopePath, aspectPath, curr_aux_folder):
+    """Compute SIA from terrain and gridded solar angles in degrees.
 
-    E_min = float(data.x.min())
-    E_max = float(data.x.max() + resolution)
-    N_min = float(data.y.min() - resolution)
-    N_max = float(data.y.max())
-    
-    try:
-        epsg_code = data.epsg.item()
-    except:
-        epsg_code = data.rio.crs.to_epsg()
-        
-    # Transform the coordinates to WGS84
-    transformer = Transformer.from_crs(f"epsg:{epsg_code}", "epsg:4326", always_xy=True)
-    central_E = E_min + (E_max - E_min) / 2
-    central_N = N_min + (N_max - N_min) / 2
-    Central_WGS84 = transformer.transform(central_E, central_N)
-
-    # Convert date_time to UTC timezone
-    datetime_object = date_time.replace(tzinfo=timezone.utc)
-
-    # Get sun altitude and azimuth
-    sun_altitude = get_altitude(Central_WGS84[1], Central_WGS84[0], datetime_object)
-    sun_azimuth = get_azimuth(Central_WGS84[1], Central_WGS84[0], datetime_object)
-    
-    return sun_altitude, sun_azimuth
-    
-
-    
-def solar_incidence_angle_calculator(data, scene_id, date_time, slopePath, aspectPath, curr_aux_folder, date):
-    """Compute and save solar-incidence angles from terrain and acquisition time."""
-
-    sun_altitude, sun_azimuth = get_altitude_azimuth(data, date_time)
-    
-    # Convert angles from degrees to radians
-    sun_zenith_rad = np.radians(90 - sun_altitude)
-    sun_azimuth_rad = np.radians(sun_azimuth)
+    Solar coordinates and terrain must share the image grid. Missing solar
+    or terrain values remain NaN in the saved incidence-angle raster.
+    """
+    angles = []
+    for name in ("solar_zenith", "solar_azimuth"):
+        if name not in data.coords:
+            raise ValueError(f"Missing {name} coordinate; load gridded solar angles first")
+        if set(data[name].dims) != {"y", "x"}:
+            raise ValueError(f"{name} must have dimensions (y, x)")
+        angles.append(np.asarray(data[name].transpose("y", "x"), dtype=float))
+    sun_zenith_rad, sun_azimuth_rad = (np.radians(angle) for angle in angles)
 
     # Read slope and aspect from the files
     with rasterio.open(slopePath) as slope_ds, rasterio.open(aspectPath) as aspect_ds:
-        slope = slope_ds.read(1)
-        aspect = aspect_ds.read(1)
+        if (slope_ds.shape != aspect_ds.shape or slope_ds.crs != aspect_ds.crs
+                or not slope_ds.transform.almost_equals(aspect_ds.transform)):
+            raise ValueError("Slope and aspect must share the same grid")
+        if (slope_ds.shape != angles[0].shape or slope_ds.crs != data.rio.crs
+                or not slope_ds.transform.almost_equals(data.rio.transform())):
+            raise ValueError("Terrain and solar angles must share the image grid")
+        slope = slope_ds.read(1, masked=True).astype(float).filled(np.nan)
+        aspect = aspect_ds.read(1, masked=True).astype(float).filled(np.nan)
         profile = slope_ds.profile
 
     # Convert slope and aspect from degrees to radians
@@ -481,8 +456,6 @@ def create_auxiliary_information(scene_id, data, config):
     
     sensor = get_sensor(scene_id)
     
-    # Extract date and time from the folder name
-    date_time, date = define_datetime(scene_id, config)
 
     # No data value
     no_data_value = scene_no_data_value(config)
@@ -550,7 +523,7 @@ def create_auxiliary_information(scene_id, data, config):
     
     
     
-    # Compute spectral indices: NDVI, NDSI, band difference, and shadow index
+    # Compute spectral indices: NDWI, NDVI, NDSI, and band difference
     bands = define_bands(data, sensor)
     
     spectral_idx_computer(data, bands['GREEN'], bands['NIR'], 'normDiff',
@@ -565,23 +538,15 @@ def create_auxiliary_information(scene_id, data, config):
     spectral_idx_computer(data, bands['BLUE'], bands['NIR'], 'band_diff',
                           curr_aux_folder, f"{scene_id}_diffBNIR.tif", no_data_value,
                           validMask=validMask)
-    spectral_idx_computer(data, bands['GREEN'], bands['SWIR'], 'shad_idx',
-                          curr_aux_folder, f"{scene_id}_shad_idx.tif", no_data_value,
-                          validMask=validMask)
     
     
     
     # Calculate solar incidence angle
-    solar_incidence_angle = solar_incidence_angle_calculator(data,
-                                                             scene_id,
-                                                             date_time,
-                                                             slopePath,
-                                                             aspectPath,
-                                                             curr_aux_folder,
-                                                             date
-                                                         )
+    solar_incidence_angle = solar_incidence_angle_calculator(
+        data, scene_id, slopePath, aspectPath, curr_aux_folder
+    )
     
-    
+
     # shadow mask
     shadow_mask_path = generate_shadow_mask(scene_id, 
                                             curr_aux_folder, 

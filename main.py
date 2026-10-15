@@ -510,6 +510,10 @@ def _save_bands(
             nodata=no_data_value,
         ) as destination:
             destination.write(values, 1)
+    if "solar_zenith" in data.coords and "solar_azimuth" in data.coords:
+        from loading.solar_angles import save_solar_angles
+
+        save_solar_angles(data, output_dir.parent, scene_id, transform, crs, ow=overwrite)
     write_scene_vrt(output_dir.parent, scene_id)
 
 

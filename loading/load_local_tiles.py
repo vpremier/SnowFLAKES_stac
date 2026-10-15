@@ -16,6 +16,11 @@ from rasterio.enums import Resampling
 from rasterio.transform import from_origin
 from rasterio.warp import reproject, transform_bounds
 
+from loading.solar_angles import (
+    attach_solar_angles, load_landsat_archive_solar_angle_grids,
+    load_s2_local_solar_angle_grids,
+)
+
 
 SENTINEL2_BANDS = [
     "B02", "B03", "B04", "B05", "B06",
@@ -207,7 +212,7 @@ def canonical_landsat_band_token(scene_id, band_name):
 
 
 def prepared_bands_are_complete(output_dir, scene_id):
-    """Return true when every prepared band exists for a saved scene."""
+    """Return true when all spectral bands and both solar-angle TIFFs exist."""
     scene_dir = Path(output_dir) / scene_id
     if not scene_dir.is_dir():
         return False
@@ -217,6 +222,9 @@ def prepared_bands_are_complete(output_dir, scene_id):
             for token in filename_tokens
         ):
             return False
+    if not all((scene_dir / f"{scene_id}_{name}.tif").is_file()
+               for name in ("solar_zenith", "solar_azimuth")):
+        return False
     return bool(_prepared_band_spec(scene_id))
 
 
@@ -293,7 +301,19 @@ def load_prepared_bands(output_dir, scene_id, date):
             arrays.append(source.read(1).astype("float32"))
         bands.append(band)
 
-    return _as_data_array(arrays, bands, date, epsg, transform)
+    data = _as_data_array(arrays, bands, date, epsg, transform)
+    angle_paths = [scene_dir / f"{scene_id}_{name}.tif"
+                   for name in ("solar_zenith", "solar_azimuth")]
+    if all(path.is_file() for path in angle_paths):
+        angles = []
+        for path in angle_paths:
+            with rasterio.open(path) as source:
+                grid = (source.height, source.width, source.transform, source.crs)
+                if grid != reference:
+                    raise ValueError(f"Cached solar angle does not match image grid: {path}")
+                angles.append(source.read(1, masked=True).astype("float32").filled(np.nan))
+        data = attach_solar_angles(data, *angles)
+    return data
 
 
 def _sentinel2_band_path(scene_dir, band):
@@ -388,10 +408,15 @@ def load_sentinel2_tiles(products, outdir, date, extent, resolution, epsg,
     parts = scene_id.split("_")
     if merge:
         parts[5] = "merged"
-    return (
-        _as_data_array(mosaics, bands, date, epsg, transform),
-        "_".join(parts),
+    data = _as_data_array(mosaics, bands, date, epsg, transform)
+    scene_dirs = [
+        _sentinel2_scene_dir(outdir, str(name).split("_")[5], str(name).removesuffix(".SAFE"))
+        for name in selected["Name"]
+    ]
+    zenith, azimuth = load_s2_local_solar_angle_grids(
+        scene_dirs, dst_crs=epsg, dst_transform=transform, dst_shape=(height, width),
     )
+    return attach_solar_angles(data, zenith, azimuth), "_".join(parts)
 
 
 def _read_mtl(archive):
@@ -553,9 +578,12 @@ def load_landsat_tiles(products, outdir, date, extent, resolution, epsg,
     parts = scene_id.split("_")
     if merge:
         parts[2] = "merged"
-    return (
-        _as_data_array(
-            mosaics, list(band_map.values()), date, epsg, transform
-        ),
-        "_".join(parts),
+    data = _as_data_array(mosaics, list(band_map.values()), date, epsg, transform)
+    archives = [
+        _landsat_archive(outdir, first_sensor, name.split("_")[2], name)
+        for name in selected["Name"] if name.split("_")[0] == first_sensor
+    ]
+    zenith, azimuth = load_landsat_archive_solar_angle_grids(
+        archives, dst_crs=epsg, dst_transform=transform, dst_shape=(height, width),
     )
+    return attach_solar_angles(data, zenith, azimuth), "_".join(parts)

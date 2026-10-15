@@ -1,7 +1,7 @@
 {
   "study_area": "Area_19",
   "working_directory": "/mnt/CEPH_PROJECTS/SNOWCOP/SWE_processing",
-  "shapefile": "/home/vpremier/Documents/git/dailySCA_harmonization_dev/config/SNOWCOP/aoi/area_19.shp",
+  "shapefile": "/home/vpremier/Documents/git/SnowFLAKES_stac/config/SNOWCOP/aoi/area_19.shp",
   "date_start": "2013-04-01",
   "date_end": "2024-03-31",
   "satellite": "Sentinel-2",

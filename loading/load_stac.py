@@ -28,6 +28,7 @@ import boto3
 import stackstac
 
 from loading.utils_stac import *
+from loading.solar_angles import save_solar_angles, attach_solar_angles, load_s2_solar_angle_grids
 # from utils_stac import *
 
 
@@ -71,6 +72,7 @@ def load_with_retry(data, max_retries=20, wait_seconds=2):
                 raise
 
 
+
 def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="toa"):
     """Write a materialized STAC DataArray one GeoTIFF per band."""
     output_dir = os.path.join(outdir, scene_id)
@@ -101,6 +103,8 @@ def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="to
         with rio.open(out_path, "w", **profile) as destination:
             destination.write(band_data, 1)
         print(f"Saved {out_path}")
+
+
 
 def setup_cdse_credentials():
     session = boto3.Session(profile_name="cdse")
@@ -134,6 +138,7 @@ def setup_cdse_credentials():
     os.environ["VSI_CACHE_SIZE"] = "67108864"
 
     return creds
+
 
 
 def load_cdse_collection(collection, outdir, resolution=None, img4ext = None, 
@@ -298,6 +303,9 @@ def load_cdse_collection(collection, outdir, resolution=None, img4ext = None,
         print(f"Saved {out_path}")
         
         
+
+        
+        
     end = time.time()
     print(f"Total runtime of the program is {end - start} seconds")
     
@@ -450,7 +458,8 @@ def convert_sentinel2_bands(outdir,
     optionally saves each band as a GeoTIFF.
     
     The function uses `stackstac` to lazily load Sentinel-2 assets and returns the
-    result as an `xarray.DataArray` with dimensions:
+    result as an `xarray.DataArray` with 2D solar_zenith and solar_azimuth
+    coordinates in degrees (first-valid-item overlap priority), and dimensions:
     
         (time, band, y, x)
     
@@ -771,7 +780,15 @@ def convert_sentinel2_bands(outdir,
     # the development workflow. This prevents one remote read/reprojection
     # per band and makes transient CDSE failures recoverable.
     load_with_retry(data, max_retries=20, wait_seconds=2)
-            
+
+    zenith, azimuth = load_s2_solar_angle_grids(
+        items,
+        dst_crs=epsg_target,
+        dst_transform=transform,
+        dst_shape=(height, width),
+    )
+    data = attach_solar_angles(data, zenith, azimuth)
+
     # Iterate through bands
     if save:
         print("STAC DataArray loaded; saving bands from memory")
@@ -784,6 +801,8 @@ def convert_sentinel2_bands(outdir,
             ow=ow,
             suffix=suffix,
         )
+        save_solar_angles(data, outdir, merged_image_id, transform, dst_crs, ow=ow)
+
         
         
     end = time.time()
@@ -800,12 +819,12 @@ def convert_sentinel2_bands(outdir,
 if __name__ == "__main__":    
 
     setup_cdse_credentials()
-    resolution = 50
-    epsg_target = 25832
+    resolution = 10
+    epsg_target = 32719
 
-    extent_target = [573030.3488, 5048649.9999, 813030.3488, 5308649.9999]
+    extent_target = [354000, 6014000, 362000, 6022000]
 
-    date = "2025-02-06"
+    date = "2015-08-18"
 
     outdir = r'/mnt/CEPH_PROJECTS/SNOWCOP/Vale/test/stac_test'
 

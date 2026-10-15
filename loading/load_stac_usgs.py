@@ -31,6 +31,7 @@ def _numeric_nodata(value):
         return np.nan
     return float(value)
 from loading.load_stac import load_with_retry
+from loading.solar_angles import save_solar_angles, attach_solar_angles, load_landsat_solar_angle_grids
 # from utils_stac import *
 
 
@@ -468,9 +469,19 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
     # OmniCloudMask or SnowFLAKES accesses ``.values`` later.
     load_with_retry(data, max_retries=20, wait_seconds=2)
 
+    solar_zenith, solar_azimuth = load_landsat_solar_angle_grids(
+        items,
+        dst_crs=epsg_target,
+        dst_transform=transform,
+        dst_shape=(height, width),
+    )
+    data = attach_solar_angles(data, solar_zenith, solar_azimuth)
+
+
         
     # Iterate through bands
     if save:
+        save_solar_angles(data, outdir, merged_image_id, transform, dst_crs, ow=ow)
         for band in bands:
             band_token = (
                 "B6_VCID_1"
