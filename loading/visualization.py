@@ -9,10 +9,17 @@ from rasterio.io import MemoryFile
 
 
 def write_scene_vrt(output_dir, scene_id):
-    """Stack saved TOA bands without copying pixels; use portable relative paths."""
+    """Stack saved spectral bands without copying pixels; use portable relative paths."""
     scene_dir = Path(output_dir) / scene_id
+    # Exclude solar angles and prefer the current filename if both exist.
+    band_paths = {}
+    for path in sorted(scene_dir.glob(f'{scene_id}_*.tif'),
+                       key=lambda path: path.stem.endswith('_toa'), reverse=True):
+        token = path.stem[len(scene_id) + 1:].removesuffix('_toa')
+        if re.fullmatch(r'B\d+(?:A|_VCID_[12])?|coastal|blue|green|red|nir08|swir16|swir22|lwir(?:11)?', token):
+            band_paths[token] = path
     bands = sorted(
-        scene_dir.glob(f'{scene_id}_*_toa.tif'),
+        band_paths.values(),
         key=lambda path: [int(part) if part.isdigit() else part
                           for part in re.split(r'(\d+)', path.name)],
     )
@@ -35,7 +42,7 @@ def write_scene_vrt(output_dir, scene_id):
         description = band.find('Description')
         if description is None:
             description = ET.SubElement(band, 'Description')
-        description.text = path.name[len(scene_id) + 1:-len('_toa.tif')]
+        description.text = path.stem[len(scene_id) + 1:].removesuffix('_toa')
         for filename in band.iter('SourceFilename'):
             filename.text = path.name
             filename.set('relativeToVRT', '1')

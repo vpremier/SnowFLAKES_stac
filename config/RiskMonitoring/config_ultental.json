@@ -1,22 +1,32 @@
 {
-  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Gadertal/Gadertal.geojson",
-  "date_start": "2025-08-09",
+  "study_area": "Ultental",
+  "working_directory": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring",
+  "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Ultental/Ultental.geojson",
+  "date_start": "2015-10-01",
   "date_end": "2025-09-30",
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
   "landsat_satellite": [],
+  "DOWNLOAD_SENTINEL": "STAC-API",
+  "DOWNLOAD_LANDSAT": "STAC-API",
   "landsat_tile_list": [],
+  "sentinel_tile_list": [],
+  "CROP": true,
+  "SAVE": false,
   "resampling_params": {
     "resolution": 25,
     "extent_target": [
-      713000,
-      5154000,
-      735000,
-      5185500
+      623000,
+      5144000,
+      667500,
+      5172000
     ],
     "epsg_target": 25832,
     "no_data_value": "nan"
   },
+  "save_false_color": true,
+  "save_rgb_10m": false,
+  "run_snowflakes": true,
   "uncertainty": false,
   "remove_auxiliary": false,
   "classify_glaciers": "yes",

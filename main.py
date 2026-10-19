@@ -489,7 +489,7 @@ def _save_bands(
             if str(scene_id).split("_", 1)[0] in {"LT05", "LE07", "LC08", "LC09"}
             else str(band)
         )
-        path = output_dir / f"{scene_id}_{band_token}_toa.tif"
+        path = output_dir / f"{scene_id}_{band_token}.tif"
         if path.exists() and not overwrite:
             print(f"  Prepared band already exists, skipping: {path.name}")
             continue
@@ -1087,6 +1087,15 @@ def _run_or_collect(
 
         scene_config = config.copy()
         scene_config["output_directory"] = str(output_dir)
+        study_dir = Path(_study_directory(config))
+        platform = scene_id.split("_", 1)[0] if sensor != "Sentinel-2" else None
+        merged_root = _sensor_directory(study_dir / "MERGED", sensor, platform)
+        snowflakes_root = _sensor_directory(study_dir / "SnowFLAKES", sensor, platform)
+        # Tile-only runs have their prepared data in TILES, not MERGED.
+        scene_config["_merged_scene_directory"] = (
+            str(merged_root / scene_id)
+            if Path(output_dir) == snowflakes_root else None
+        )
         scene_config["overwrite"] = _overwrite_at_least(config, "crop")
         scene_config["_overwrite_snowflakes"] = _overwrite_at_least(
             config, "snowflakes"

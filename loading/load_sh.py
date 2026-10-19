@@ -178,7 +178,7 @@ def convert_sentinel2_bands(outdir,
                             extent_target=None,
                             epsg_target=None,
                             reproj_type=Resampling.bilinear,
-                            suffix='toa',
+                            suffix='',
                             na_value = "NaN",
                             calibration=True,
                             ow=False,
@@ -473,7 +473,7 @@ def convert_sentinel2_bands(outdir,
         for band_name in data.band.values:
         
             out_path = os.path.join(outdir, f"{merged_image_id}", 
-                                    f"{merged_image_id}_{band_name}_{suffix}.tif")
+                                    f"{merged_image_id}_{band_name}{'_' + suffix if suffix else ''}.tif")
             
             if os.path.exists(out_path) and not ow:
                 print(f"Skipping {out_path} (already exists)")

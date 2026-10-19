@@ -512,6 +512,10 @@ def create_auxiliary_information(scene_id, data, config):
 
         # delete folder
         shutil.rmtree(scene_folder)
+        merged_scene_folder = config.get("_merged_scene_directory")
+        if merged_scene_folder and os.path.isdir(merged_scene_folder):
+            shutil.rmtree(merged_scene_folder)
+            print(f"Removed rejected scene from MERGED: {merged_scene_folder}")
         
         return False
     

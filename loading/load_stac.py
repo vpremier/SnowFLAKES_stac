@@ -69,7 +69,7 @@ def load_with_retry(data, max_retries=20, wait_seconds=2):
 
 
 
-def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="toa"):
+def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix=""):
     """Write a materialized STAC DataArray one GeoTIFF per band."""
     output_dir = os.path.join(outdir, scene_id)
     os.makedirs(output_dir, exist_ok=True)
@@ -78,7 +78,7 @@ def save_stac_bands(data, outdir, scene_id, transform, crs, ow=False, suffix="to
     for band_name in data.band.values:
         band_name = str(band_name)
         out_path = os.path.join(
-            output_dir, f"{scene_id}_{band_name}_{suffix}.tif"
+            output_dir, f"{scene_id}_{band_name}{'_' + suffix if suffix else ''}.tif"
         )
         if os.path.exists(out_path) and not ow:
             print(f"Skipping {out_path} (already exists)")
@@ -436,7 +436,7 @@ def convert_sentinel2_bands(outdir,
                             extent_target=None,
                             epsg_target=None,
                             reproj_type=Resampling.bilinear,
-                            suffix='toa',
+                            suffix='',
                             na_value = "NaN",
                             calibration=True,
                             ow=False,
@@ -487,7 +487,7 @@ def convert_sentinel2_bands(outdir,
         Resampling method used during reprojection.
     
     suffix : str
-        Suffix appended to output filenames (e.g. "toa").
+        Optional suffix appended to output filenames; empty by default.
     
     na_value : float or str
         NoData value for output rasters.
@@ -829,7 +829,7 @@ if __name__ == "__main__":
 
     data, scene_id = convert_sentinel2_bands(outdir, date, resolution=resolution, img4ext=None, 
                             epsg_target=epsg_target, extent_target=extent_target, reproj_type=Resampling.cubic, 
-                            suffix='toa', na_value = "NaN", calibration=True, 
+                            suffix='', na_value = "NaN", calibration=True,
                             ow=False, save=False, collection = "sentinel-2-l2a")
 
     # data = data.load()

@@ -211,16 +211,22 @@ def canonical_landsat_band_token(scene_id, band_name):
     return str(band_name)
 
 
+def _prepared_band_path(scene_dir, scene_id, filename_tokens):
+    """Prefer suffix-free bands while accepting existing TOA caches."""
+    return next(
+        (path for suffix in ("", "_toa") for token in filename_tokens
+         if (path := scene_dir / f"{scene_id}_{token}{suffix}.tif").is_file()),
+        None,
+    )
+
+
 def prepared_bands_are_complete(output_dir, scene_id):
     """Return true when all spectral bands and both solar-angle TIFFs exist."""
     scene_dir = Path(output_dir) / scene_id
     if not scene_dir.is_dir():
         return False
     for _, filename_tokens in _prepared_band_spec(scene_id):
-        if not any(
-            (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
-            for token in filename_tokens
-        ):
+        if _prepared_band_path(scene_dir, scene_id, filename_tokens) is None:
             return False
     if not all((scene_dir / f"{scene_id}_{name}.tif").is_file()
                for name in ("solar_zenith", "solar_azimuth")):
@@ -238,11 +244,7 @@ def prepared_grid_matches(
         return False
     scene_dir = Path(output_dir) / scene_id
     _, filename_tokens = _prepared_band_spec(scene_id)[0]
-    path = next(
-        scene_dir / f"{scene_id}_{token}_toa.tif"
-        for token in filename_tokens
-        if (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
-    )
+    path = _prepared_band_path(scene_dir, scene_id, filename_tokens)
     with rasterio.open(path) as source:
         source_epsg = source.crs.to_epsg() if source.crs else None
         source_resolution = (abs(source.transform.a), abs(source.transform.e))
@@ -280,11 +282,7 @@ def load_prepared_bands(output_dir, scene_id, date):
     transform = None
     print(f"Loading prepared scene from GeoTIFF cache: {scene_id}")
     for band, filename_tokens in _prepared_band_spec(scene_id):
-        path = next(
-            scene_dir / f"{scene_id}_{token}_toa.tif"
-            for token in filename_tokens
-            if (scene_dir / f"{scene_id}_{token}_toa.tif").is_file()
-        )
+        path = _prepared_band_path(scene_dir, scene_id, filename_tokens)
         print(f"  Loading cached band {band}: {path.name}")
         with rasterio.open(path) as source:
             grid = (source.height, source.width, source.transform, source.crs)

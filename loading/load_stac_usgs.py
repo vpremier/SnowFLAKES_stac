@@ -235,7 +235,7 @@ def get_scene_center_time(date, img4ext = None, extent_target=None,
 
 def convert_landsat_bands(outdir, date, resolution=None, img4ext = None, 
                             extent_target=None, epsg_target=None, 
-                            reproj_type=Resampling.bilinear, suffix='toa',
+                            reproj_type=Resampling.bilinear, suffix='',
                             na_value = "NaN", calibration=True, ow=False,
                             max_cc = 90, platform = 'LANDSAT_8', idList = [], 
                             filter_by_geometry = True,
@@ -489,7 +489,7 @@ def convert_landsat_bands(outdir, date, resolution=None, img4ext = None,
                 else f"B{band}"
             )
             out_path = os.path.join(outdir, f"{merged_image_id}", 
-                                    f"{merged_image_id}_{band_token}_{suffix}.tif")
+                                    f"{merged_image_id}_{band_token}{'_' + suffix if suffix else ''}.tif")
             
             if os.path.exists(out_path) and not ow:
                 print(f"Skipping {out_path} (already exists)")
@@ -542,7 +542,7 @@ if __name__ == "__main__":
 
     data, merged_image_id = convert_landsat_bands(outdir, date, resolution=resolution, img4ext=img4ext, 
                             epsg_target=epsg_target, reproj_type=Resampling.cubic, 
-                            suffix='toa', na_value = "NaN", calibration=True, 
+                            suffix='', na_value = "NaN", calibration=True,
                             ow=False, platform = 'LANDSAT_8')
     
     
