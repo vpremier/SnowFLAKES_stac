@@ -431,7 +431,7 @@ def define_datetime(scene_id, config):
     ----------
     scene_id : str or os.PathLike
         Product identifier or path. Supported names are compact Sentinel-2
-        Level-1C products, legacy Sentinel-2 ``OPER`` products, and Landsat
+        Level-1C and Level-2A products, legacy Sentinel-2 ``OPER`` products, and Landsat
         4--9 products.
     config : dict
         SnowFLAKES configuration, used to query Landsat metadata.
@@ -449,7 +449,7 @@ def define_datetime(scene_id, config):
     parts = scene_name.split('_')
 
     try:
-        if sensor == 'S2' and parts[1] == 'MSIL1C':
+        if sensor == 'S2' and parts[1] in ('MSIL1C', 'MSIL2A'):
             date_time = datetime.strptime(parts[2], '%Y%m%dT%H%M%S')
             date = date_time.strftime('%Y%m%d')
 

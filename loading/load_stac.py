@@ -450,7 +450,7 @@ def convert_sentinel2_bands(outdir,
                             collection = "sentinel-2-l1c",
                             bands=None):
     """
-    Loads Sentinel-2 L1C data from the Copernicus Data Space STAC API,
+    Loads Sentinel-2 L1C or L2A data from the Copernicus Data Space STAC API,
     reprojects it to a user-defined grid, applies radiometric calibration, and
     optionally saves each band as a GeoTIFF.
     
@@ -689,7 +689,7 @@ def convert_sentinel2_bands(outdir,
     if bands is None and collection == "sentinel-2-l1c":
         bands = ['B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08', 'B11', 'B12', 'B8A']
     elif bands is None and collection == "sentinel-2-l2a":
-        bands = ['B01_20m', 'B02_20m', 'B03_20m', 'B04_20m', 'B05_20m', 'B06_20m', 'B07_20m', 'B11_20m', 'B12_20m', 'B8A_20m']
+        bands = ['B02_20m', 'B03_20m', 'B04_20m', 'B05_20m', 'B06_20m', 'B07_20m', 'B08_10m', 'B11_20m', 'B12_20m', 'B8A_20m']
     
 
     # id of the scene 
@@ -746,6 +746,13 @@ def convert_sentinel2_bands(outdir,
         
         # Group by day and compute mean
         data = data.groupby("time.day").max(dim="time", skipna=True)
+        if collection == "sentinel-2-l2a":
+            # Keep STAC asset names for loading, then expose the band names
+            # expected by training, classification, and prepared-band caches.
+            data = data.assign_coords(band=[
+                str(band).removesuffix("_20m").removesuffix("_10m")
+                for band in data.band.values
+            ])
         
 
     except Exception as e:

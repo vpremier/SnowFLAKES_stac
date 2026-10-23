@@ -4,15 +4,15 @@
   "shapefile": "/mnt/CEPH_PROJECTS/FRAM3S/RiskMonitoring/Ultental/Ultental.geojson",
   "date_start": "2015-10-01",
   "date_end": "2025-09-30",
-  "satellite": "Sentinel-2",
+  "satellite": "Landsat",
   "max_cloudcover": 90,
   "landsat_satellite": [],
-  "DOWNLOAD_SENTINEL": "STAC-API",
+  "DOWNLOAD_SENTINEL": "S3",
   "DOWNLOAD_LANDSAT": "STAC-API",
   "landsat_tile_list": [],
   "sentinel_tile_list": [],
   "CROP": true,
-  "SAVE": false,
+  "SAVE": true,
   "resampling_params": {
     "resolution": 25,
     "extent_target": [

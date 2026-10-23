@@ -564,11 +564,49 @@ def sample_histogram_equal(mask, values, n_samples, n_bins=20, seed=None):
     
     
     
+def load_training_reference_scf(data, reference_path):
+    """Read reference percentages on the exact training grid without resampling."""
+    if not reference_path:
+        raise ValueError("VHR training requires training_reference_scf")
+    with rasterio.open(reference_path) as source:
+        reference = source.read(1, masked=True).astype("float64").filled(np.nan)
+    reference[~np.isfinite(reference) | (reference < 0) | (reference > 100)] = np.nan
+    return reference
+
+
+def get_pixels_from_reference(reference_scf, eligible_mask):
+    """Return eligible pure-snow (100%) and snow-free (0%) candidate masks."""
+    eligible_mask = np.asarray(eligible_mask, dtype=bool)
+    if reference_scf.shape != eligible_mask.shape:
+        raise ValueError("VHR reference and eligible training mask must have the same shape")
+    valid = eligible_mask & np.isfinite(reference_scf)
+    return valid & (reference_scf == 100), valid & (reference_scf == 0)
+
+
+def filter_training_samples(samples, reference_scf, expected_scf):
+    """Remove selected samples that do not match the reference; never refill."""
+    # if reference_scf.shape != samples.shape:
+    #     raise ValueError("VHR reference and training samples must have the same shape")
+    return np.where(reference_scf == expected_scf, samples, 0).astype(samples.dtype)
+
+
 def collect_trainings(data, scene_id, config, total_samples=500):
     
     # load information for current scene
     sensor = get_sensor(scene_id)
     bands = define_bands(data, sensor)
+    training_source = config.get("training_source", "spectral")
+    if training_source not in ("spectral", "vhr"):
+        raise ValueError(f"Unsupported training_source: {training_source!r}")
+    filter_with_vhr = config.get("filter_trainings_with_vhr", False)
+    reference_scf = None
+    if training_source == "vhr" or filter_with_vhr:
+        reference_path = config.get("training_reference_scf")
+        reference_scf = load_training_reference_scf(data, reference_path)
+        if filter_with_vhr:
+            print(f"Filtering selected training samples with VHR reference: {reference_path}")
+        else:
+            print(f"Selecting pure training candidates from VHR reference: {reference_path}")
     
     # Create output directory for the scene
     wd = config['output_directory']
@@ -660,9 +698,12 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     representative_pixels_mask_noSnow = np.zeros(empty.shape, dtype="uint8")
     if shadow_pixels > 0:
         print("Collecting trainings in shadow (all solar-angle ranges)")
-        snow_shad, snowfree_shad = get_pixels_shadow(
-            bands, curr_aux_folder, curr_scene_valid, mask_shadow
-        )
+        if training_source == "vhr":
+            snow_shad, snowfree_shad = get_pixels_from_reference(reference_scf, mask_shadow)
+        else:
+            snow_shad, snowfree_shad = get_pixels_shadow(
+                bands, curr_aux_folder, curr_scene_valid, mask_shadow
+            )
         if np.sum(snow_shad) > 10:
             representative_pixels_mask_snow = sample_histogram_equal(
                 snow_shad, green, int(total_samples / 2), n_bins=20, seed=training_seed
@@ -671,6 +712,14 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             representative_pixels_mask_noSnow = sample_histogram_equal(
                 snowfree_shad, green, int(total_samples / 2), n_bins=20, seed=training_seed
             ) * 2
+
+    if filter_with_vhr:
+        representative_pixels_mask_snow = filter_training_samples(
+            representative_pixels_mask_snow, reference_scf, 100
+        )
+        representative_pixels_mask_noSnow = filter_training_samples(
+            representative_pixels_mask_noSnow, reference_scf, 0
+        )
 
     representative_pixels_mask = (
         representative_pixels_mask_noSnow + representative_pixels_mask_snow
@@ -721,14 +770,21 @@ def collect_trainings(data, scene_id, config, total_samples=500):
             
             print('Collecting trainings in sun')
 
-            snow_sun, snowfree_sun = get_pixels_sun(
-                bands, curr_aux_folder, mask_sun,
-                curr_range
-            )
+            if training_source == "vhr":
+                snow_sun, snowfree_sun = get_pixels_from_reference(reference_scf, mask_sun)
+            else:
+                snow_sun, snowfree_sun = get_pixels_sun(
+                    bands, curr_aux_folder, mask_sun,
+                    curr_range
+                )
 
     
             if np.sum(snow_sun) > 10:
                 representative_pixels_mask_snow  = sample_histogram_equal(snow_sun, green, int(sample_count / 2), n_bins=20, seed=training_seed)
+                if filter_with_vhr:
+                    representative_pixels_mask_snow = filter_training_samples(
+                        representative_pixels_mask_snow, reference_scf, 100
+                    )
                 
                 save_histogram(
                     green[representative_pixels_mask_snow],
@@ -742,6 +798,10 @@ def collect_trainings(data, scene_id, config, total_samples=500):
     
             if np.sum(snowfree_sun) > 10:
                 representative_pixels_mask_noSnow  = sample_histogram_equal(snowfree_sun, green, int(sample_count / 2), n_bins=20, seed=training_seed) * 2
+                if filter_with_vhr:
+                    representative_pixels_mask_noSnow = filter_training_samples(
+                        representative_pixels_mask_noSnow, reference_scf, 0
+                    )
                 
                 save_histogram(
                     green[representative_pixels_mask_noSnow==2],

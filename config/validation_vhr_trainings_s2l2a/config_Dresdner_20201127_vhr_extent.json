@@ -1,0 +1,39 @@
+{
+  "study_area": "Dresdner_20201127_vhr_extent",
+  "working_directory": "/mnt/CEPH_PROJECTS/FRAM3S/validation_SnowFLAKES/results/VHR_endmember_analysis/classification_pure_endmembers_2_s2l2a/Dresdner/20201127",
+  "shapefile": "/home/vpremier/Documents/git/SnowFLAKES_stac/config/validation/Dresdner/20201127/aoi_vhr.geojson",
+  "date_start": "2020-11-27",
+  "date_end": "2020-11-28",
+  "satellite": "Sentinel-2",
+  "max_cloudcover": 90,
+  "landsat_satellite": [],
+  "DOWNLOAD_SENTINEL": "STAC-API",
+  "DOWNLOAD_LANDSAT": "usgs-m2m",
+  "landsat_tile_list": [],
+  "CROP": true,
+  "SAVE": true,
+  "resampling_params": {
+    "resolution": 20,
+    "extent_target": [
+      659360,
+      5204900,
+      667760,
+      5212280
+    ],
+    "epsg_target": 25832,
+    "no_data_value": "nan"
+  },
+  "save_false_color": false,
+  "save_rgb_10m": false,
+  "run_snowflakes": true,
+  "uncertainty": false,
+  "remove_auxiliary": false,
+  "classify_glaciers": "yes",
+  "external_glacier_mask_path": "/mnt/CEPH_PROJECTS/ALPSNOW/Riccardo/GLACIERS/RGI2000-v7.0-G-global/RGI2000_v7_global.shp",
+  "find_closest_model": false,
+  "overwrite": false,
+  "training_source": "spectral",
+  "filter_trainings_with_vhr": true,
+  "training_reference_scf": "/mnt/CEPH_PROJECTS/FRAM3S/validation_SnowFLAKES/results/Dresdner/20201127/vhr_extent/S2A_MSIL1C_20201127T102401_N0500_R065_merged_20230321T022330/vhr_scf_aggregated.tif",
+  "collection": "sentinel-2-l2a"
+}

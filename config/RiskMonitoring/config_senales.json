@@ -7,7 +7,7 @@
   "satellite": "Sentinel-2",
   "max_cloudcover": 90,
   "landsat_satellite": [],
-  "DOWNLOAD_SENTINEL": "S3",
+  "DOWNLOAD_SENTINEL": "STAC-API",
   "DOWNLOAD_LANDSAT": "STAC-API",
   "landsat_tile_list": [],
   "sentinel_tile_list": [],

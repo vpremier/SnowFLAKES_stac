@@ -1,9 +1,9 @@
 {
-  "study_area": "Cervinia",
-  "working_directory": "/mnt/CEPH_PROJECTS/FRAM3S/reference_RGB/Dataset4Spires/Cervinia",
-  "shapefile": "/home/vpremier/Documents/git/SnowFLAKES_stac/config/validation/Cervinia/20240704/aoi_vhr.geojson",
-  "date_start": "2024-09-15",
-  "date_end": "2024-09-16",
+  "study_area": "Izas",
+  "working_directory": "/mnt/CEPH_PROJECTS/FRAM3S/reference_RGB/Dataset4Spires/20210520",
+  "shapefile": "/home/vpremier/Documents/git/SnowFLAKES_stac/config/validation/Izas/20210520/aoi_vhr.geojson",
+  "date_start": "2021-07-19",
+  "date_end": "2021-07-20",
   "satellite": "Sentinel-2",
   "collection": "sentinel-2-l2a",
   "max_cloudcover": 90,
@@ -17,16 +17,16 @@
   "resampling_params": {
     "resolution": 20,
     "extent_target": [
-      396020,
-      5086120,
-      398520,
-      5089240
+      709520,
+      4734680,
+      711800,
+      4736240
     ],
-    "epsg_target": 25832,
+    "epsg_target": 25830,
     "no_data_value": "nan"
   },
-  "save_false_color": true,
-  "save_rgb_10m": true,
+  "save_false_color": false,
+  "save_rgb_10m": false,
   "run_snowflakes": true,
   "uncertainty": false,
   "remove_auxiliary": false,
